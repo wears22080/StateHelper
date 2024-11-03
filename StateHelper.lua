@@ -246,8 +246,8 @@ download_image()
 installation_success_font = {false, false}
 secc_load_font = false
 function download_font()
-	local link_meduim_font = 'https://github.com/KaneScripter/StateHelper/blob/main/SF600.ttf'
-	local link_bold_font = 'https://github.com/KaneScripter/StateHelper/blob/main/SF800.ttf'
+	local link_meduim_font = 'https://github.com/wears22080/StateHelper/blob/main/%D0%A8%D1%80%D0%B8%D1%84%D1%82%D1%8B/SF600.ttf'
+	local link_bold_font = 'https://github.com/wears22080/StateHelper/blob/main/%D0%A8%D1%80%D0%B8%D1%84%D1%82%D1%8B/SF800.ttf'
 	if not doesDirectoryExist(getWorkingDirectory()..'/StateHelper/Fonts/') then
 		print('{F54A4A}Ошибка. Отсутствует папка для шрифтов. {82E28C}Создание папки для шрифтов...')
 		createDirectory(getWorkingDirectory()..'/StateHelper/Fonts/')
