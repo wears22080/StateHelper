@@ -246,8 +246,8 @@ download_image()
 installation_success_font = {false, false}
 secc_load_font = false
 function download_font()
-	local link_meduim_font = 'https://github.com/wears22080/StateHelper/blob/main/%D0%A8%D1%80%D0%B8%D1%84%D1%82%D1%8B/SF600.ttf'
-	local link_bold_font = 'https://github.com/wears22080/StateHelper/blob/main/%D0%A8%D1%80%D0%B8%D1%84%D1%82%D1%8B/SF800.ttf'
+	local link_meduim_font = 'https://github.com/wears22080/StateHelper/raw/refs/heads/main/Fonts/SF600.ttf'
+	local link_bold_font = 'https://github.com/wears22080/StateHelper/raw/refs/heads/main/Fonts/SF800.ttf'
 	if not doesDirectoryExist(getWorkingDirectory()..'/StateHelper/Fonts/') then
 		print('{F54A4A}Ошибка. Отсутствует папка для шрифтов. {82E28C}Создание папки для шрифтов...')
 		createDirectory(getWorkingDirectory()..'/StateHelper/Fonts/')
@@ -298,7 +298,7 @@ local notice = {} --> Значения уведомлений (текст, заголовок, тип - предупрежден
 
 --> Обновление и её зависимости
 upd = {}
-url_upd = 'https://gitlab.com/KaneScripter/StateHelper/-/raw/main/StateHelper.lua'
+url_upd = 'https://github.com/wears22080/StateHelper/raw/refs/heads/main/StateHelper.lua'
 upd_status = 0
 scr_version = scr.version:gsub('%D','')
 scr_version = tonumber(scr_version)
@@ -333,7 +333,7 @@ end
 local pers = {
 	frac = {org = 'Больница ЛС', title = '', rank = 1}
 }
-org_all_done = {u8'Больница ЛС', u8'Больница ЛВ', u8'Больница СФ', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство'}
+org_all_done = {u8'Больница ЛС', u8'Больница ЛВ', u8'Больница СФ', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'ТСР'}
 num_of_the_selected_org = 1
 my = {id = 0, nick = 'Nick_Name'}
 off_butoon_end = false
@@ -475,6 +475,7 @@ setting = {
 	chat_racia = false,
 	chat_dep = false,
 	chat_vip = false,
+	chat_all = false,
 	time_hud = false,
 	fix_text = true,
 	auto_lec = false,
@@ -516,7 +517,7 @@ setting = {
 		{'uninv', u8'Уволить сотрудника', {}, '9'},
 		{'rank', u8'Установить сотруднику ранг', {}, '9'},
 	},
-	show_dialog_auto = true,
+	show_dialog_auto = false,
 	fast_acc = {
 		func = true,
 		sl = {}
@@ -632,7 +633,7 @@ setting = {
 	anti_alarm_but = false,
 	my_tag_en2 = '',
 	my_tag_en3 = '',
-	auto_roleplay_text = false,
+	auto_roleplay_text = true,
 	fun_block = false,
 	blank_text_dep = {u8'На связи.', u8'На связь.', u8'Конец связи.', u8'Прошу прощения, рация упала...', u8'Вы и Ваш состав свободны для проверки?', u8'', u8'', u8'', u8'', u8''},
 	prikol = false,
@@ -681,7 +682,7 @@ local buf_setting = {
 }
 script_tag = '[SH] '
 color_tag = 0xFF5345
-
+color_tag_ht = 'FF5345'
 --> Для РП зоны
 scene = {bq = {}}
 scene_buf = {}
@@ -2575,7 +2576,7 @@ function window.main_first_start()
 		end
 	end
 	if first_start_anim.text[3] then
-		local carta_org = {u8'Больница ЛС', u8'Больница ЛВ', u8'Больница СФ', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство'}
+		local carta_org = {u8'Больница ЛС', u8'Больница ЛВ', u8'Больница СФ', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'ТСР'}
 		for i = 1, #carta_org do
 			if num_of_the_selected_org == i then
 				setting.frac.org = carta_org[i]
@@ -2611,6 +2612,11 @@ function window.main_first_start()
 			if skin.CheckboxOne(u8'Правительство', 350, 321) then num_of_the_selected_org = 6 setting.frac.org = u8'Правительство' end
 		else
 			if skin.CheckboxOne(u8'Правительство##false_func', 350, 321) then num_of_the_selected_org = 6 setting.frac.org = u8'Правительство' end
+		end
+		if num_of_the_selected_org == 7 then
+			if skin.CheckboxOne(u8'ТСР', 350, 350) then num_of_the_selected_org = 7 setting.frac.org = u8'ТСР' end
+		else
+			if skin.CheckboxOne(u8'ТСР##false_func', 350, 350) then num_of_the_selected_org = 7 setting.frac.org = u8'ТСР' end
 		end
 		skin.DrawFond({134, 385}, {0, 0}, {600, 1}, imgui.ImVec4(0.70, 0.70, 0.70, 1.00), 15, 15)
 		skin.Button(u8'Продолжить', 630, 400, nil, nil, function() 
@@ -3540,6 +3546,52 @@ function reminder_win_fix()
 	end
 	imgui.EndChild()
 end
+
+-- Собеседование командой (( переделать ))
+sampRegisterChatCommand('sob', function(id)
+    id = tonumber(id)
+    if id and id >= 0 and id <= 1000 then
+        local playerExists = sampIsPlayerConnected(id)
+        if playerExists then
+            sob_history = {}
+            sob_info = {
+                level = -1,
+                legal = -1,
+                work = -1,
+                narko = -1,
+                hp = -1,
+                bl = -1,
+                lic = -1,
+                writ = -1
+            }
+
+            if not win.main.v then
+                styleAnimationOpen('Main')
+                win.main.v = true
+            end
+
+            if not select_main_menu[5] then
+                select_main_menu[5] = true
+                for i = 1, 13 do
+                    if i ~= 5 then
+                        select_main_menu[i] = false
+                    end
+                end
+            end
+
+            sobes_menu = true
+            pl_sob.id = id
+            pl_sob.nm = sampGetPlayerNickname(id)
+            sampAddChatMessage(script_tag.. "{FFFFFF}Вы начали собеседование с {FF5345}" .. pl_sob.nm, color_tag)
+        else
+            sampAddChatMessage(script_tag.. "{FFFFFF}Упсс, игрок не авторизован на сервере.", color_tag)
+        end
+    else
+        sampAddChatMessage(script_tag.. "{FFFFFF}Что-то не так. Попробуйте ввести ID от 0 до 1000.", color_tag)
+    end
+end)
+
+
 
 function win_sobes_fix()
 	local function new_draw(pos_draw, par_dr_y)
@@ -4994,7 +5046,7 @@ function window.main()
 				imgui.SetCursorPos(imgui.ImVec2(34, 127))
 				imgui.Text(u8'Организация')
 				imgui.PopFont()
-				if skin.List({480, 121}, setting.frac.org, {u8'Больница ЛС', u8'Больница ЛВ', u8'Больница СФ', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство'}, 185, 'setting.frac.org') then 
+				if skin.List({480, 121}, setting.frac.org, {u8'Больница ЛС', u8'Больница ЛВ', u8'Больница СФ', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'ТСР'}, 185, 'setting.frac.org') then 
 					add_table_act(setting.frac.org, false)
 					save('setting')
 					create_act(1)
@@ -5038,7 +5090,7 @@ function window.main()
 				imgui.SetCursorPos(imgui.ImVec2(163, 41))
 				imgui.BeginChild(u8'Настройки чата', imgui.ImVec2(699, 422 + start_pos + new_pos), false, (size_win and imgui.WindowFlags.NoMove or 0))
 				
-				new_draw(17, 202)
+				new_draw(17, 229)
 				imgui.SetCursorPos(imgui.ImVec2(639, 30))
 				if skin.Switch(u8'##Объявления от игроков', setting.chat_pl) then setting.chat_pl = not setting.chat_pl save('setting') end
 				imgui.SetCursorPos(imgui.ImVec2(639, 60))
@@ -5051,7 +5103,9 @@ function window.main()
 				if skin.Switch(u8'##рация департамента', setting.chat_dep) then setting.chat_dep = not setting.chat_dep save('setting') end
 				imgui.SetCursorPos(imgui.ImVec2(639, 180))
 				if skin.Switch(u8'##вип чат', setting.chat_vip) then setting.chat_vip = not setting.chat_vip save('setting') end
-				
+				imgui.SetCursorPos(imgui.ImVec2(639, 210))
+				if skin.Switch(u8'##только свои сообщения', setting.chat_all) then setting.chat_all = not setting.chat_all save('setting') end
+
 				imgui.PushFont(font[1])
 				imgui.SetCursorPos(imgui.ImVec2(34, 31))
 				imgui.Text(u8'Скрыть объявления от игроков в СМИ')
@@ -5065,64 +5119,66 @@ function window.main()
 				imgui.Text(u8'Скрыть рацию департамента /d')
 				imgui.SetCursorPos(imgui.ImVec2(34, 180))
 				imgui.Text(u8'Скрыть VIP чат')
+				imgui.SetCursorPos(imgui.ImVec2(34, 210))
+				imgui.Text(u8'Оставить только свои сообщения')
 				imgui.PopFont()
 				
-				
-				new_draw(229, 60)
-				imgui.SetCursorPos(imgui.ImVec2(639, 248))
+				new_draw(256, 47)
+				imgui.SetCursorPos(imgui.ImVec2(639, 270))
 				if skin.Switch(u8'##Дата и время снизу', setting.time_hud) then setting.time_hud = not setting.time_hud save('setting') end
 				imgui.PushFont(font[1])
-				imgui.SetCursorPos(imgui.ImVec2(34, 248))
+				imgui.SetCursorPos(imgui.ImVec2(34, 270))
 				imgui.Text(u8'Отображать дату и время под миникартой')
 				imgui.PopFont()
 				
-				new_draw(299, 143)
-				skin.InputText(33, 334, u8'Текст отыгровки времени /time', 'setting.act_time', 128, 633, nil, 'setting')
-				imgui.SetCursorPos(imgui.ImVec2(34, 310))
+				new_draw(313, 143)
+				skin.InputText(33, 348, u8'Текст отыгровки времени /time', 'setting.act_time', 128, 633, nil, 'setting')
+				imgui.SetCursorPos(imgui.ImVec2(34, 324))
 				imgui.PushFont(font[3])
 				imgui.TextColored(imgui.ImVec4(col_end.text, col_end.text, col_end.text, 0.50), u8'Отыгровка после ввода /time. Оставьте пустым, если не нужно.')
 				imgui.PopFont()
-				skin.InputText(33, 395, u8'Текст отыгровки рации /r', 'setting.act_r', 128, 633, nil, 'setting')
-				imgui.SetCursorPos(imgui.ImVec2(34, 371))
+				skin.InputText(33, 409, u8'Текст отыгровки рации /r', 'setting.act_r', 128, 633, nil, 'setting')
+				imgui.SetCursorPos(imgui.ImVec2(34, 385))
 				imgui.PushFont(font[3])
 				imgui.TextColored(imgui.ImVec4(col_end.text, col_end.text, col_end.text, 0.50), u8'Отыгровка после ввода /r. Оставьте пустым, если не нужно.')
 				imgui.PopFont()
 				
-				new_draw(452, 47)
-				imgui.SetCursorPos(imgui.ImVec2(639, 465))
+				new_draw(466, 47)
+				imgui.SetCursorPos(imgui.ImVec2(639, 479))
 				if skin.Switch(u8'##Автоскрин /time', setting.ts) then setting.ts = not setting.ts save('setting') end
 				imgui.PushFont(font[1])
-				imgui.SetCursorPos(imgui.ImVec2(34, 465))
+				imgui.SetCursorPos(imgui.ImVec2(34, 479))
 				imgui.Text(u8'/time + скриншот экрана командой /ts')
 				imgui.PopFont()
 				
-				new_draw(509, 47)
-				imgui.SetCursorPos(imgui.ImVec2(639, 523))
+				new_draw(523, 47)
+				imgui.SetCursorPos(imgui.ImVec2(639, 537))
 				if skin.Switch(u8'##Отыгровка палки резиновой', setting.rubber_stick) then setting.rubber_stick = not setting.rubber_stick save('setting') end
 				imgui.PushFont(font[1])
-				imgui.SetCursorPos(imgui.ImVec2(34, 523))
+				imgui.SetCursorPos(imgui.ImVec2(34, 537))
 				imgui.Text(u8'Отыгровка дубинки')
 				imgui.PopFont()
 
-				new_draw(566, 67)
-				imgui.SetCursorPos(imgui.ImVec2(639, 583))
+				new_draw(580, 67)
+				imgui.SetCursorPos(imgui.ImVec2(639, 598))
 				if skin.Switch(u8'##Автоотыгровка принятия документов', setting.auto_roleplay_text) then setting.auto_roleplay_text = not setting.auto_roleplay_text save('setting') end
 				imgui.PushFont(font[1])
-				imgui.SetCursorPos(imgui.ImVec2(34, 584))
+				imgui.SetCursorPos(imgui.ImVec2(34, 598))
 				imgui.Text(u8'Автоматическая отыгровка принятия документов')
 				imgui.PopFont()
 				imgui.PushFont(font[3])
-				imgui.SetCursorPos(imgui.ImVec2(34, 604))
+				imgui.SetCursorPos(imgui.ImVec2(34, 618))
 				imgui.TextColored(imgui.ImVec4(col_end.text, col_end.text, col_end.text, 0.50), u8'Вы станете принимать документы с отыгровкой, которая будет запускаться автоматически.')
 				imgui.PopFont()
 
-				new_draw(643, 60)
-				imgui.SetCursorPos(imgui.ImVec2(639, 662))
+				new_draw(657, 67)
+				imgui.SetCursorPos(imgui.ImVec2(639, 676))
 				if skin.Switch(u8'##исправление отыкровок', setting.fix_text) then setting.fix_text = not setting.fix_text save('setting') end
 				imgui.PushFont(font[1])
-				imgui.SetCursorPos(imgui.ImVec2(34, 662))
+				imgui.SetCursorPos(imgui.ImVec2(34, 678))
 				imgui.Text(u8'Автоматично исправлять отыгровки в чате в правильном формате')
 				imgui.PopFont()
+
 				
 				imgui.Dummy(imgui.ImVec2(0, 27))
 				imgui.EndChild()
@@ -5200,7 +5256,7 @@ function window.main()
 					imgui.PopFont()
 					
 					imgui.Dummy(imgui.ImVec2(0, 61))
-				elseif setting.frac.org == u8'Правительство' then
+				elseif setting.frac.org == u8'Правительство' or setting.frac.org == u8'ТСР' then
 					imgui.PushFont(bold_font[4])
 					imgui.SetCursorPos(imgui.ImVec2(92, 187 + ((start_pos + new_pos) / 2)))
 					imgui.Text(u8'Для Вас нет ценовой политики')
@@ -5647,7 +5703,7 @@ function window.main()
 				end
 				imgui.PushFont(font[1])
 				imgui.SetCursorPos(imgui.ImVec2(34, 204))
-				imgui.Text(u8'Автоматическое принятие документов')
+				imgui.Text(u8'Автоматическое принятие документов (На доработке)')
 				imgui.PopFont()
 				imgui.SetCursorPos(imgui.ImVec2(34, 226))
 				imgui.PushFont(font[3])
@@ -5901,7 +5957,7 @@ function window.main()
 					imgui.SetCursorPos(imgui.ImVec2(32, 255))
 					imgui.BeginChild(u8'История нововведений', imgui.ImVec2(646, 320), false)
 					imgui.PushFont(font[1])
-                    imgui.TextWrapped(u8'[Версия 2.4]:\n\n1. Исправлен краш скрипта через отображение /members на екране.\n2. Добавлены новые аргументы: {get_ru_nick[id игрока]} и {copy_nick[id игрока]}.\n3. Добавлена возможность копировать аргументы.\n4. Добавлено больше настроек чата и авто-выправление отыгровок по РП формату.')
+                    imgui.TextWrapped(u8'[Версия 2.4]:\n\n1. Исправлен краш скрипта через отображение /members на екране.\n2. Добавлены новые аргументы: {get_ru_nick[id игрока]} и {copy_nick[id игрока]}.\n3. Добавлена возможность копировать аргументы.\n4. Добавлено больше настроек чата и авто-выправление отыгровок по РП формату.\n5. Исправлен баг в ходе загрузки шрифтов, и многи другие\n6. Добавлена новая фракция - ТСР')
 					imgui.Dummy(imgui.ImVec2(0, 25))
                     imgui.TextWrapped(u8'[Версия 2.3]:\n\n1. Произведена переробка для обновления к полностью переработаному скрипту.\n2. Исправлен баг, из-за которого в статистику перестали добавляться данные.\n3. Исправлен баг, из-за которого происходил краш скрипта после выдачи лицензии.\n4. Исправлен краш скрипта после проведения осмотра.\n5. Исправлен краш у некоторых пользователей после выдачи мед. карты.')
 					imgui.Dummy(imgui.ImVec2(0, 25))
@@ -11631,27 +11687,33 @@ function add_table_act(org_to_replace, default_act)
 			nm = 'show',
 			var = {},
 			act = {
-				{3, 1, 4, {u8'Паспорт', u8'Медицинская карта', u8'Лицензии', u8'Трудовая книжка'}},
-				{8, '1', '1'},
-				{0, u8'/do Паспорт гражданина находится в заднем кармане.'},
-				{0, u8'/me засунув руку в карман, достал{sex:,а} паспорт, после чего передал{sex:,а} его человеку напротив'},
-				{0, u8'/showpass {arg1}'},
-				{9, '1', '1'},
-				{8, '1', '2'},
-				{0, u8'/do Медицинская карта находится в нагрудном кармане.'},
-				{0, u8'/me засунув руку в карман, достал{sex:,а} мед. карту, после чего передал{sex:,а} её человеку напротив'},
-				{0, u8'/showmc {arg1}'},
-				{9, '1', '1'},
-				{8, '1', '3'},
-				{0, u8'/do Пакет лицензий находится в нагрудном кармане.'},
-				{0, u8'/me засунув руку в карман, достал{sex:,а} лицензии, после чего передал{sex:,а} их человеку напротив'},
-				{0, u8'/showlic {arg1}'},
-				{9, '1', '1'},
-				{8, '1', '4'},
-				{0, u8'/do Трудовая книжка находится во внутреннем кармане.'},
-				{0, u8'/me засунув руку в карман, достал{sex:,а} книжку, после чего передал{sex:,а} её человеку напротив'},
-				{0, u8'/wbook {arg1}'},
-				{9, '1', '1'}
+				{3, 1, 5, {u8"Паспорт", u8"Медицинская карта", u8"Лицензии", u8"Трудовая книжка", u8"Удостоверение"}},
+				{8, "1", "1"},
+				{0, u8"/do Паспорт в нагрудном кармане."},
+				{0, u8"/me достал{sex:,а} паспорт из нагрудного кармана"},
+				{0, u8"/todo Вот, смотрите*показывая паспорт человеку напротив"},
+				{0, u8"/showpass {arg1}"},
+				{9, "1", "1"},
+				{8, "1", "2"},
+				{0, u8"/do Медицинская карта находится в нагрудном кармане."},
+				{0, u8"/me засунув руку в карман, достал{sex:,а} мед. карту, после чего передал{sex:,а} её человеку напротив"},
+				{0, u8"/showmc {arg1}"},
+				{9, "1", "1"},
+				{8, "1", "3"},
+				{0, u8"/do Пакет лицензий находится в нагрудном кармане."},
+				{0, u8"/me засунув руку в карман, достал{sex:,а} лицензии, после чего передал{sex:,а} их человеку напротив"},
+				{0, u8"/showlic {arg1}"},
+				{9, "1", "1"},
+				{8, "1", "4"},
+				{0, u8"/do Трудовая книжка находится во внутреннем кармане."},
+				{0, u8"/me засунув руку в карман, достал{sex:,а} книжку, после чего передал{sex:,а} её человеку напротив"},
+				{0, u8"/wbook {arg1}"},
+				{9, "1", "1"},
+				{8, "1", "5"},
+				{0, u8"/me достал{sex:,а} свое удостоверение из кармана и аккуратно развернул{sex:,а} его"},
+				{0, u8"/me простирает удостоверение человеку напротив"},
+				{0, u8"/do Удостоверение выглядит официально и имеет печать в верхнем углу."},
+				{0, u8"/showbadge {arg1}"}
 			},
 			desc = u8'Показать игроку свои документы',
 			tr_fl = {0, 1, 3},
@@ -11719,9 +11781,9 @@ function add_table_act(org_to_replace, default_act)
 			act = {
 				{0, u8'/do Рация весит на поясе.'},
 				{0, u8'/me снял{sex:,а} рацию с пояса, после чего {sex:зашел,зашла} в настройки локальных частот вещания'},
-				{0, u8'/me заглушил{sex:,а} локальную частоту вещания сотруднику {getplnick[{arg1}]}'},
+				{0, u8'/me заглушил{sex:,а} локальную частоту вещания сотруднику {get_ru_nick[{arg1}]}'},
 				{0, u8'/fmute {arg1} {arg2} {arg3}'},
-				{0, u8'/r Сотруднику {getplnick[{arg1}]} была отключена рация. Причина: {arg3}'}
+				{0, u8'/r Сотруднику {get_ru_nick[{arg1}]} была отключена рация. Причина: {arg3}'}
 			},
 			desc = u8'Выдать бан чата организации сотруднику',
 			tr_fl = {0, 0, 0},
@@ -11742,9 +11804,9 @@ function add_table_act(org_to_replace, default_act)
 			act = {
 				{0, u8'/do Рация весит на поясе.'},
 				{0, u8'/me снял{sex:,а} рацию с пояса, после чего {sex:зашел,зашла} в настройки локальных частот вещания'},
-				{0, u8'/me освободил{sex:,а} локальную частоту вещания сотруднику {getplnick[{arg1}]}'},
+				{0, u8'/me освободил{sex:,а} локальную частоту вещания сотруднику {get_ru_nick[{arg1}]}'},
 				{0, u8'/funmute {arg1}'},
-				{0, u8'/r Сотруднику {getplnick[{arg1}]} снова включена рация!'}
+				{0, u8'/r Сотруднику {get_ru_nick[{arg1}]} снова включена рация!'}
 			},
 			desc = u8'Снять бан чата организации сотруднику',
 			tr_fl = {0, 0, 0},
@@ -11768,9 +11830,9 @@ function add_table_act(org_to_replace, default_act)
 			act = {
 				{0, u8'/do В левом кармане лежит телефон.'},
 				{0, u8'/me достал{sex:,а} телефон из кармана, после чего {sex:зашел,зашла} в базу данных организации'},
-				{0, u8'/me изменил{sex:,а} информацию о сотруднике {getplnick[{arg1}]}'},
+				{0, u8'/me изменил{sex:,а} информацию о сотруднике {get_ru_nick[{arg1}]}'},
 				{0, u8'/fwarn {arg1} {arg2}'},
-				{0, u8'/r {getplnick[{arg1}]} получил строгий выговор! Причина: {arg2}'}
+				{0, u8'/r {get_ru_nick[{arg1}]} получил выговор! Причина: {arg2}'}
 			},
 			delay = 2000,
 			not_send_chat = false,
@@ -11789,9 +11851,9 @@ function add_table_act(org_to_replace, default_act)
 			act = {
 				{0, u8'/do В левом кармане лежит телефон.'},
 				{0, u8'/me достал{sex:,а} телефон из кармана, после чего {sex:зашел,зашла} в базу данных организации'},
-				{0, u8'/me изменил{sex:,а} информацию о сотруднике {getplnick[{arg1}]}'},
+				{0, u8'/me изменил{sex:,а} информацию о сотруднике {get_ru_nick[{arg1}]}'},
 				{0, u8'/unfwarn {arg1}'},
-				{0, u8'/r Сотруднику {getplnick[{arg1}]} снят строгий выговор!'}
+				{0, u8'/r Сотруднику {get_ru_nick[{arg1}]} снят выговор!'}
 			},
 			desc = u8'Снять выговор сотруднику',
 			tr_fl = {0, 0, 0},
@@ -11814,7 +11876,7 @@ function add_table_act(org_to_replace, default_act)
 				{0, u8'/me потянувшись во внутренний карман, достал{sex:,а} оттуда ключ'},
 				{0, u8'/me передал{sex:,а} ключ от шкафчика с формой человеку напротив'},
 				{0, u8'/invite {arg1}'},
-				{0, u8'/r Приветствуем нового сотрудника нашей организации - {getplnick[{arg1}]}'}
+				{0, u8'/r Приветствуем нового сотрудника нашей организации - {get_ru_nick[{arg1}]}'}
 			},
 			desc = u8'Принять игрока в организацию',
 			tr_fl = {0, 0, 0},
@@ -11836,9 +11898,9 @@ function add_table_act(org_to_replace, default_act)
 			act = {
 				{0, u8'/do В левом кармане лежит телефон.'},
 				{0, u8'/me достал{sex:,а} телефон из кармана, после чего {sex:зашел,зашла} в базу данных организации'},
-				{0, u8'/me изменил{sex:,а} информацию о сотруднике {getplnick[{arg1}]}'},
+				{0, u8'/me изменил{sex:,а} информацию о сотруднике {get_ru_nick[{arg1}]}'},
 				{0, u8'/uninvite {arg1} {arg2}'},
-				{0, u8'/r Сотрудник {getplnick[{arg1}]} был уволен из организации. Причина: {arg2}'}
+				{0, u8'/r Сотрудник {get_ru_nick[{arg1}]} был уволен из организации. Причина: {arg2}'}
 			},
 			desc = u8'Уволить сотрудника',
 			tr_fl = {0, 0, 0},
@@ -11863,7 +11925,7 @@ function add_table_act(org_to_replace, default_act)
 				{0, u8'/me открыв футляр, достал{sex:,а} оттуда ключ от шкафчика с формой'},
 				{0, u8'/me передал{sex:,а} ключ от шкафчика человеку напротив'},
 				{0, u8'/giverank {arg1} {arg2}'},
-				{0, u8'/r Сотрудник {getplnick[{arg1}]} получил новую должность. Поздравляем!'}
+				{0, u8'/r Сотрудник {get_ru_nick[{arg1}]} получил новую должность. Поздравляем!'}
 			},
 			desc = u8'Установить сотруднику ранг',
 			tr_fl = {0, 0, 0},
@@ -12333,6 +12395,18 @@ function add_table_act(org_to_replace, default_act)
 		}
 		save('setting')
 	elseif org_to_replace:find(u8'Центр Лицензирования') then
+		--[[
+		[0] -- авто
+		[1] -- мото
+		[2] -- полеты
+		[3] -- рыбалку
+		[4] -- водный
+		[5] -- оружие
+		[6] -- охоту
+		[7] -- раскопки
+		[8] -- такси
+		[9] -- механика
+		]]
 		add_table = {
 			arg = {{0, u8'id игрока'}},
 			nm = 'licmauto',
@@ -12981,6 +13055,545 @@ function add_table_act(org_to_replace, default_act)
 			}
 		}
 		save('setting')
+	elseif org_to_replace:find(u8'ТСР') then
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'agenda',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'Здравствуйте, я {myrank} {mynickrus}.'},
+				{0, u8'Покажите пожалуйста Ваш паспорт.'},
+				{1, u8''},
+				{0, u8'/me взял{sex:,а} документ с рук человека напротив, внимательно его изучил{sex:,а}, после чего вернул{sex:,а} обратно'},
+				{0, u8'/do В папке с документами лежит пустой бланк с надписью "Повестка".'},
+				{0, u8'/me взял{sex:,а} в руку бланк с ручкой и движением руки начал{sex:,а} заполнять бланк'},
+				{0, u8'/do Готовый бланк в руке.'},
+				{0, u8'/me убрал{sex:,а} ручку в карман, поставил{sex:,а} свою подпись на бланк'},
+				{0, u8'/todo Так-с, это вам. Ждем вас в военкомате!*протягивая бланк человеку напротив'},
+				{0, u8'/agenda {arg1}'}
+			},
+			desc = u8'Выдать повестку',
+			tr_fl = {0, 0, 0},
+			delay = 1291.8031005859,
+			not_send_chat = false,
+			add_f = {false, 10},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('agenda', u8'Выдать повестку', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'},
+				{0, u8'камера'},
+				{0, u8'время от 1 до 30'},
+				{1, u8'причина'}
+			},
+			nm = 'carcer',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'/do Ключи от карцера на поясе.'},
+				{0, u8'/me прижал{sex:,а} левой рукой заключенного к стене и раздвинул{sex:,а} его ноги'},
+				{0, u8'/me правой рукой взял{sex:,а} связку ключей от карцера и наручников, открыл{sex:,а} карцер'},
+				{0, u8'/me завел{sex:,а} заключенного в карцер и снял{sex:,а} с него наручники'},
+				{0, u8'/carcer {arg1} {arg2} {arg3} {arg4}'},
+				{0, u8'/uncuff {arg1}'},
+				{0, u8'/me закрыл{sex:,а} дверь карцера и повесил{sex:,а} ключи на пояс'},
+				{0, u8'/do Связка ключей на поясе.'}
+			},
+			desc = u8'Посадить в карцер',
+			tr_fl = {0, 0, 0},
+			delay = 1300,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('carcer', u8'Посадить в карцер', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'cuff',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'/me одной рукой держит подозреваемого, другой снимает с пояса наручники...'},
+				{0, u8'/me ...и, скрестив руки подозреваемого, нацепил их на него'},
+				{0, u8'/cuff {arg1}'}
+			},
+			desc = u8'Надеть наручники',
+			tr_fl = {0, 0, 0},
+			delay = 1300,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('cuff', u8'Надеть наручники', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'frisk',
+			var = {},
+			rank = 1,
+			act = {
+				{2, u8'Где есть приставка (з) - обыскать если человек /gotome'},
+				{3, 1, 4, {u8'Полный обыск', u8'Полный обыск (з)', u8'Первичный обыск', u8'Первичный обыск (з)'}},
+				{8, '1', '1'},
+				{0, u8'/me достал{sex:,а} перчатки, после чего надел{sex:,а} их на руки'},
+				{0, u8'/me провел{sex:,а} руками по верхним частям тела в области груди и рук'},
+				{0, u8'/me провел{sex:,а} руками по туловищу в области пояса и карманов'},
+				{0, u8'/me провел{sex:,а} руками по нижним частям тела в области ног'},
+				{0, u8'/frisk {arg1}'},
+				{9, ''},
+				{8, '1', '2'},
+				{0, u8'/me отпустил{sex:,а} руку задержаного'},
+				{0, u8'/me достал{sex:,а} перчатки, после чего надел{sex:,а} их на руки'},
+				{0, u8'/me провел{sex:,а} руками по верхним частям тела в области груди и рук'},
+				{0, u8'/me провел{sex:,а} руками по туловищу в области пояса и карманов'},
+				{0, u8'/me провел{sex:,а} руками по нижним частям тела в области ног'},
+				{0, u8'/frisk {arg1}'},
+				{0, u8'/me после чего взял{sex:,а} его за руку и повел{sex:,а} за собой'},
+				{9, ''},
+				{8, '1', '3'},
+				{0, u8'/me ногами раздвинул{sex:,а} ноги подозреваемого на ширину плеч и положил{sex:,а} его на капот'},
+				{0, u8'/me положил{sex:,а} руки подозреваемого выше его головы'},
+				{0, u8'/me тщательно прохлопал{sex:,а} поверхность всей одежды, ноги'},
+				{0, u8'/frisk {arg1}'},
+				{9, '1', '1'},
+				{8, '1', '4'},
+				{0, u8'/me отпустил{sex:,а} руку задержаного'},
+				{0, u8'/me ногами раздвинул{sex:,а} ноги подозреваемого на ширину плеч и положил{sex:,а} его на капот'},
+				{0, u8'/me положил{sex:,а} руки подозреваемого выше его головы'},
+				{0, u8'/me тщательно прохлопал{sex:,а} поверхность всей одежды, ноги'},
+				{0, u8'/frisk {arg1}'},
+				{0, u8'/me после чего взял{sex:,а} его за руку и повел{sex:,а} за собой'},
+				{9, '1', '1'}
+			},
+			desc = u8'Обыскать игрока',
+			tr_fl = {0, 1, 4},
+			delay = 1291.8031005859,
+			not_send_chat = false,
+			add_f = {false, 18},
+			key = {},
+			num_d = 2
+		}
+		create_file_json('frisk', u8'Обыскать игрока', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'gcuff',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'/me одной рукой держит подозреваемого, другой снимает с пояса наручники...'},
+				{0, u8'/me ...и, скрестив руки подозреваемого, нацепил их на него'},
+				{0, u8'/cuff {arg1}'},
+				{0, u8'/me сильно {sex:ухватился,ухватилась} рукой за левое плечо человека'},
+				{0, u8'/me держит рукой за левое плечо и сильно сжимает запястье человека'},
+				{0, u8'/gotome {arg1}'},
+				{0, u8'/todo Без резких движений!*повысив тембр голоса'}
+			},
+			desc = u8'Надеть наручники и вести за собой',
+			tr_fl = {0, 0, 0},
+			delay = 1396.7210693359,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('gcuff', u8'Надеть наручники и вести за собой', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'gotome',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'/me сильно {sex:ухватился,ухватилась} рукой за левое плечо человека'},
+				{0, u8'/me держит рукой за левое плечо и сильно сжимает запястье человека'},
+				{0, u8'/gotome {arg1}'},
+				{0, u8'/todo Без резких движений!*повысив тембр голоса'}
+			},
+			desc = u8'Тащить за собой',
+			tr_fl = {0, 0, 0},
+			delay = 1300,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('gotome', u8'Тащить за собой', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'arrest',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'/me нажав на тангенту, сообщил диспетчера о привезенном преступнике...'},
+				{0, u8'/me ... и пригласил офицеров для сопровождения'},
+				{0, u8'/me во время ожидания офицеров, подготовил в бортовом данные преступника'},
+				{0, u8'/do Из департамента выходят офицеры и забирают преступника и их вещи.'},
+				{0, u8'/arrest {arg1}'}
+			},
+			desc = u8'Арестовать',
+			tr_fl = {0, 0, 0},
+			delay = 1300,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('arrest', u8'Арестовать', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'ungotome',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'/me убрал{sex:,а} руку с плеча и отпустил{sex:,а} запястье человека'},
+				{0, u8'/ungotome {arg1}'}
+			},
+			desc = u8'Перестать тащить за собой',
+			tr_fl = {0, 0, 0},
+			delay = 1291.8031005859,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('ungotome', u8'Перестать тащить за собой', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'uncarcer',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'/do Ключи от карцера на поясе.'},
+				{0, u8'/me правой рукой взял{sex:,а} ключ от карцера и открыл{sex:,а} его'},
+				{0, u8'/me взял{sex:,а} заключенного за руку, вывел{sex:,а} его из карцера'},
+				{0, u8'/me закрыл{sex:,а} дверь карцера и повесил{sex:,а} ключ на пояс'},
+				{0, u8'/uncarcer {arg1}'}
+			},
+			desc = u8'Выпустить с карцера',
+			tr_fl = {0, 0, 0},
+			delay = 1239.3441162109,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('uncarcer', u8'Выпустить с карцера', add_table, '1')		
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'uncuff',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'/me придерживая руки подозреваемого, снимает с пояса ключи от наручников...'},
+				{0, u8'/me ...и снимает с их помощью браслеты с подозреваемого и убирает их на пояс'},
+				{0, u8'/uncuff {arg1}'}
+			},
+			desc = u8'Снять наручники',
+			tr_fl = {0, 0, 0},
+			delay = 1291.8031005859,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('uncuff', u8'Снять наручники', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'unpunish',
+			var = {
+				{1, ''},
+				{1, ''}
+			},
+			rank = 9,
+			act = {
+				{3, 1, 5, {u8'15кк', u8'12кк', u8'9кк', u8'6кк', u8'Далее'}},
+				{8, '1', '1'},
+				{5, '{var1}', '15000000'},
+				{5, '{var2}', '1.000.000$'},
+				{9, ''},
+				{8, '1', '2'},
+				{5, '{var1}', '12000000'},
+				{5, '{var2}', '1.300.000$'},
+				{9, ''},
+				{8, '1', '3'},
+				{5, '{var1}', '9000000'},
+				{5, '{var2}', '1.100.000$'},
+				{9, ''},
+				{8, '1', '4'},
+				{5, '{var1}', '6000000'},
+				{5, '{var2}', '400.000$'},
+				{9, ''},
+				{8, '1', '5'},
+				{3, 2, 2, {u8'3кк', u8'2кк'}},
+				{9, '1', '1'},
+				{8, '2', '1'},
+				{5, '{var1}', '3000000'},
+				{5, '{var2}', '200.000$'},
+				{9, '1', '1'},
+				{8, '2', '2'},
+				{5, '{var1}', '2000000'},
+				{5, '{var2}', '0$'},
+				{9, '1', '1'},
+				{0, u8'/do В левом кармане лежит КПК.'},
+				{0, u8'/me достал{sex:,а} КПК, {sex:зашел,зашла} в базу данных заключённых и {sex:нашел,нашла} нужное дело'},
+				{0, u8'/me нажал{sex:,а} пункт "Освободить" в деле заключенного'},
+				{0, u8'/do В базе данных заключённого были сделаны изменения'},
+				{0, u8'/me спрятал{sex:,а} КПК в карман'},
+				{0, u8'/unpunish {arg1} {var1}'},
+				{2, u8'Надо полижить на счет организации: {3dfc03}{var2}{copy_nick[{arg1}]}'}
+			},
+			desc = u8'Выпустить заключенного',
+			tr_fl = {0, 2, 7},
+			delay = 1300,
+			not_send_chat = false,
+			add_f = {false, 27},
+			key = {},
+			num_d = 3
+		}
+		create_file_json('unpunish', u8'Выпустить заключенного', add_table, '9')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'},
+				{0, u8'уровень'},
+				{1, u8'причина'}
+			},
+			nm = 'punish',
+			var = {
+				{1, ''},
+				{1, ''},
+				{1, ''}
+			},
+			rank = 7,
+			act = {
+				{3, 1, 2, {u8"Понизить", u8"Повысить"}},
+				{8, "1", "1"},
+				{5, "{var1}", "1"},
+				{5, "{var2}", u8"понизил{sex:,а}"},
+				{5, "{var3}", u8"понижился"},
+				{9, "1", "1"},
+				{8, "1", "2"},
+				{5, "{var1}", "2"},
+				{5, "{var2}", u8"повысил{sex:,а}"},
+				{5, "{var3}", u8"повысился"},
+				{9, "1", "1"},
+				{0, u8"/me аккуратным движением правой руки достал{sex:,а} КПК и включил{sex:,а} его"},
+				{0, u8"/me {sex:зашел,зашла} в базу данных ТСР, и {sex:нашел,нашла} заключенного"},
+				{0, u8"/me нажав на его иконку в КПК и {var2} срок заключенному"},
+				{0, u8"/do На планшете появилась зеленая галка и заключенному {var3} срок пребывания в ТСР."},
+				{0, u8"/punish {arg1} {arg2} {var1} {arg3}"}
+			},
+			desc = u8'Повысить/понизить срок',
+			tr_fl = {0, 1, 2},
+			delay = 977.04907226563,
+			not_send_chat = false,
+			add_f = {false, 10},
+			key = {},
+			num_d = 2
+		}
+		create_file_json('punish', u8'Повысить/понизить срок', add_table, '2')		
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'obis',
+			var = {},
+			rank = 1,
+			act = {
+				{0, u8'Не сопративляйтесь. Сейчас я проведу первичный обыск.'},
+				{0, u8'/me ногами раздвинул{sex:,а} ноги подозреваемого на ширину плеч и положил{sex:,а} его на капот'},
+				{0, u8'/me положил{sex:,а} руки подозреваемого выше его головы'},
+				{0, u8'/me тщательно прохлопал{sex:,а} поверхность всей одежды, ноги'},
+				{0, u8'/frisk {arg1}'},
+				{0, u8'/me после чего заломал{sex:,а} ему руку и повел{sex:,а} за собой'}
+			},
+			desc = u8'Первичный обыск',
+			tr_fl = {0, 0, 0},
+			delay = 1291.8031005859,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('obis', u8'Первичный обыск', add_table, '1')
+		add_table = {
+			arg = {},
+			nm = 'sobeska',
+			var = {},
+			rank = 9,
+			act = {
+				{2, u8'Начать собеседование /gov?'},
+				{1, u8''},
+				{0, u8'/d [ТСР] - [Всем] Занимаю государственную волну вещания.'},
+				{0, u8'/gov [ТСР]: Уважаемые жители штата!'},
+				{0, u8'/gov [ТСР]: Проходит собеседование в Тюрьму Строгого Режима.'},
+				{0, u8'/gov [ТСР]: Ждём всех желающих. При себе иметь: паспорт, мед.карту, пакет лицензий.'},
+				{0, u8'/d [ТСР] - [Всем] Освобождаю государственную волну вещания.'}
+			},
+			desc = u8'Провести собеседование /gov',
+			tr_fl = {0, 0, 0},
+			delay = 2000,
+			not_send_chat = false,
+			add_f = {false, 1},
+			key = {},
+			num_d = 1
+		}
+		create_file_json('sobeska', u8'Провести собеседование /gov', add_table, '9')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'take',
+			var = {},
+			rank = 1,
+			act = {
+				{3, 1, 3, {u8'Забрать запрещенное', u8'Забрать оружие', u8'Забрать лицензии'}},
+				{8, '1', '1'},
+				{0, u8'/me отпустил{sex:,а} руку задержаного'},
+				{0, u8'/me изьял{sex:,а} у человека запрещенные предмены'},
+				{0, u8'/me достал{sex:,а} из кармана зип-пакет и сложил{sex:,а} в него изъятые предметы'},
+				{0, u8'/take {arg1}'},
+				{9, ''},
+				{8, '1', '2'},
+				{0, u8'/me отпустил{sex:,а} руку задержаного'},
+				{0, u8'/me из нагрудной кармана достал{sex:,а} зип пакет'},
+				{0, u8'/me забрал{sex:,а} у задежаного оружие и положил{sex:,а} его в зип пакет'},
+				{0, u8'/take {arg1}'},
+				{9, '1', '1'},
+				{8, '1', '3'},
+				{0, u8'/me отпустил{sex:,а} руку задержаного'},
+				{0, u8'/me достал{sex:,а} зип пакет из нагрудного кармана, забрал{sex:,а} у человека пакет лицензий'},
+				{0, u8'/me положил{sex:,а} лицензии в зип пакет и спрятал{sex:,а} его'},
+				{0, u8'/take {arg1}'}
+			},
+			desc = u8'Забрать что-то',
+			tr_fl = {0, 1, 3},
+			delay = 1300,
+			not_send_chat = false,
+			add_f = {false, 7},
+			key = {},
+			num_d = 2
+		}
+		create_file_json('take', u8'Забрать что-то', add_table, '1')
+		add_table = {
+			arg = {
+				{0, u8'id игрока'}
+			},
+			nm = 'opros',
+			var = {
+				{1, ''}
+			},
+			rank = 1,
+			act = {
+				{0, u8'Я {myrank} {mynickrus}. {sex:Сотрудник,Сотрудница} ТСР.'},
+				{0, u8'Сейчас я проведу опрос. На все вопросы отвечайте честно и коротко.'},
+				{0, u8'/do На столе лежит бланк с вопросамы и ручка.'},
+				{0, u8'/me взял{sex:,а} ручку в руку, начал{sex:,а} зачитывать вопросы с бланка'},
+				{0, u8'Как вас зовут? Имя Фамилия'},
+				{1, ''},
+				{0, u8'/me записал{sex:,а} сказанное заключенным в бланк'},
+				{0, u8'По какой статье вы были посажены в Тюрьму Строгого Режима?'},
+				{1, ''},
+				{0, u8'/me записал{sex:,а} сказанное заключенным в бланк'},
+				{0, u8'Чувствуете ли вы вину о содеяном?'},
+				{1, ''},
+				{0, u8'/me записал{sex:,а} сказанное заключенным в бланк'},
+				{0, u8'Какие ваши ощущения от перебывания в ТСР?'},
+				{1, ''},
+				{0, u8'/me записал{sex:,а} сказанное заключенным в бланк'},
+				{0, u8'Имеются предложения по улучшению пребывания в ТСР?'},
+				{1, ''},
+				{0, u8'/me записал{sex:,а} сказанное заключенным в бланк'},
+				{0, u8'Хорошо. На этом опрос окончен.'},
+				{0, u8'/me открыл{sex:,а} шуклядку, положил{sex:,а} в нее заполненый бланк и ручку'},
+				{3, 1, 3, {u8'Снижить на 1', u8'Снижить на 2', u8'Снижить на 3'}},
+				{8, '1', '1'},
+				{5, '{var1}', '1'},
+				{9, '1', '1'},
+				{8, '1', '2'},
+				{5, '{var1}', '2'},
+				{9, '1', '1'},
+				{8, '1', '3'},
+				{5, '{var1}', '3'},
+				{9, '1', '1'},
+				{0, u8'/me аккуратным движением правой руки достал{sex:,а} КПК и включил{sex:,а} его'},
+				{0, u8'/me {sex:зашел,зашла} в базу данных ТСР, и {sex:нашел,нашла} нужного заключенного'},
+				{0, u8'/me нажав на его иконку в КПК и понизил{sex:,а} срок заключенному'},
+				{0, u8'/do На планшете появилась зеленая галка и заключенному понизился срок пребывания в ТСР.'},
+				{0, u8'/punish {arg1} {var1} 1 2.6'}
+			},
+			desc = u8'Провести опрос заключенному',
+			tr_fl = {0, 1, 3},
+			delay = 1300,
+			not_send_chat = false,
+			add_f = {false, 2},
+			key = {},
+			num_d = 2
+		}
+		create_file_json('opros', u8'Провести опрос заключенному', add_table, '1')
+		
+		
+		setting.fast_acc.sl = {
+			{
+				text = u8'Поздароваться',
+				cmd = 'z',
+				pass_arg = true,
+				send_chat = true
+			},
+			{
+				text = u8'Надеть наручники',
+				cmd = 'cuff',
+				pass_arg = true,
+				send_chat = true
+			},
+			{
+				text = u8'Надеть наручники и тащить',
+				cmd = 'gcuff',
+				pass_arg = true,
+				send_chat = true
+			},
+			{
+				text = u8'Тащить за собой',
+				cmd = 'gotome',
+				pass_arg = true,
+				send_chat = true
+			},
+			{
+				text = u8'Снять наручники',
+				cmd = 'uncuff',
+				pass_arg = true,
+				send_chat = true
+			},
+			{
+				text = u8'Перестать тащить',
+				cmd = 'ungotome',
+				pass_arg = true,
+				send_chat = true
+			}
+		}
+		save('setting')
 	end
 end
 
@@ -13095,7 +13708,14 @@ sampRegisterChatCommand('todo', function(input) handleCommand('todo', input) end
 function hook.onServerMessage(mes_color, mes)
 	local mes_color_hex = (bit.tohex(bit.rshift(mes_color, 8), 6))
 	local save_chat = true
-	
+	local my_name = sampGetPlayerNickname(select(2, sampGetPlayerIdByCharHandle(PLAYER_PED)))
+
+    if setting.chat_all then
+        if not mes:find(my_name) then
+            save_chat = false
+            return false
+        end
+    end
 	if setting.chat_pl then
 		if mes:find('Объявление:') or mes:find('Отредактировал сотрудник') then
 			save_chat = false
@@ -13663,8 +14283,25 @@ org = {
 	online = 0,
 	afk = 0
 }
+--[[
 
+    local ped = PLAYER_PED
+    if isCharInAnyCar(ped) then
+        local vehicle = getCarCharIsUsing(ped)
+        if getCarModel(vehicle) == 12598 then
+            if id == 26921 then
+                if delprod then
+                    sampSendDialogResponse(id, 1, delprodc)
+                end
+                text = text .. '\n \n{'.. color_tag_ht .. "}[SH] {FFFFFF} Начать ремонтировать знаки"
+                return {id, style, title, but_1, but_2, text}
+            end
+        end
+    end
+
+]]
 function hook.onShowDialog(id, style, title, but_1, but_2, text)
+
 	if id == 2015 and members_wait.members then
 		local ip, port = sampGetCurrentServerAddress()
         local server = ip..':'..port
@@ -13689,9 +14326,12 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 			elseif org.name:find('Центр лицензирования') then
 				pers.frac.org = 'Центр Лицензирования'
 				num_of_the_selected_org = 5
+			elseif org.name:find('Правительство') then
+				pers.frac.org = 'Правительство'
+				num_of_the_selected_org = 6
 			elseif org.name:find('ТСР') then
 				pers.frac.org = 'ТСР'
-				num_of_the_selected_org = 6
+				num_of_the_selected_org = 7
 			else
 				pers.frac.org = org.name
 				num_of_the_selected_org = 0
@@ -13773,12 +14413,12 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 	elseif healme then
 		healme = false
 	end
-	if id == 26359 and num_give_lic > -1 then
-		sampSendDialogResponse(26359, 1, num_give_lic, nil)
+	if id == 26360 and num_give_lic > -1 then
+		sampSendDialogResponse(26360, 1, num_give_lic, nil)
 		return false
 	end
-	if id == 26360 and num_give_lic > -1 then
-		sampSendDialogResponse(26360, 1, num_give_lic_term, nil)
+	if id == 26361 and num_give_lic > -1 then
+		sampSendDialogResponse(26361, 1, num_give_lic_term, nil)
 		num_give_lic = -1
 		return false
 	end
@@ -13791,16 +14431,20 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 			end
 		end
 	end
-	if id == 25687 then
+	if id == 27338 then
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
 				if setting.show_dialog_auto then
-					sampSendDialogResponse(25687, 1, 5, nil)
+					sampSendDialogResponse(27338, 1, 5, nil)
 				end
 				if thread:status() == 'dead' and setting.auto_roleplay_text then
 					send_chat_rp = true
 				end
 			end
+		end
+		
+		if send_chat_rp then
+			return false
 		end
 	end
 	
@@ -13821,7 +14465,7 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 			
 			return false
 		elseif title:find('Паспорт') and text:find('Имя: {FFD700}'..pl_sob.nm) then
-			local black_list_org = {'Больница LS', 'Больница SF', 'Больница LV', 'Больница Jafferson', 'Центр лицензирования', 'Правительство'} 
+			local black_list_org = {'Больница LS', 'Больница SF', 'Больница LV', 'Больница Jafferson', 'Центр лицензирования', 'Правительство', 'Тюрьма строгого режима LV'} 
 			local num_org = 1
 			if setting.frac.org == u8'Больница СФ' then
 				num_org = 2
@@ -13833,11 +14477,20 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 				num_org = 5
 			elseif setting.frac.org == u8'Правительство' then
 				num_org = 6
+			elseif setting.frac.org == u8'ТСР' then
+				num_org = 7
 			end
 			if text:find('Повестка:  %{FFBD5F%}') then
 				sob_info.writ = 0
 			else
 				sob_info.writ = 1
+			end
+			if text:find('Организация: {FFD700}Безработный') then
+				sob_info.work = 0
+			elseif text:find('Организация: {FFD700}') then
+				sob_info.work = 1
+			else
+				sob_info.work = 0
 			end
 			if text:find('%{FF6200%} '..black_list_org[num_org]) then
 				sob_info.bl = 1
@@ -14650,14 +15303,21 @@ function time()
 			end)
 		end
 		if send_chat_rp then
-			sampSendChat('/me взял документ с рук человека напротив, внимательно его изучил, после чего вернул обратно')
+			sampAddChatMessage(script_tag..'{ffffff} Ждем 7 секунд для подтверждения (системно)', color_tag)
+			send_chat_time = os.clock()
 			send_chat_rp = false
 		end
-		if ret_check > 0 then
-			ret_check = ret_check - 1
+		if send_chat_time then
+			if os.clock() - send_chat_time >= 7.3 then
+				sampSendDialogResponse(27338, 1, 0, nil)
+				local message = SexTag('/me взял{sex:,а} документ с рук человека напротив, внимательно его изучил{sex:,а}, после чего вернул{sex:,а} обратно')
+				sampSendChat(message)
+				send_chat_time = nil
+			end
 		end
 	end
 end
+local send_chat_time = nil
 
 function save_coun_onl()
 	while true do 
