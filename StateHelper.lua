@@ -1,7 +1,7 @@
 script_name('StateHelper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('2.4')
+script_version('2.5')
 script_properties('work-in-pause')
 beta_version = 0
 
@@ -15318,6 +15318,12 @@ function time()
 	end
 end
 local send_chat_time = nil
+
+function SexTag(text)
+    return text:gsub('{sex:([%w%sà-ÿÀ-ß]*),([%w%sà-ÿÀ-ß]*)}', function(maleForm, femaleForm)
+        return setting.sex == u8'Ìóæñêîé' and maleForm or femaleForm
+    end)
+end
 
 function save_coun_onl()
 	while true do 
