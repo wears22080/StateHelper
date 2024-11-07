@@ -14542,11 +14542,15 @@ function EXPORTS.sendRequest()
 	return false
 end
 
+local send_chat_time
 function activate_function_members()
-	while true do wait(0)
+	while true do 
+        wait(0)
 		if sampIsLocalPlayerSpawned() and not sampIsDialogActive() then
-			while (os.clock() - lastDialogWasActive) < 2.00 do wait(0) end
-			if not members_wait.members and setting.members.func and thread:status() == 'dead' and not sampIsDialogActive() then
+			while (os.clock() - lastDialogWasActive) < 2.00 do 
+                wait(0) 
+            end
+			if not members_wait.members and setting.members.func and thread:status() == 'dead' and not sampIsDialogActive() and (not send_chat_time or (os.clock() - send_chat_time) >= 8.4) then
 				members_wait.members = true
 				dont_show_me_members = false
 				sampSendChat('/members')
