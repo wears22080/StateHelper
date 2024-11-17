@@ -1,7 +1,7 @@
 script_name('StateHelper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('2.5')
+script_version('2.6')
 script_properties('work-in-pause')
 beta_version = 0
 
@@ -363,6 +363,8 @@ sob_info = {
 	hp = -1,
 	bl = -1,
 	lic = -1,
+	lico = -1,
+	warn = -1,
 	writ = -1
 }
 scroll_sob = 0
@@ -384,6 +386,7 @@ pos_Y_cmd = 35
 active_child_cmd = false
 POS_Y_CMD_F = -50
 bool_rubber_stick = false
+rp_gun_all = false
 targ_id = 0
 lec_buf = {}
 select_lec = 0
@@ -458,16 +461,16 @@ setting = {
 		ant = '20000'
 	},
 	price_list_cl = {
-		auto = {'100.000', '160.000', '210.000'},
-		moto = {'150.000', '200.000', '240.000'},
-		fly = {'500.000', '0', '0'},
-		fish = {'200.000', '250.000', '290.000'},
-		swim = {'200.000', '250.000', '290.000'},
-		gun = {'240.000', '330.000', '405.000'},
-		hunt = {'230.000', '330.000', '390.000'},
-		exc = {'230.000', '330.000', '390.000'},
-		taxi = {'500.000', '750.000', '1.000.000'},
-		meh = {'500.000', '750.000', '1.000.000'}
+		auto = {'200.000', '360.000', '410.000'},
+		moto = {'300.000', '350.000', '450.000'},
+		fly = {'1.200.000', '0', '0'},
+		fish = {'500.000', '550.000', '590.000'},
+		swim = {'500.000', '550.000', '590.000'},
+		gun = {'1.000.000', '1.090.000', '1.150.000'},
+		hunt = {'1.000.000', '1.100.000', '1.190.000'},
+		exc = {'1.100.000', '1.200.000', '1.290.000'},
+		taxi = {'800.000', '1.150.000', '1.250.000'},
+		meh = {'800.000', '1.150.000', '1.250.000'}
 	},
 	chat_pl = false,
 	chat_help = false,
@@ -605,7 +608,7 @@ setting = {
 	rp_zone = false,
 	auto_update = false,
 	ts = true,
-	rubber_stick = true,
+	rubber_stick = false,
 	lec = {},
 	color_accent_num = 1,
 	col_acc_non = {0.26, 0.45, 0.94},
@@ -634,6 +637,7 @@ setting = {
 	my_tag_en2 = '',
 	my_tag_en3 = '',
 	auto_roleplay_text = true,
+	auto_weapon = true,
 	fun_block = false,
 	blank_text_dep = {u8'На связи.', u8'На связь.', u8'Конец связи.', u8'Прошу прощения, рация упала...', u8'Вы и Ваш состав свободны для проверки?', u8'', u8'', u8'', u8'', u8''},
 	prikol = false,
@@ -1551,7 +1555,17 @@ function main()
 				end
 			end
 		end
-		
+		if setting.frac.org == u8'ТСР' then
+		local ped = PLAYER_PED
+		if isCharInAnyCar(ped) then
+			local vehicle = getCarCharIsUsing(ped)
+			if getCarModel(vehicle) == 548 then
+				if isKeyJustPressed(VK_2) then
+					sampSendChat("/carm")
+				end
+			end
+		end
+	end
 		if secc_load_font and installation_success_font[1] and installation_success_font[2] then
 			update_render_font()
 			secc_load_font = false
@@ -1607,6 +1621,64 @@ function main()
 			elseif num_weap ~= 3 and bool_rubber_stick then
 				sampSendChat('/me повесил'.. chsex('', 'а') ..' дубинку на пояс')
 				bool_rubber_stick = false
+			end
+		end
+		
+		if setting.auto_weapon then
+			if setting.auto_weapon and setting.frac.org == u8'ТСР' then
+			local num_weap = getCurrentCharWeapon(playerPed)
+			local weapons = {
+				[3] = {desc = "снял" .. chsex('', 'а') ..  " дубинку с поясного держателя", desc_put = "убрал" .. chsex('', 'а') ..  " дубинку на пояс"},
+				[22] = {desc = "выхватил" .. chsex('', 'а') ..  " пистолет \"Pistol\", снял" .. chsex('', 'а') .. " его с предохранителя", desc_put = "убрал".. chsex('', 'а') .. " пистолет в кобуру"},
+				[23] = {desc = "быстро достал".. chsex('', 'а') .. " тайзер", desc_put = "спрятал".. chsex('', 'а') .. " тайзер в кобуру"},
+				[24] = {desc = "извлек".. chsex('', 'ла') .. " \"Desert Eagle\" из кобуры", desc_put = "убрал".. chsex('', 'а') .. " \"Desert Eagle\" обратно в кобуру"},
+				[25] = {desc = "снял".. chsex('', 'а') .. " дробовик со спины", desc_put = "положил".. chsex('', 'а') .. " дробовик за спину"},
+				[26] = {desc = "достал".. chsex('', 'а') .. " обрезы из пальта", desc_put = "спрятал".. chsex('', 'а') .. " обрез под пальто"},
+				[27] = {desc = "достал".. chsex('', 'а') .. " скорострельный дробовик", desc_put = "положил".. chsex('', 'а') .. " скорострельный дробовик на плече"},
+				[28] = {desc = "ловко вытащил" .. chsex('', 'а') .. " UZI", desc_put = "убрал" .. chsex('', 'а') .. " UZI в сумку"},
+				[29] = {desc = "эффектно собрал".. chsex('', 'а') .. " автомат MP5", desc_put = "положил".. chsex('', 'а') .. " MP5 за спину"},
+				[30] = {desc = "снял".. chsex('', 'а') .. " автомат \"AK-47\"  со спины", desc_put = "повесил".. chsex('', 'а') .. " \"AK-47\" на предохранитель, убрал".. chsex('', 'а') .. " за спину"},
+				[31] = {desc = "быстро и уверенно снял".. chsex('', 'а') .. " \"M4\" с плеча", desc_put = "оставил".. chsex('', 'а') .. " \"M4\" на плече"},
+				[33] = {desc = "снял".. chsex('', 'а') .. " винтовку с плеча", desc_put = "поставил".. chsex('', 'а') .. " винтовку на плечо"},
+				[34] = {desc = "достал".. chsex('', 'а') .. " снайперскую винтовку", desc_put = "поместил".. chsex('', 'а') .. " снайперскую винтовку на спину"},
+				[71] = {desc = "извлек".. chsex('', 'ла') .. " \"Desert Eagle Steel\" из кобуры", desc_put = "убрал".. chsex('', 'а') .. " \"Desert Eagle Steel\" обратно в кобуру"},
+				[72] = {desc = "извлек".. chsex('', 'ла') .. " \"Desert Eagle Gold\" из кобуры", desc_put = "убрал".. chsex('', 'а') .. " \"Desert Eagle Gold\" обратно в кобуру"},
+				[73] = {desc = "выхватил".. chsex('', 'а') .. " пистолет \"Glock\", снял".. chsex('', 'а') .. " его с предохранителя", desc_put = "убрал".. chsex('', 'а') .. " пистолет \"Glock\" в кобуру"},
+				[74] = {desc = "извлек".. chsex('', 'ла') .. " \"Desert Eagle Flame\" из кобуры", desc_put = "убрал".. chsex('', 'а') .. " \"Desert Eagle Flame\" обратно в кобуру"},
+				[75] = {desc = "выхватил".. chsex('', 'а') .. " пистолет \"Colt Python\", снял".. chsex('', 'а') .. " его с предохранителя", desc_put = "убрал".. chsex('', 'а') .. " пистолет \"Colt Python\" в кобуру"},
+				[76] = {desc = "выхватил".. chsex('', 'а') .. " пистолет \"Colt Python Silver\", снял".. chsex('', 'а') .. " его с предохранителя", desc_put = "убрал".. chsex('', 'а') .. " пистолет \"Colt Python Silver\" в кобуру"},
+				[77] = {desc = "снял".. chsex('', 'а') .. " автомат \"AK-47 Roses\" со спины", desc_put = "убрал".. chsex('', 'а') .. " автомат \"AK-47 Roses\" за спину"},
+				[78] = {desc = "снял".. chsex('', 'а') .. " автомат \"AK-47 Gold\" со спины", desc_put = "убрал".. chsex('', 'а') .. " автомат \"AK-47 Gold\" за спину"},
+				[79] = {desc = "снял".. chsex('', 'а') .. " пулемет \"M249 Graffiti\" со спины", desc_put = "убрал".. chsex('', 'а') .. " пулемет \"M249 Graffiti\" за спину"},
+				[80] = {desc = "снял".. chsex('', 'а') .. " автомат \"Золотая Сайга\" со спины", desc_put = "убрал".. chsex('', 'а') .. " автомат \"Золотая Сайга\" за спину"},
+				[81] = {desc = "достал".. chsex('', 'а') .. " пистолет-пулемёт \"Standart\" с кобуры", desc_put = "убрал".. chsex('', 'а') .. " пистолет-пулемёт \"Standart\" в кобуру"},
+				[82] = {desc = "снял".. chsex('', 'а') .. " пулемет \"M249\" со спины", desc_put = "убрал".. chsex('', 'а') .. " пулемет \"M249\" за спину"},
+				[83] = {desc = "достал".. chsex('', 'а') .. " пистолет-пулемёт \"Skorp\" с кобуры", desc_put = "убрал".. chsex('', 'а') .. " пистолет-пулемёт \"Skorp\" в кобуру"},
+				[84] = {desc = "снял".. chsex('', 'а') .. " камуфляжный автомат \"AKS-74\" со спины", desc_put = "убрал".. chsex('', 'а') .. " камуфляжный автомат \"AKS-74\" за спину"},
+				[85] = {desc = "снял".. chsex('', 'а') .. " камуфляжный автомат \"AK-47\" со спины", desc_put = "убрал".. chsex('', 'а') .. " камуфляжный автомат \"AK-47\" за спину"},
+				[86] = {desc = "снял".. chsex('', 'а') .. " дробовик \"Rebecca\" со спины", desc_put = "убрал".. chsex('', 'а') .. " дробовик \"Rebecca\" за спину"},
+				[92] = {desc = "достал".. chsex('', 'а') .. " снайперскую винтовку \"McMillian TAC-50\"", desc_put = "убрал".. chsex('', 'а') .. " снайперскую винтовку \"McMillian TAC-50\" за спину"}
+			}
+		
+				for weapon_id, weapon_info in pairs(weapons) do
+					local rp_gun_flag = _G["rp_gun_" .. weapon_id]
+					if num_weap == weapon_id and not rp_gun_flag then
+						sampSendChat('/me ' .. weapon_info.desc)
+						_G["rp_gun_" .. weapon_id] = true
+					elseif num_weap ~= weapon_id and rp_gun_flag then
+						local new_weapon_is_known = false
+						for id, _ in pairs(weapons) do
+							if num_weap == id then
+								new_weapon_is_known = true
+								break
+							end
+						end
+						if not new_weapon_is_known then
+							sampSendChat('/me ' .. weapon_info.desc_put)
+						end
+						_G["rp_gun_" .. weapon_id] = false
+					end
+				end
 			end
 		end
 	end
@@ -3562,6 +3634,8 @@ sampRegisterChatCommand('sob', function(id)
                 hp = -1,
                 bl = -1,
                 lic = -1,
+				lico = -1,
+				warn = -1,
                 writ = -1
             }
 
@@ -3644,6 +3718,8 @@ function win_sobes_fix()
 						hp = -1,
 						bl = -1,
 						lic = -1,
+						lico = -1,
+						warn = -1,
 						writ = -1
 					}
 					sobes_menu = true
@@ -3742,29 +3818,58 @@ function win_sobes_fix()
 		local cl_nm = imgui.CalcTextSize(pl_sob.nm)
 		imgui.SetCursorPos(imgui.ImVec2(332 - cl_nm.x / 2, 23))
 		imgui.Text(pl_sob.nm)
+		imgui.SameLine()
+		if sob_info.warn == -1 then
+    		imgui.TextColoredRGB('')
+		elseif sob_info.warn == 0 then
+    		imgui.TextColoredRGB('')
+		elseif sob_info.warn == 1 then
+    		imgui.TextColoredRGB('{CF0000}(Есть варн)')
+		end
 		imgui.PopFont()
 		skin.DrawFond({17, 52}, {0, 0}, {632, 1}, imgui.ImVec4(0.50, 0.50, 0.50, 0.40), 0, 0)
 		skin.DrawFond({225, 60}, {0, 0}, {1, 65}, imgui.ImVec4(0.50, 0.50, 0.50, 0.40), 0, 0)
 		skin.DrawFond({445, 60}, {0, 0}, {1, 65}, imgui.ImVec4(0.50, 0.50, 0.50, 0.40), 0, 0)
 		
-		imgui.PushFont(font[1])
-		imgui.SetCursorPos(imgui.ImVec2(17, 62))
-		imgui.Text(u8'Лет в штате:')
-		imgui.SetCursorPos(imgui.ImVec2(17, 84))
-		imgui.Text(u8'Законопослушн.:')
-		imgui.SetCursorPos(imgui.ImVec2(17, 106))
-		imgui.Text(u8'Работает:')
-		imgui.SetCursorPos(imgui.ImVec2(240, 62))
-		imgui.Text(u8'Укропозавис.:')
-		imgui.SetCursorPos(imgui.ImVec2(240, 84))
-		imgui.Text(u8'Здоровье:')
-		imgui.SetCursorPos(imgui.ImVec2(240, 106))
-		imgui.Text(u8'Чёрный список:')
-		imgui.SetCursorPos(imgui.ImVec2(460, 68))
-		imgui.Text(u8'Лиц. на авто:')
-		imgui.SetCursorPos(imgui.ImVec2(460, 97))
-		imgui.Text(u8'Повестка:')
-		
+		if setting.frac.org == u8'ТСР' then
+			imgui.PushFont(font[1])
+			imgui.SetCursorPos(imgui.ImVec2(17, 62))
+			imgui.Text(u8'Лет в штате:')
+			imgui.SetCursorPos(imgui.ImVec2(17, 84))
+			imgui.Text(u8'Законопослушн:')
+			imgui.SetCursorPos(imgui.ImVec2(17, 106))
+			imgui.Text(u8'Работает:')
+			imgui.SetCursorPos(imgui.ImVec2(240, 62))
+			imgui.Text(u8'Наркозавис:')
+			imgui.SetCursorPos(imgui.ImVec2(240, 84))
+			imgui.Text(u8'Здоровье:')
+			imgui.SetCursorPos(imgui.ImVec2(240, 106))
+			imgui.Text(u8'Чёрный список:')
+			imgui.SetCursorPos(imgui.ImVec2(460, 62))
+			imgui.Text(u8'Лиц. на авто:')
+			imgui.SetCursorPos(imgui.ImVec2(460, 84))
+			imgui.Text(u8'Лиц. на оружие:')
+			imgui.SetCursorPos(imgui.ImVec2(460, 106))
+			imgui.Text(u8'Повестка:')
+		else
+			imgui.PushFont(font[1])
+			imgui.SetCursorPos(imgui.ImVec2(17, 62))
+			imgui.Text(u8'Лет в штате:')
+			imgui.SetCursorPos(imgui.ImVec2(17, 84))
+			imgui.Text(u8'Законопослушн.:')
+			imgui.SetCursorPos(imgui.ImVec2(17, 106))
+			imgui.Text(u8'Работает:')
+			imgui.SetCursorPos(imgui.ImVec2(240, 62))
+			imgui.Text(u8'Укропозавис.:')
+			imgui.SetCursorPos(imgui.ImVec2(240, 84))
+			imgui.Text(u8'Здоровье:')
+			imgui.SetCursorPos(imgui.ImVec2(240, 106))
+			imgui.Text(u8'Чёрный список:')
+			imgui.SetCursorPos(imgui.ImVec2(460, 68))
+			imgui.Text(u8'Лиц. на авто:')
+			imgui.SetCursorPos(imgui.ImVec2(460, 97))
+			imgui.Text(u8'Повестка:')
+		end
 		imgui.SetCursorPos(imgui.ImVec2(104, 62))
 		if sob_info.level == -1 then
 			imgui.TextColoredRGB('{CF0000}Неизвестно')
@@ -3813,21 +3918,48 @@ function win_sobes_fix()
 		elseif sob_info.bl == 1 then
 			imgui.TextColoredRGB('{CF0000}Состоит в ЧС')
 		end
-		imgui.SetCursorPos(imgui.ImVec2(551, 68))
-		if sob_info.lic == -1 then
-			imgui.TextColoredRGB('{CF0000}Неизвестно')
-		elseif sob_info.lic == 0 then
-			imgui.TextColoredRGB('{00A115}Имеется')
-		elseif sob_info.lic == 1 then
-			imgui.TextColoredRGB('{CF0000}Отсутствует')
-		end
-		imgui.SetCursorPos(imgui.ImVec2(531, 97))
-		if sob_info.writ == -1 then
-			imgui.TextColoredRGB('{CF0000}Неизвестно')
-		elseif sob_info.writ == 0 then
-			imgui.TextColoredRGB('{00A115}Отсутствует')
-		elseif sob_info.writ == 1 then
-			imgui.TextColoredRGB('{CF0000}Имеется')
+		if setting.frac.org == u8'ТСР' then
+			imgui.SetCursorPos(imgui.ImVec2(551, 62))
+			if sob_info.lic == -1 then
+				imgui.TextColoredRGB('{CF0000}Неизвестно')
+			elseif sob_info.lic == 0 then
+				imgui.TextColoredRGB('{00A115}Имеется')
+			elseif sob_info.lic == 1 then
+				imgui.TextColoredRGB('{CF0000}Отсутствует')
+			end
+			imgui.SetCursorPos(imgui.ImVec2(570, 84))
+			if sob_info.lico == -1 then
+				imgui.TextColoredRGB('{CF0000}Неизвестно')
+			elseif sob_info.lico == 0 then
+				imgui.TextColoredRGB('{00A115}Имеется')
+			elseif sob_info.lico == 1 then
+				imgui.TextColoredRGB('{CF0000}Отсутствует')
+			end
+			imgui.SetCursorPos(imgui.ImVec2(531, 106))
+			if sob_info.writ == -1 then
+				imgui.TextColoredRGB('{CF0000}Неизвестно')
+			elseif sob_info.writ == 0 then
+				imgui.TextColoredRGB('{00A115}Отсутствует')
+			elseif sob_info.writ == 1 then
+				imgui.TextColoredRGB('{CF0000}Имеется')
+			end
+		else
+			imgui.SetCursorPos(imgui.ImVec2(551, 68))
+			if sob_info.lic == -1 then
+				imgui.TextColoredRGB('{CF0000}Неизвестно')
+			elseif sob_info.lic == 0 then
+				imgui.TextColoredRGB('{00A115}Имеется')
+			elseif sob_info.lic == 1 then
+				imgui.TextColoredRGB('{CF0000}Отсутствует')
+			end
+			imgui.SetCursorPos(imgui.ImVec2(531, 97))
+			if sob_info.writ == -1 then
+				imgui.TextColoredRGB('{CF0000}Неизвестно')
+			elseif sob_info.writ == 0 then
+				imgui.TextColoredRGB('{00A115}Отсутствует')
+			elseif sob_info.writ == 1 then
+				imgui.TextColoredRGB('{CF0000}Имеется')
+			end
 		end
 		imgui.PopFont()
 		
@@ -3855,6 +3987,8 @@ function win_sobes_fix()
 				hp = -1,
 				bl = -1,
 				lic = -1,
+				lico = -1,
+				warn = -1,
 				writ = -1
 			}
 		end)
@@ -4094,6 +4228,10 @@ function win_sobes_fix()
 		
 		skin.InputText(10, 329, u8'Текст сообщения', 'inp_text_sob', 512, 555)
 		if inp_text_sob ~= '' then
+			if imgui.IsItemHovered() and imgui.IsKeyPressed(13) then
+				sampSendChat(u8:decode(inp_text_sob))
+				inp_text_sob = ''
+			end
 			skin.Button(u8'Отправить', 575, 326, 81, 28, function()
 				sampSendChat(u8:decode(inp_text_sob))
 				inp_text_sob = ''
@@ -5703,7 +5841,7 @@ function window.main()
 				end
 				imgui.PushFont(font[1])
 				imgui.SetCursorPos(imgui.ImVec2(34, 204))
-				imgui.Text(u8'Автоматическое принятие документов (На доработке)')
+				imgui.Text(u8'Автоматическое принятие документов')
 				imgui.PopFont()
 				imgui.SetCursorPos(imgui.ImVec2(34, 226))
 				imgui.PushFont(font[3])
@@ -5777,7 +5915,25 @@ function window.main()
 				imgui.SetCursorPos(imgui.ImVec2(34, 474 + pos_at_kick))
 				imgui.Text(u8'Отображать над миникартой расстояние до пользовательской метки')
 				imgui.PopFont()
-				
+
+			if setting.frac.org == u8'ТСР' then
+    			new_draw(519, 68)
+    			imgui.SetCursorPos(imgui.ImVec2(639, 535))
+    			if skin.Switch(u8'##Автоматические отыгровки оружий', setting.auto_weapon) then
+        			setting.auto_weapon = not setting.auto_weapon
+        			save('setting') 
+    			end
+    			imgui.PushFont(font[1])
+    			imgui.SetCursorPos(imgui.ImVec2(34, 536))
+    			imgui.Text(u8'Автоматические отыгровки всех оружий')
+    			imgui.PopFont()
+    			imgui.SetCursorPos(imgui.ImVec2(34, 558))
+    			imgui.PushFont(font[3])
+    			imgui.TextColored(imgui.ImVec4(col_end.text, col_end.text, col_end.text, 0.50), u8'Автоматические отыгровки при использовании оружия (достал/убрал)')
+    			imgui.PopFont()
+			end
+
+
 				--[[local pos_at_kick2 = 0
 				if setting.stat_online_display then
 					pos_at_kick2 = 39 + pos_at_kick
@@ -5957,7 +6113,8 @@ function window.main()
 					imgui.SetCursorPos(imgui.ImVec2(32, 255))
 					imgui.BeginChild(u8'История нововведений', imgui.ImVec2(646, 320), false)
 					imgui.PushFont(font[1])
-                    imgui.TextWrapped(u8'[Версия 2.5]:\n\n1. Исправление багов, которые вызивали краш скрипта.\n\n[Версия 2.4]:\n\n1. Исправлен краш скрипта через отображение /members на екране.\n2. Добавлены новые аргументы: {get_ru_nick[id игрока]} и {copy_nick[id игрока]}.\n3. Добавлена возможность копировать аргументы.\n4. Добавлено больше настроек чата и авто-выправление отыгровок по РП формату.\n5. Исправлен баг в ходе загрузки шрифтов, и многи другие\n6. Добавлена новая фракция - ТСР\n7. Добавлена команда /sob - начать собеседование по ID игрока\n\n[Версия 2.3]:\n\n1. Произведена переробка для обновления к полностью переработаному скрипту.\n2. Исправлен баг, из-за которого в статистику перестали добавляться данные.\n3. Исправлен баг, из-за которого происходил краш скрипта после выдачи лицензии.\n4. Исправлен краш скрипта после проведения осмотра.\n5. Исправлен краш у некоторых пользователей после выдачи мед. карты.\n\n[Версия 2.2]:\n\n1. Количество заготовленных сообщений во вкладке Департамента увеличено до 10.\n2. Исправлен баг, из-за которого происходил краш из-за некоторых символов в имени шпоры.\n3. Исправлен баг, из-за которого вызовы поступали при включённой функции отключения чата во время РП.\n4. Исправлен баг, из-за которого окно выдачи лицензии не подтверждало автоматически.\n5. Исправлен баг, из-за которого текст принятия вызова был только от лица мужского пола.\n6. Теперь для удаления сцены в РП зоне Вы должны подтвердить это действие.\n7. Проблема с прибавлением в статистику премий окончательно решена.\n8. Исправлен баг в РП зоне, из-за которого имя персонажа на русском отображалось краказябрами.\n\n[Версия 2.1]:\n\n1. Теперь скрипт поддерживает организацию "Правительство".\n2. В РП зону добавлена отыгровка телефона.\n3. Во вкладке "Обновление" теперь есть информация о нововведениях предыдущих версий.\n4. Во вкладке Департамента добавлен формат обращения через закрытый канал.\n5. Функция определения расстояния вызовов теперь работает в разы лучше.\n6. Теперь, при получении ответа от поддержки, у вкладки появляется значок уведомления.\n7. После обновления скрипт теперь будет писать результат обновления.\n8. В настройках скрипта теперь можно отключить приветственное сообщение от скрипта.\n9. Отыгровка CURE была укорочена и актуализирована под правила проекта.\n10. Исправлен баг из-за которого вкладка с вызовами была доступна всем.\n11. Исправлен баг из-за которого включённой автоотыгровке и отключённом автопринятии документы не отображались.\n12. Исправлен баг из-за которого у ЦЛ добавлялись вдобавок отыгровки медиков.\n13. Исправлен баг из-за которого происходил краш скрипта во вкладке с музыкой из-за некоторых названий артистов и песен.\n14. Исправлен баг из-за которого у женского пола отыгровка приветствия была от лица мужского пола.\n15. Исправлен баг из-за которого происходил краш скрипта при пустых полях в ценовой политике.\n16. Исправлен баг из-за которого команды выговора и увольнения стирали текст после пробела.\n17. Исправлен баг из-за которого происходил краш при многократном нажатии на вкладку помощи.\n18. Исправлен баг из-за которого Ваш id в скрипте не обновлялся после реконекта.\n19. Исправлен баг из-за которого репортажи от СМИ не скрывались при включённой функции.\n20. Исправлен баг из-за которого в лог статистики не прибавлялись премии у некоторых пользователей.\n21. Исправлен баг из-за которого инвентарь не реагировал при включённой статистики онлайна.\n22. Исправлен баг из-за которого на экране не скрывались время, стата онлайна и текстдрав анимации при включённой сцене в РП зоне.\n23. Доступ к команде лечения изменён на первый ранг.')
+
+                    imgui.TextWrapped(u8'[Версия 2.6]:\n\n1. Подкоректировано авто-исправление отыгровок.\n2. Добавлены отыгровки оружия для ТСР и проверка лицензии на оружие в собеседовании.\n3. В собеседовании добавлена проверка наличия Warn у игрока\n4. Исправлен визуальный вигляд окна быстрого действия.\n5. Добавлено 3 новых аргумента {city} и {month} и {nearest}\n6. Текст в диалоге собеседования теперь можно отправить на Enter.\n7. При нахождении в военном вертолете за ТСР при нажатии кнопка 2, откроется меню /carm.\n8. Исправлено другие мелкие правки.\n\n[Версия 2.5]:\n\n1. Исправление багов, которые вызивали краш скрипта.\n\n[Версия 2.4]:\n\n1. Исправлен краш скрипта через отображение /members на екране.\n2. Добавлены новые аргументы: {get_ru_nick[id игрока]} и {copy_nick[id игрока]}.\n3. Добавлена возможность копировать аргументы.\n4. Добавлено больше настроек чата и авто-выправление отыгровок по РП формату.\n5. Исправлен баг в ходе загрузки шрифтов, и многи другие\n6. Добавлена новая фракция - ТСР\n7. Добавлена команда /sob - начать собеседование по ID игрока\n\n[Версия 2.3]:\n\n1. Произведена переробка для обновления к полностью переработаному скрипту.\n2. Исправлен баг, из-за которого в статистику перестали добавляться данные.\n3. Исправлен баг, из-за которого происходил краш скрипта после выдачи лицензии.\n4. Исправлен краш скрипта после проведения осмотра.\n5. Исправлен краш у некоторых пользователей после выдачи мед. карты.\n\n[Версия 2.2]:\n\n1. Количество заготовленных сообщений во вкладке Департамента увеличено до 10.\n2. Исправлен баг, из-за которого происходил краш из-за некоторых символов в имени шпоры.\n3. Исправлен баг, из-за которого вызовы поступали при включённой функции отключения чата во время РП.\n4. Исправлен баг, из-за которого окно выдачи лицензии не подтверждало автоматически.\n5. Исправлен баг, из-за которого текст принятия вызова был только от лица мужского пола.\n6. Теперь для удаления сцены в РП зоне Вы должны подтвердить это действие.\n7. Проблема с прибавлением в статистику премий окончательно решена.\n8. Исправлен баг в РП зоне, из-за которого имя персонажа на русском отображалось краказябрами.\n\n[Версия 2.1]:\n\n1. Теперь скрипт поддерживает организацию "Правительство".\n2. В РП зону добавлена отыгровка телефона.\n3. Во вкладке "Обновление" теперь есть информация о нововведениях предыдущих версий.\n4. Во вкладке Департамента добавлен формат обращения через закрытый канал.\n5. Функция определения расстояния вызовов теперь работает в разы лучше.\n6. Теперь, при получении ответа от поддержки, у вкладки появляется значок уведомления.\n7. После обновления скрипт теперь будет писать результат обновления.\n8. В настройках скрипта теперь можно отключить приветственное сообщение от скрипта.\n9. Отыгровка CURE была укорочена и актуализирована под правила проекта.\n10. Исправлен баг из-за которого вкладка с вызовами была доступна всем.\n11. Исправлен баг из-за которого включённой автоотыгровке и отключённом автопринятии документы не отображались.\n12. Исправлен баг из-за которого у ЦЛ добавлялись вдобавок отыгровки медиков.\n13. Исправлен баг из-за которого происходил краш скрипта во вкладке с музыкой из-за некоторых названий артистов и песен.\n14. Исправлен баг из-за которого у женского пола отыгровка приветствия была от лица мужского пола.\n15. Исправлен баг из-за которого происходил краш скрипта при пустых полях в ценовой политике.\n16. Исправлен баг из-за которого команды выговора и увольнения стирали текст после пробела.\n17. Исправлен баг из-за которого происходил краш при многократном нажатии на вкладку помощи.\n18. Исправлен баг из-за которого Ваш id в скрипте не обновлялся после реконекта.\n19. Исправлен баг из-за которого репортажи от СМИ не скрывались при включённой функции.\n20. Исправлен баг из-за которого в лог статистики не прибавлялись премии у некоторых пользователей.\n21. Исправлен баг из-за которого инвентарь не реагировал при включённой статистики онлайна.\n22. Исправлен баг из-за которого на экране не скрывались время, стата онлайна и текстдрав анимации при включённой сцене в РП зоне.\n23. Доступ к команде лечения изменён на первый ранг.')
 					imgui.TextWrapped(u8'20. Исправлен баг из-за которого в лог статистики не прибавлялись премии у некоторых пользователей.\n21. Исправлен баг из-за которого инвентарь не реагировал при включённой статистики онлайна.\n22. Исправлен баг из-за которого на экране не скрывались время, стата онлайна и текстдрав анимации при включённой сцене в РП зоне.\n23. Доступ к команде лечения изменён на первый ранг.\n\n[Версия 2.0]:\n\n1. Добавлена новая вкладка с возможностью задать вопрос поддержке скрипта.\n2. Добавлена новая вкладка с историей чата игры и поиском информации в чате.\n3. Добавлена новая вкладка для быстрого взаимодействия с игрой.\n4. Добавлен новый ряд функций для удобного взаимодействия медикам с вызовами.\n5. Во вкладке с музыкой теперь можно включить другие радиостанции, помимо Рекорда.\n6. Во вкладке со статистикой теперь можно добавить отображение статистики онлайна на экране.\n7. Добавлена функция отображения расстояния до метки на карте в режиме реального времени.\n8. Добавлена функция отключения лишней информации в чате во время РП процесса.\n9. Медикам добавлена команда hme для лечения самого себя.\n10. Во вкладку с командами добавлена возможность поиска команды.\n11. Медикам в статистику добавлены осмотр на пилота, выдача ВУ и премии с квестов.\n12. Исправлена ошибка из-за которой скрипт не работал из-за русских символов в пути к игре.\n13. Доработана система скрытия подсказок сервера в чате.\n14. Добавлены взаимодействия со скриптом: перезагрузка, сброс, полное удаление.\n15. Исправлены мелкие баги интерфейса, а также совершена перестановка вкладок.')
 					imgui.Dummy(imgui.ImVec2(0, 25))
 					imgui.TextWrapped(u8'[Версия 1.9]:\n\n1. Доработка дизайна.\n2. Исправлен баг с неверным отображением вызовов в статистике.\n3. Добавлена ценовая политика для Автошколы.\n4. Добавлены две новые команды для Больницы: оформление страховки и осмотр для военного билета.\n\n[Версия 1.8]:\n\n1. Небольшие изменения дизайна.\n2. Вкладка музыки вновь работает.\n3. Добавлена функция кика при превышении нормы АФК.\n4. Добавлена функция анти-тревожной кнопки.\n5. Добавлена функция автоматической отыгровки при принятии документов\n6. В меню собеседования добавлена информация о наличии повестки у игрока и лицензии на авто.\n7. В уведомлении о вызове в рации департамента добавлено больше тегов.\n8. В меню Департамента добавлена возможность быстро вставлять заготовленный текст.\n9. Статистика прибыли актуализирована под последние обновления.\n10. В команду SHOW добавлена возможность показа трудовой книжки.\n11. Изменена кнопка взаимодействия с игроками в меню быстрого доступа.\n12. Добавлена возможность просматривать шпаргалку через меню выбора.\n13. Исправлен баг интерфейса во вкладке Статистика.\n14. Создан канал в Discord для решения вопросов и помощи в улучшении скрипта.\n\n[Версия 1.7]:\n\n1. Исправлен баг сохранения изменений в настройках мемберса\n2. Исправлен баг определения должности\n3. Небольшие изменения дизайна\n4. Изменено пользовательское соглашение.')
@@ -6624,6 +6781,11 @@ function window.main()
 				command_err_nm = false
 				command_err_cmd = false
 			end
+			--[[
+			if skin.Button(u8'Быстрое редактирование', 670, 10, 160, 25, function() end) then
+			
+			end
+			]]
 			if imgui.BeginPopupModal(u8'Дальнейшие действия с командой', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
 				imgui.BeginChild(u8'Действие с командой', imgui.ImVec2(400, 200), false, imgui.WindowFlags.NoScrollbar)
 				imgui.SetCursorPos(imgui.ImVec2(0, 0))
@@ -7905,54 +8067,57 @@ function window.main()
 					tag_hint_text(9, '{get_ru_nick[id игрока]}', 'Выведет ник игрока по его ID на русском')
 					tag_hint_text(10, '{getplnick[id игрока]}', 'Выведет ник игрока по его ID')
 					tag_hint_text(11, '{copy_nick[id игрока]}', 'Скопировать Nick_Name игрока')
-					tag_hint_text(12, '{med7}', 'Выведет цену на новую мед. карту на 7 дней')
-					tag_hint_text(13, '{med14}', 'Выведет цену на новую мед. карту на 14 дней')
-					tag_hint_text(14, '{med30}', 'Выведет цену на новую мед. карту на 30 дней')
-					tag_hint_text(15, '{med60}', 'Выведет цену на новую мед. карту на 60 дней')
-					tag_hint_text(16, '{medup7}', 'Выведет цену на обновлённую мед. карту на 7 дней')
-					tag_hint_text(17, '{medup14}', 'Выведет цену на обновлённую мед. карту на 14 дней')
-					tag_hint_text(18, '{medup30}', 'Выведет цену на обновлённую мед. карту на 30 дней')
-					tag_hint_text(19, '{medup60}', 'Выведет цену на обновлённую мед. карту на 60 дней')
-					tag_hint_text(20, '{pricenarko}', 'Выведет цену на снятие укропозависимости')
-					tag_hint_text(21, '{pricerecept}', 'Выведет цену на рецепт')
-					tag_hint_text(22, '{pricetatu}', 'Выведет цену удаление татуировки с тела')
-					tag_hint_text(23, '{priceant }', 'Выведет цену на антибиотик')
-					tag_hint_text(24, '{pricelec }', 'Выведет цену на лечение')
-					tag_hint_text(25, '{priceosm }', 'Выведет цену на мед. осмотр')
+					tag_hint_text(12, '{city}', 'Выдает город в котором находишся')
+					tag_hint_text(13, '{area}', 'Выдает район в котором находишся')
+					tag_hint_text(14, '{nearest}', 'Получить id ближайшего игрока в радиусе 60 метров')
+					tag_hint_text(15, '{med7}', 'Выведет цену на новую мед. карту на 7 дней')
+					tag_hint_text(16, '{med14}', 'Выведет цену на новую мед. карту на 14 дней')
+					tag_hint_text(17, '{med30}', 'Выведет цену на новую мед. карту на 30 дней')
+					tag_hint_text(18, '{med60}', 'Выведет цену на новую мед. карту на 60 дней')
+					tag_hint_text(19, '{medup7}', 'Выведет цену на обновлённую мед. карту на 7 дней')
+					tag_hint_text(20, '{medup14}', 'Выведет цену на обновлённую мед. карту на 14 дней')
+					tag_hint_text(21, '{medup30}', 'Выведет цену на обновлённую мед. карту на 30 дней')
+					tag_hint_text(22, '{medup60}', 'Выведет цену на обновлённую мед. карту на 60 дней')
+					tag_hint_text(23, '{pricenarko}', 'Выведет цену на снятие укропозависимости')
+					tag_hint_text(24, '{pricerecept}', 'Выведет цену на рецепт')
+					tag_hint_text(25, '{pricetatu}', 'Выведет цену удаление татуировки с тела')
+					tag_hint_text(26, '{priceant }', 'Выведет цену на антибиотик')
+					tag_hint_text(27, '{pricelec }', 'Выведет цену на лечение')
+					tag_hint_text(28, '{priceosm }', 'Выведет цену на мед. осмотр')
 					
-					tag_hint_text(26, '{priceauto1}', 'Выведет цену на авто за 1 месяц')
-					tag_hint_text(27, '{priceauto2}', 'Выведет цену на авто за 2 месяца')
-					tag_hint_text(28, '{priceauto3}', 'Выведет цену на авто за 3 месяца')
-					tag_hint_text(29, '{pricemoto1}', 'Выведет цену на мото за 1 месяц')
-					tag_hint_text(30, '{pricemoto2}', 'Выведет цену на мото за 2 месяца')
-					tag_hint_text(31, '{pricemoto3}', 'Выведет цену на мото за 3 месяца')
-					tag_hint_text(32, '{pricefly}', 'Выведет цену на полёты')
-					tag_hint_text(33, '{pricefish1}', 'Выведет цену на рыбалку за 1 месяц')
-					tag_hint_text(34, '{pricefish2}', 'Выведет цену на рыбалку за 2 месяца')
-					tag_hint_text(35, '{pricefish3}', 'Выведет цену на рыбалку за 3 месяца')
-					tag_hint_text(36, '{priceswim1}', 'Выведет цену на водный транспорт за 1 месяц')
-					tag_hint_text(37, '{priceswim2}', 'Выведет цену на водный транспорт за 2 месяца')
-					tag_hint_text(38, '{priceswim3}', 'Выведет цену на водный транспорт за 3 месяца')
-					tag_hint_text(39, '{pricegun1}', 'Выведет цену на оружие за 1 месяц')
-					tag_hint_text(40, '{pricegun2}', 'Выведет цену на оружие за 2 месяца')
-					tag_hint_text(41, '{pricegun3}', 'Выведет цену на оружие за 3 месяца')
-					tag_hint_text(42, '{pricehunt1}', 'Выведет цену на охоту за 1 месяц')
-					tag_hint_text(43, '{pricehunt2}', 'Выведет цену на охоту за 2 месяца')
-					tag_hint_text(44, '{pricehunt3}', 'Выведет цену на охоту за 3 месяца')
-					tag_hint_text(45, '{priceexc1}', 'Выведет цену на раскопки за 1 месяц')
-					tag_hint_text(46, '{priceexc2}', 'Выведет цену на раскопки за 2 месяца')
-					tag_hint_text(47, '{priceexc3}', 'Выведет цену на раскопки за 3 месяца')
-					tag_hint_text(48, '{pricetaxi1}', 'Выведет цену на такси за 1 месяц')
-					tag_hint_text(49, '{pricetaxi2}', 'Выведет цену на такси за 2 месяца')
-					tag_hint_text(50, '{pricetaxi3}', 'Выведет цену на такси за 3 месяца')
-					tag_hint_text(51, '{pricemeh1}', 'Выведет цену на механика за 1 месяц')
-					tag_hint_text(52, '{pricemeh2}', 'Выведет цену на механика за 2 месяца')
-					tag_hint_text(53, '{pricemeh3}', 'Выведет цену на механика за 3 месяца')
+					tag_hint_text(29, '{priceauto1}', 'Выведет цену на авто за 1 месяц')
+					tag_hint_text(30, '{priceauto2}', 'Выведет цену на авто за 2 месяца')
+					tag_hint_text(31, '{priceauto3}', 'Выведет цену на авто за 3 месяца')
+					tag_hint_text(32, '{pricemoto1}', 'Выведет цену на мото за 1 месяц')
+					tag_hint_text(33, '{pricemoto2}', 'Выведет цену на мото за 2 месяца')
+					tag_hint_text(34, '{pricemoto3}', 'Выведет цену на мото за 3 месяца')
+					tag_hint_text(35, '{pricefly}', 'Выведет цену на полёты')
+					tag_hint_text(36, '{pricefish1}', 'Выведет цену на рыбалку за 1 месяц')
+					tag_hint_text(37, '{pricefish2}', 'Выведет цену на рыбалку за 2 месяца')
+					tag_hint_text(38, '{pricefish3}', 'Выведет цену на рыбалку за 3 месяца')
+					tag_hint_text(39, '{priceswim1}', 'Выведет цену на водный транспорт за 1 месяц')
+					tag_hint_text(40, '{priceswim2}', 'Выведет цену на водный транспорт за 2 месяца')
+					tag_hint_text(41, '{priceswim3}', 'Выведет цену на водный транспорт за 3 месяца')
+					tag_hint_text(42, '{pricegun1}', 'Выведет цену на оружие за 1 месяц')
+					tag_hint_text(43, '{pricegun2}', 'Выведет цену на оружие за 2 месяца')
+					tag_hint_text(44, '{pricegun3}', 'Выведет цену на оружие за 3 месяца')
+					tag_hint_text(45, '{pricehunt1}', 'Выведет цену на охоту за 1 месяц')
+					tag_hint_text(46, '{pricehunt2}', 'Выведет цену на охоту за 2 месяца')
+					tag_hint_text(47, '{pricehunt3}', 'Выведет цену на охоту за 3 месяца')
+					tag_hint_text(48, '{priceexc1}', 'Выведет цену на раскопки за 1 месяц')
+					tag_hint_text(49, '{priceexc2}', 'Выведет цену на раскопки за 2 месяца')
+					tag_hint_text(50, '{priceexc3}', 'Выведет цену на раскопки за 3 месяца')
+					tag_hint_text(51, '{pricetaxi1}', 'Выведет цену на такси за 1 месяц')
+					tag_hint_text(52, '{pricetaxi2}', 'Выведет цену на такси за 2 месяца')
+					tag_hint_text(53, '{pricetaxi3}', 'Выведет цену на такси за 3 месяца')
+					tag_hint_text(54, '{pricemeh1}', 'Выведет цену на механика за 1 месяц')
+					tag_hint_text(55, '{pricemeh2}', 'Выведет цену на механика за 2 месяца')
+					tag_hint_text(56, '{pricemeh3}', 'Выведет цену на механика за 3 месяца')
 					
-					tag_hint_text(54, '{sex:муж,жен}', 'Добавит текст в соответствии с выбранным полом')
-					tag_hint_text(55, '{dialoglic[id лицензии][id срока][id игрока]}', 'Автовыбор диалога с лицензией')
-					tag_hint_text(56, '{target}', 'Выведет id с последнего прицела на игрока')
-					tag_hint_text(57, '{prtsc}', 'Сделает скриншот игры F8')
+					tag_hint_text(57, '{sex:муж,жен}', 'Добавит текст в соответствии с выбранным полом')
+					tag_hint_text(58, '{dialoglic[id лицензии][id срока][id игрока]}', 'Автовыбор диалога с лицензией')
+					tag_hint_text(59, '{target}', 'Выведет id с последнего прицела на игрока')
+					tag_hint_text(60, '{prtsc}', 'Сделает скриншот игры F8')
 					
 					imgui.EndChild()
 					
@@ -10703,36 +10868,39 @@ end
 
 function window.act_choice()
 	if sampIsPlayerConnected(targ_id) then
-		imgui.SetNextWindowSize(imgui.ImVec2(278, 165 + ((#setting.fast_acc.sl - 1) * 35)), imgui.Cond.FirstUseEver)
+		local actions_per_column = 5
+		local total_actions = #setting.fast_acc.sl
+		local column_count = math.ceil(total_actions / actions_per_column)
+		local fixed_height = 350
+		imgui.SetNextWindowSize(imgui.ImVec2(278 * column_count, fixed_height), imgui.Cond.FirstUseEver)
 		imgui.SetNextWindowPos(imgui.ImVec2(setting.pos_act.x, setting.pos_act.y), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
 		imgui.Begin('Choice Window', win.action_choice.v, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar)
-		skin.DrawFond({4, 4}, {0, 0}, {270, 161 + ((#setting.fast_acc.sl - 1) * 35)}, imgui.ImVec4(col_end.fond_two[1], col_end.fond_two[2], col_end.fond_two[3], 1.00), 15, 15)
+		skin.DrawFond({4, 4}, {0, 0}, {270 * column_count, fixed_height}, imgui.ImVec4(col_end.fond_two[1], col_end.fond_two[2], col_end.fond_two[3], 1.00), 15, 15)
 		local bool_pos_act = imgui.GetWindowPos()
-		local bool_upd_pos = {x = bool_pos_act.x + 139, y = bool_pos_act.y + ((165 + ((#setting.fast_acc.sl - 1) * 35)) / 2)}
+		local bool_upd_pos = {x = bool_pos_act.x + 139 * column_count, y = bool_pos_act.y + (fixed_height / 2)}
 		if not imgui.IsMouseDown(0) then
 			if bool_upd_pos.x ~= setting.pos_act.x or bool_upd_pos.y ~= setting.pos_act.y then
 				setting.pos_act = {x = bool_upd_pos.x, y = bool_upd_pos.y}
 				save('setting')
 			end
 		end
-		
 		imgui.PushFont(font[4])
 		local calc = imgui.CalcTextSize(flies_nick..' ['..flies_id..']')
-		imgui.SetCursorPos(imgui.ImVec2(130 - calc.x / 2, 4))
+		local header_width = calc.x + 18
+		imgui.SetCursorPos(imgui.ImVec2((278 * column_count - header_width) / 2, 4))
 		local p = imgui.GetCursorScreenPos()
 		if setting.int.theme == 'White' then
-			imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + calc.x + 18, p.y + 35), imgui.GetColorU32(imgui.ImVec4(0.10, 0.10, 0.10, 1.00)), 13, 12)
-			imgui.SetCursorPos(imgui.ImVec2(139 - calc.x / 2, 9))
+			imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + header_width, p.y + 35), imgui.GetColorU32(imgui.ImVec4(0.10, 0.10, 0.10, 1.00)), 13, 12)
+			imgui.SetCursorPos(imgui.ImVec2((278 * column_count - calc.x) / 2, 9))
 			imgui.TextColored(imgui.ImVec4(1.00, 1.00, 1.00, 1.00), flies_nick..' ['..flies_id..']')
 		else
-			imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + calc.x + 18, p.y + 35), imgui.GetColorU32(imgui.ImVec4(0.90, 0.90, 0.90, 1.00)), 13, 12)
-			imgui.SetCursorPos(imgui.ImVec2(139 - calc.x / 2, 9))
+			imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + header_width, p.y + 35), imgui.GetColorU32(imgui.ImVec4(0.90, 0.90, 0.90, 1.00)), 13, 12)
+			imgui.SetCursorPos(imgui.ImVec2((278 * column_count - calc.x) / 2, 9))
 			imgui.TextColored(imgui.ImVec4(0.00, 0.00, 0.00, 1.00), flies_nick..' ['..flies_id..']')
 		end
 		imgui.PopFont()
-		
 		imgui.PushFont(font[1])
-		for i = 1, #setting.fast_acc.sl do
+		for i = 1, total_actions do
 			local bool_cmd = true
 			for k = 1, #setting.cmd do
 				if setting.cmd[k][1] == setting.fast_acc.sl[i].cmd then
@@ -10742,9 +10910,12 @@ function window.act_choice()
 					break
 				end
 			end
-			
+			local column_index = math.floor((i - 1) / actions_per_column)
+			local row_index = (i - 1) % actions_per_column
+			local x_pos = 9 + (column_index * 270)
+			local y_pos = 60 + (row_index * 35)
 			if bool_cmd then
-				skin.Button(setting.fast_acc.sl[i].text..'##ch_text'..i, 9, 60 + ((i - 1) * 35), 260, 30, function()
+				skin.Button(setting.fast_acc.sl[i].text..'##ch_text'..i, x_pos, y_pos, 260, 30, function()
 					if sampIsPlayerConnected(flies_id) then
 						local cmd_send_chat = '/'..setting.fast_acc.sl[i].cmd
 						local arg_tr = ''
@@ -10770,19 +10941,25 @@ function window.act_choice()
 					end
 				end)
 			else
-				skin.Button(setting.fast_acc.sl[i].text..'##ch_text'..i..'##false_non', 9, 60 + ((i - 1) * 35), 260, 30, function() end)
+				skin.Button(setting.fast_acc.sl[i].text..'##ch_text'..i..'##false_non', x_pos, y_pos, 260, 30, function() end)
 				imgui.PushFont(fa_font[1])
-				imgui.SetCursorPos(imgui.ImVec2(250, 70 + ((i - 1) * 35)))
+				imgui.SetCursorPos(imgui.ImVec2(x_pos + 241, y_pos + 10))
 				imgui.TextColored(imgui.ImVec4(0.50, 0.50, 0.50, 1.00), fa.ICON_LOCK)
 				imgui.PopFont()
 			end
+			if row_index < actions_per_column - 1 then
+				imgui.GetWindowDrawList():AddLine(
+					imgui.ImVec2(x_pos, y_pos + 35),
+					imgui.ImVec2(x_pos + 260, y_pos + 35),
+					imgui.GetColorU32(imgui.ImVec4(0.7, 0.7, 0.7, 0.6))
+				)
+			end
 		end
-		
-		skin.Button(u8'Отменить', 9, 80 + (#setting.fast_acc.sl * 35), 260, 35, function()
+		skin.Button(u8'Отменить', 9, 80 + (actions_per_column * 35), 260 * column_count, 35, function()
 			win.action_choice.v = false
 		end)
 		imgui.PopFont()
-		
+
 		imgui.End()
 	end
 end
@@ -11445,6 +11622,19 @@ function tag_act(tick_tag)
 				else
 					tick_tag = tick_tag:gsub('{copy_nick%['.. num_id ..'%]}', '')
 				end
+			elseif tick_tag:find('{city}') then 
+				tick_tag = tick_tag:gsub('{city}', 
+					({
+						[0] = "Вне города",
+						[1] = "Лос-Сантос",
+						[2] = "Сан-Фиерро",
+						[3] = "Лас-Вентурас"
+					})[getCityPlayerIsIn(PLAYER_PED)] or "Неизвестный город"
+				)
+			elseif tick_tag:find('{area}') then 
+				tick_tag = tick_tag:gsub('{area}', area())
+			elseif tick_tag:find('{nearest}') then
+				tick_tag = tick_tag:gsub('{nearest}', nearest(60))
 			elseif tick_tag:find('{target}') then tick_tag = tick_tag:gsub('{target}', tostring(targ_id))
 			elseif tick_tag:find('{med7}') then tick_tag = tick_tag:gsub('{med7}', tostring(setting.price.mede[1]))
 			elseif tick_tag:find('{med14}') then tick_tag = tick_tag:gsub('{med14}', tostring(setting.price.mede[2]))
@@ -11548,6 +11738,434 @@ function RusNick(name)
         return name
     end
     return name
+end
+
+function nearest(radius)
+    local myPed = playerPed
+    local myX, myY, myZ = getCharCoordinates(myPed)
+    local nearestPlayerId = -1
+    local nearestDist = radius
+    
+    for i = 0, sampGetMaxPlayerId(false) do
+        if sampIsPlayerConnected(i) and i ~= my.id then
+            local result, playerPed = sampGetCharHandleBySampPlayerId(i)
+            if result then
+                local x, y, z = getCharCoordinates(playerPed)
+                local dist = getDistanceBetweenCoords3d(myX, myY, myZ, x, y, z)
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearestPlayerId = i
+                end
+            end
+        end
+    end
+    
+    if nearestPlayerId == -1 then
+        sampAddChatMessage(script_tag .. '{FFFFFF}Нету игроков поблизу!', color_tag)
+        return "Вне видимости"
+    else
+        return tostring(nearestPlayerId)
+    end
+end
+
+function area()
+    local x, y, z = getCharCoordinates(PLAYER_PED)
+    return get_area(x, y, z)
+end
+
+function get_area(x, y, z)
+    local closest_area, min_distance = nil, math.huge
+    local zones = {
+        {name = "Клуб Ависпа", x1 = -2667.810, y1 = -302.135, z1 = -28.831, x2 = -2646.400, y2 = -262.320, z2 = 71.169},
+        {name = "Аэропорт", x1 = -1315.420, y1 = -405.388, z1 = 15.406, x2 = -1264.400, y2 = -209.543, z2 = 25.406},
+        {name = "Гарсия", x1 = -2395.140, y1 = -222.589, z1 = -5.3, x2 = -2354.090, y2 = -204.792, z2 = 200.000},
+        {name = "Шейди-Кэбин", x1 = -1632.830, y1 = -2263.440, z1 = -3.0, x2 = -1601.330, y2 = -2231.790, z2 = 200.000},
+        {name = "Восточный ЛС", x1 = 2381.680, y1 = -1494.030, z1 = -89.084, x2 = 2421.030, y2 = -1454.350, z2 = 110.916},
+        {name = "Грузовое депо", x1 = 1236.630, y1 = 1163.410, z1 = -89.084, x2 = 1277.050, y2 = 1203.280, z2 = 110.916},
+        {name = "Пересечение Блэкфилд", x1 = 1277.050, y1 = 1044.690, z1 = -89.084, x2 = 1315.350, y2 = 1087.630, z2 = 110.916},
+        {name = "Темпл", x1 = 1252.330, y1 = -926.999, z1 = -89.084, x2 = 1357.000, y2 = -910.170, z2 = 110.916},
+        {name = "Станция Юнити", x1 = 1692.620, y1 = -1971.800, z1 = -20.492, x2 = 1812.620, y2 = -1932.800, z2 = 79.508},
+        {name = "Грузовое депо ЛВ", x1 = 1315.350, y1 = 1044.690, z1 = -89.084, x2 = 1375.600, y2 = 1087.630, z2 = 110.916},
+        {name = "Лос-Флорес", x1 = 2581.730, y1 = -1454.350, z1 = -89.084, x2 = 2632.830, y2 = -1393.420, z2 = 110.916},
+        {name = "Казино", x1 = 2437.390, y1 = 1858.100, z1 = -39.084, x2 = 2495.090, y2 = 1970.850, z2 = 60.916},
+		{name = "Химзавод Истер-Бэй", x1 = -1132.820, y1 = -787.391, z1 = 0.000, x2 = -956.476, y2 = -768.027, z2 = 200.000},
+		{name = "Деловой район", x1 = 1370.850, y1 = -1170.870, z1 = -89.084, x2 = 1463.900, y2 = -1130.850, z2 = 110.916},
+		{name = "Восточная Эспаланда", x1 = -1620.300, y1 = 1176.520, z1 = -4.5, x2 = -1580.010, y2 = 1274.260, z2 = 200.000},
+		{name = "Станция Маркет", x1 = 787.461, y1 = -1410.930, z1 = -34.126, x2 = 866.009, y2 = -1310.210, z2 = 65.874},
+		{name = "Станция Линден", x1 = 2811.250, y1 = 1229.590, z1 = -39.594, x2 = 2861.250, y2 = 1407.590, z2 = 60.406},
+		{name = "Пересечение Монтгомери", x1 = 1582.440, y1 = 347.457, z1 = 0.000, x2 = 1664.620, y2 = 401.750, z2 = 200.000},
+		{name = "Мост Фредерик", x1 = 2759.250, y1 = 296.501, z1 = 0.000, x2 = 2774.250, y2 = 594.757, z2 = 200.000},
+		{name = "Станция Йеллоу-Белл", x1 = 1377.480, y1 = 2600.430, z1 = -21.926, x2 = 1492.450, y2 = 2687.360, z2 = 78.074},
+		{name = "Деловой район", x1 = 1507.510, y1 = -1385.210, z1 = 110.916, x2 = 1582.550, y2 = -1325.310, z2 = 335.916},
+		{name = "Джефферсон", x1 = 2185.330, y1 = -1210.740, z1 = -89.084, x2 = 2281.450, y2 = -1154.590, z2 = 110.916},
+		{name = "Малхолланд", x1 = 1318.130, y1 = -910.170, z1 = -89.084, x2 = 1357.000, y2 = -768.027, z2 = 110.916},
+		{name = "Клуб Ависпа", x1 = -2361.510, y1 = -417.199, z1 = 0.000, x2 = -2270.040, y2 = -355.493, z2 = 200.000},
+		{name = "Джефферсон", x1 = 1996.910, y1 = -1449.670, z1 = -89.084, x2 = 2056.860, y2 = -1350.720, z2 = 110.916},
+		{name = "Западное шоссе", x1 = 1236.630, y1 = 2142.860, z1 = -89.084, x2 = 1297.470, y2 = 2243.230, z2 = 110.916},
+		{name = "Джефферсон", x1 = 2124.660, y1 = -1494.030, z1 = -89.084, x2 = 2266.210, y2 = -1449.670, z2 = 110.916},
+		{name = "Северное шоссе", x1 = 1848.400, y1 = 2478.490, z1 = -89.084, x2 = 1938.800, y2 = 2553.490, z2 = 110.916},
+		{name = "Родео", x1 = 422.680, y1 = -1570.200, z1 = -89.084, x2 = 466.223, y2 = -1406.050, z2 = 110.916},
+		{name = "Станция Крэнберри", x1 = -2007.830, y1 = 56.306, z1 = 0.000, x2 = -1922.000, y2 = 224.782, z2 = 100.000},
+		{name = "Деловой район", x1 = 1391.050, y1 = -1026.330, z1 = -89.084, x2 = 1463.900, y2 = -926.999, z2 = 110.916},
+		{name = "Западный Рэдсэндс", x1 = 1704.590, y1 = 2243.230, z1 = -89.084, x2 = 1777.390, y2 = 2342.830, z2 = 110.916},
+		{name = "Маленькая Мексика", x1 = 1758.900, y1 = -1722.260, z1 = -89.084, x2 = 1812.620, y2 = -1577.590, z2 = 110.916},
+		{name = "Пересечение Блэкфилд", x1 = 1375.600, y1 = 823.228, z1 = -89.084, x2 = 1457.390, y2 = 919.447, z2 = 110.916},
+		{name = "Аэропорт", x1 = 1974.630, y1 = -2394.330, z1 = -39.084, x2 = 2089.000, y2 = -2256.590, z2 = 60.916},
+		{name = "Бекон-Хилл", x1 = -399.633, y1 = -1075.520, z1 = -1.489, x2 = -319.033, y2 = -977.516, z2 = 198.511},
+		{name = "Родео", x1 = 334.503, y1 = -1501.950, z1 = -89.084, x2 = 422.680, y2 = -1406.050, z2 = 110.916},
+		{name = "Ричман", x1 = 225.165, y1 = -1369.620, z1 = -89.084, x2 = 334.503, y2 = -1292.070, z2 = 110.916},
+		{name = "Деловой район", x1 = 1724.760, y1 = -1250.900, z1 = -89.084, x2 = 1812.620, y2 = -1150.870, z2 = 110.916},
+		{name = "Стрип-клуб", x1 = 2027.400, y1 = 1703.230, z1 = -89.084, x2 = 2137.400, y2 = 1783.230, z2 = 110.916},
+		{name = "Деловой район", x1 = 1378.330, y1 = -1130.850, z1 = -89.084, x2 = 1463.900, y2 = -1026.330, z2 = 110.916},
+		{name = "Пересечение Блэкфилд", x1 = 1197.390, y1 = 1044.690, z1 = -89.084, x2 = 1277.050, y2 = 1163.390, z2 = 110.916},
+		{name = "Конференц Центр", x1 = 1073.220, y1 = -1842.270, z1 = -89.084, x2 = 1323.900, y2 = -1804.210, z2 = 110.916},
+		{name = "Монтгомери", x1 = 1451.400, y1 = 347.457, z1 = -6.1, x2 = 1582.440, y2 = 420.802, z2 = 200.000},
+		{name = "Долина Фостер", x1 = -2270.040, y1 = -430.276, z1 = -1.2, x2 = -2178.690, y2 = -324.114, z2 = 200.000},
+		{name = "Часовня Блэкфилд", x1 = 1325.600, y1 = 596.349, z1 = -89.084, x2 = 1375.600, y2 = 795.010, z2 = 110.916},
+		{name = "Аэропорт", x1 = 2051.630, y1 = -2597.260, z1 = -39.084, x2 = 2152.450, y2 = -2394.330, z2 = 60.916},
+		{name = "Малхолланд", x1 = 1096.470, y1 = -910.170, z1 = -89.084, x2 = 1169.130, y2 = -768.027, z2 = 110.916},
+		{name = "Поле для гольфа", x1 = 1457.460, y1 = 2723.230, z1 = -89.084, x2 = 1534.560, y2 = 2863.230, z2 = 110.916},
+		{name = "Стрип", x1 = 2027.400, y1 = 1783.230, z1 = -89.084, x2 = 2162.390, y2 = 1863.230, z2 = 110.916},
+		{name = "Джефферсон", x1 = 2056.860, y1 = -1210.740, z1 = -89.084, x2 = 2185.330, y2 = -1126.320, z2 = 110.916},
+		{name = "Малхолланд", x1 = 952.604, y1 = -937.184, z1 = -89.084, x2 = 1096.470, y2 = -860.619, z2 = 110.916},
+		{name = "Альдеа-Мальвада", x1 = -1372.140, y1 = 2498.520, z1 = 0.000, x2 = -1277.590, y2 = 2615.350, z2 = 200.000},
+		{name = "Лас-Колинас", x1 = 2126.860, y1 = -1126.320, z1 = -89.084, x2 = 2185.330, y2 = -934.489, z2 = 110.916},
+		{name = "Лас-Колинас", x1 = 1994.330, y1 = -1100.820, z1 = -89.084, x2 = 2056.860, y2 = -920.815, z2 = 110.916},
+		{name = "Ричман", x1 = 647.557, y1 = -954.662, z1 = -89.084, x2 = 768.694, y2 = -860.619, z2 = 110.916},
+		{name = "Грузовое депо", x1 = 1277.050, y1 = 1087.630, z1 = -89.084, x2 = 1375.600, y2 = 1203.280, z2 = 110.916},
+		{name = "Северное шоссе", x1 = 1377.390, y1 = 2433.230, z1 = -89.084, x2 = 1534.560, y2 = 2507.230, z2 = 110.916},
+		{name = "Уиллоуфилд", x1 = 2201.820, y1 = -2095.000, z1 = -89.084, x2 = 2324.000, y2 = -1989.900, z2 = 110.916},
+		{name = "Северное шоссе", x1 = 1704.590, y1 = 2342.830, z1 = -89.084, x2 = 1848.400, y2 = 2433.230, z2 = 110.916},
+		{name = "Темпл", x1 = 1252.330, y1 = -1130.850, z1 = -89.084, x2 = 1378.330, y2 = -1026.330, z2 = 110.916},
+		{name = "Маленькая Мексика", x1 = 1701.900, y1 = -1842.270, z1 = -89.084, x2 = 1812.620, y2 = -1722.260, z2 = 110.916},
+		{name = "Квинс", x1 = -2411.220, y1 = 373.539, z1 = 0.000, x2 = -2253.540, y2 = 458.411, z2 = 200.000},
+		{name = "Аэропорт", x1 = 1515.810, y1 = 1586.400, z1 = -12.500, x2 = 1729.950, y2 = 1714.560, z2 = 87.500},
+		{name = "Ричман", x1 = 225.165, y1 = -1292.070, z1 = -89.084, x2 = 466.223, y2 = -1235.070, z2 = 110.916},
+		{name = "Темпл", x1 = 1252.330, y1 = -1026.330, z1 = -89.084, x2 = 1391.050, y2 = -926.999, z2 = 110.916},
+		{name = "Восточный ЛС", x1 = 2266.260, y1 = -1494.030, z1 = -89.084, x2 = 2381.680, y2 = -1372.040, z2 = 110.916},
+		{name = "Воссточное шоссе", x1 = 2623.180, y1 = 943.235, z1 = -89.084, x2 = 2749.900, y2 = 1055.960, z2 = 110.916},
+		{name = "Уиллоуфилд", x1 = 2541.700, y1 = -1941.400, z1 = -89.084, x2 = 2703.580, y2 = -1852.870, z2 = 110.916},
+		{name = "Лас-Колинас", x1 = 2056.860, y1 = -1126.320, z1 = -89.084, x2 = 2126.860, y2 = -920.815, z2 = 110.916},
+		{name = "Воссточное шоссе", x1 = 2625.160, y1 = 2202.760, z1 = -89.084, x2 = 2685.160, y2 = 2442.550, z2 = 110.916},
+		{name = "Родео", x1 = 225.165, y1 = -1501.950, z1 = -89.084, x2 = 334.503, y2 = -1369.620, z2 = 110.916},
+		{name = "Лас-Брухас", x1 = -365.167, y1 = 2123.010, z1 = -3.0, x2 = -208.570, y2 = 2217.680, z2 = 200.000},
+		{name = "Воссточное шоссе", x1 = 2536.430, y1 = 2442.550, z1 = -89.084, x2 = 2685.160, y2 = 2542.550, z2 = 110.916},
+		{name = "Родео", x1 = 334.503, y1 = -1406.050, z1 = -89.084, x2 = 466.223, y2 = -1292.070, z2 = 110.916},
+		{name = "Вайнвуд", x1 = 647.557, y1 = -1227.280, z1 = -89.084, x2 = 787.461, y2 = -1118.280, z2 = 110.916},
+		{name = "Родео", x1 = 422.680, y1 = -1684.650, z1 = -89.084, x2 = 558.099, y2 = -1570.200, z2 = 110.916},
+		{name = "Северное шоссе", x1 = 2498.210, y1 = 2542.550, z1 = -89.084, x2 = 2685.160, y2 = 2626.550, z2 = 110.916},
+		{name = "Деловой район", x1 = 1724.760, y1 = -1430.870, z1 = -89.084, x2 = 1812.620, y2 = -1250.900, z2 = 110.916},
+		{name = "Родео", x1 = 225.165, y1 = -1684.650, z1 = -89.084, x2 = 312.803, y2 = -1501.950, z2 = 110.916},
+		{name = "Джефферсон", x1 = 2056.860, y1 = -1449.670, z1 = -89.084, x2 = 2266.210, y2 = -1372.040, z2 = 110.916},
+		{name = "Хэмптон-Барнс", x1 = 603.035, y1 = 264.312, z1 = 0.000, x2 = 761.994, y2 = 366.572, z2 = 200.000},
+		{name = "Темпл", x1 = 1096.470, y1 = -1130.840, z1 = -89.084, x2 = 1252.330, y2 = -1026.330, z2 = 110.916},
+		{name = "Мост Кинкейд", x1 = -1087.930, y1 = 855.370, z1 = -89.084, x2 = -961.950, y2 = 986.281, z2 = 110.916},
+		{name = "Пляж Верона", x1 = 1046.150, y1 = -1722.260, z1 = -89.084, x2 = 1161.520, y2 = -1577.590, z2 = 110.916},
+		{name = "Коммерческий район", x1 = 1323.900, y1 = -1722.260, z1 = -89.084, x2 = 1440.900, y2 = -1577.590, z2 = 110.916},
+		{name = "Малхолланд", x1 = 1357.000, y1 = -926.999, z1 = -89.084, x2 = 1463.900, y2 = -768.027, z2 = 110.916},
+		{name = "Родео", x1 = 466.223, y1 = -1570.200, z1 = -89.084, x2 = 558.099, y2 = -1385.070, z2 = 110.916},
+		{name = "Малхолланд", x1 = 911.802, y1 = -860.619, z1 = -89.084, x2 = 1096.470, y2 = -768.027, z2 = 110.916},
+		{name = "Малхолланд", x1 = 768.694, y1 = -954.662, z1 = -89.084, x2 = 952.604, y2 = -860.619, z2 = 110.916},
+		{name = "Южное шоссе", x1 = 2377.390, y1 = 788.894, z1 = -89.084, x2 = 2537.390, y2 = 897.901, z2 = 110.916},
+		{name = "Айдлвуд", x1 = 1812.620, y1 = -1852.870, z1 = -89.084, x2 = 1971.660, y2 = -1742.310, z2 = 110.916},
+		{name = "Океанские доки", x1 = 2089.000, y1 = -2394.330, z1 = -89.084, x2 = 2201.820, y2 = -2235.840, z2 = 110.916},
+		{name = "Коммерческий район", x1 = 1370.850, y1 = -1577.590, z1 = -89.084, x2 = 1463.900, y2 = -1384.950, z2 = 110.916},
+		{name = "Северное шоссе", x1 = 2121.400, y1 = 2508.230, z1 = -89.084, x2 = 2237.400, y2 = 2663.170, z2 = 110.916},
+		{name = "Темпл", x1 = 1096.470, y1 = -1026.330, z1 = -89.084, x2 = 1252.330, y2 = -910.170, z2 = 110.916},
+		{name = "Глен Парк", x1 = 1812.620, y1 = -1449.670, z1 = -89.084, x2 = 1996.910, y2 = -1350.720, z2 = 110.916},
+		{name = "Аэропорт Истер-Бэй", x1 = -1242.980, y1 = -50.096, z1 = 0.000, x2 = -1213.910, y2 = 578.396, z2 = 200.000},
+		{name = "Мост Мартин", x1 = -222.179, y1 = 293.324, z1 = 0.000, x2 = -122.126, y2 = 476.465, z2 = 200.000},
+		{name = "Стрип", x1 = 2106.700, y1 = 1863.230, z1 = -89.084, x2 = 2162.390, y2 = 2202.760, z2 = 110.916},
+		{name = "Уиллоуфилд", x1 = 2541.700, y1 = -2059.230, z1 = -89.084, x2 = 2703.580, y2 = -1941.400, z2 = 110.916},
+		{name = "Канал Марина", x1 = 807.922, y1 = -1577.590, z1 = -89.084, x2 = 926.922, y2 = -1416.250, z2 = 110.916},
+		{name = "Аэропорт", x1 = 1457.370, y1 = 1143.210, z1 = -89.084, x2 = 1777.400, y2 = 1203.280, z2 = 110.916},
+		{name = "Айдлвуд", x1 = 1812.620, y1 = -1742.310, z1 = -89.084, x2 = 1951.660, y2 = -1602.310, z2 = 110.916},
+		{name = "Восточная Эспаланда", x1 = -1580.010, y1 = 1025.980, z1 = -6.1, x2 = -1499.890, y2 = 1274.260, z2 = 200.000},
+		{name = "Деловой район", x1 = 1370.850, y1 = -1384.950, z1 = -89.084, x2 = 1463.900, y2 = -1170.870, z2 = 110.916},
+		{name = "Мост Мако", x1 = 1664.620, y1 = 401.750, z1 = 0.000, x2 = 1785.140, y2 = 567.203, z2 = 200.000},
+		{name = "Родео", x1 = 312.803, y1 = -1684.650, z1 = -89.084, x2 = 422.680, y2 = -1501.950, z2 = 110.916},
+		{name = "Площадь Першинг", x1 = 1440.900, y1 = -1722.260, z1 = -89.084, x2 = 1583.500, y2 = -1577.590, z2 = 110.916},
+		{name = "Малхолланд", x1 = 687.802, y1 = -860.619, z1 = -89.084, x2 = 911.802, y2 = -768.027, z2 = 110.916},
+		{name = "Мост Гант", x1 = -2741.070, y1 = 1490.470, z1 = -6.1, x2 = -2616.400, y2 = 1659.680, z2 = 200.000},
+		{name = "Лас-Колинас", x1 = 2185.330, y1 = -1154.590, z1 = -89.084, x2 = 2281.450, y2 = -934.489, z2 = 110.916},
+		{name = "Малхолланд", x1 = 1169.130, y1 = -910.170, z1 = -89.084, x2 = 1318.130, y2 = -768.027, z2 = 110.916},
+		{name = "Северное шоссе", x1 = 1938.800, y1 = 2508.230, z1 = -89.084, x2 = 2121.400, y2 = 2624.230, z2 = 110.916},
+		{name = "Коммерческий район", x1 = 1667.960, y1 = -1577.590, z1 = -89.084, x2 = 1812.620, y2 = -1430.870, z2 = 110.916},
+		{name = "Родео", x1 = 72.648, y1 = -1544.170, z1 = -89.084, x2 = 225.165, y2 = -1404.970, z2 = 110.916},
+		{name = "Рока-Эскаланте", x1 = 2536.430, y1 = 2202.760, z1 = -89.084, x2 = 2625.160, y2 = 2442.550, z2 = 110.916},
+		{name = "Родео", x1 = 72.648, y1 = -1684.650, z1 = -89.084, x2 = 225.165, y2 = -1544.170, z2 = 110.916},
+		{name = "Центральный Рынок", x1 = 952.663, y1 = -1310.210, z1 = -89.084, x2 = 1072.660, y2 = -1130.850, z2 = 110.916},
+		{name = "Лас-Колинас", x1 = 2632.740, y1 = -1135.040, z1 = -89.084, x2 = 2747.740, y2 = -945.035, z2 = 110.916},
+		{name = "Малхолланд", x1 = 861.085, y1 = -674.885, z1 = -89.084, x2 = 1156.550, y2 = -600.896, z2 = 110.916},
+		{name = "Кингс", x1 = -2253.540, y1 = 373.539, z1 = -9.1, x2 = -1993.280, y2 = 458.411, z2 = 200.000},
+		{name = "Восточный Рэдсэндс", x1 = 1848.400, y1 = 2342.830, z1 = -89.084, x2 = 2011.940, y2 = 2478.490, z2 = 110.916},
+		{name = "Деловой район", x1 = -1580.010, y1 = 744.267, z1 = -6.1, x2 = -1499.890, y2 = 1025.980, z2 = 200.000},
+		{name = "Конференц Центр", x1 = 1046.150, y1 = -1804.210, z1 = -89.084, x2 = 1323.900, y2 = -1722.260, z2 = 110.916},
+		{name = "Ричман", x1 = 647.557, y1 = -1118.280, z1 = -89.084, x2 = 787.461, y2 = -954.662, z2 = 110.916},
+		{name = "Оушен-Флэтс", x1 = -2994.490, y1 = 277.411, z1 = -9.1, x2 = -2867.850, y2 = 458.411, z2 = 200.000},
+		{name = "Колледж Грингласс", x1 = 964.391, y1 = 930.890, z1 = -89.084, x2 = 1166.530, y2 = 1044.690, z2 = 110.916},
+		{name = "Глен Парк", x1 = 1812.620, y1 = -1100.820, z1 = -89.084, x2 = 1994.330, y2 = -973.380, z2 = 110.916},
+		{name = "Грузовое депо", x1 = 1375.600, y1 = 919.447, z1 = -89.084, x2 = 1457.370, y2 = 1203.280, z2 = 110.916},
+		{name = "Регьюлар-Том", x1 = -405.770, y1 = 1712.860, z1 = -3.0, x2 = -276.719, y2 = 1892.750, z2 = 200.000},
+		{name = "Пляж Верона", x1 = 1161.520, y1 = -1722.260, z1 = -89.084, x2 = 1323.900, y2 = -1577.590, z2 = 110.916},
+		{name = "Восточный ЛС", x1 = 2281.450, y1 = -1372.040, z1 = -89.084, x2 = 2381.680, y2 = -1135.040, z2 = 110.916},
+		{name = "Дворец Калигулы", x1 = 2137.400, y1 = 1703.230, z1 = -89.084, x2 = 2437.390, y2 = 1783.230, z2 = 110.916},
+		{name = "Айдлвуд", x1 = 1951.660, y1 = -1742.310, z1 = -89.084, x2 = 2124.660, y2 = -1602.310, z2 = 110.916},
+		{name = "Пилигрим", x1 = 2624.400, y1 = 1383.230, z1 = -89.084, x2 = 2685.160, y2 = 1783.230, z2 = 110.916},
+		{name = "Айдлвуд", x1 = 2124.660, y1 = -1742.310, z1 = -89.084, x2 = 2222.560, y2 = -1494.030, z2 = 110.916},
+		{name = "Квинс", x1 = -2533.040, y1 = 458.411, z1 = 0.000, x2 = -2329.310, y2 = 578.396, z2 = 200.000},
+		{name = "Деловой район", x1 = -1871.720, y1 = 1176.420, z1 = -4.5, x2 = -1620.300, y2 = 1274.260, z2 = 200.000},
+		{name = "Коммерческий район", x1 = 1583.500, y1 = -1722.260, z1 = -89.084, x2 = 1758.900, y2 = -1577.590, z2 = 110.916},
+		{name = "Восточный ЛС", x1 = 2381.680, y1 = -1454.350, z1 = -89.084, x2 = 2462.130, y2 = -1135.040, z2 = 110.916},
+		{name = "Канал Марина", x1 = 647.712, y1 = -1577.590, z1 = -89.084, x2 = 807.922, y2 = -1416.250, z2 = 110.916},
+		{name = "Ричман", x1 = 72.648, y1 = -1404.970, z1 = -89.084, x2 = 225.165, y2 = -1235.070, z2 = 110.916},
+		{name = "Вайнвуд", x1 = 647.712, y1 = -1416.250, z1 = -89.084, x2 = 787.461, y2 = -1227.280, z2 = 110.916},
+		{name = "Восточный ЛС", x1 = 2222.560, y1 = -1628.530, z1 = -89.084, x2 = 2421.030, y2 = -1494.030, z2 = 110.916},
+		{name = "Родео", x1 = 558.099, y1 = -1684.650, z1 = -89.084, x2 = 647.522, y2 = -1384.930, z2 = 110.916},
+		{name = "Истерский Тоннель", x1 = -1709.710, y1 = -833.034, z1 = -1.5, x2 = -1446.010, y2 = -730.118, z2 = 200.000},
+		{name = "Родео", x1 = 466.223, y1 = -1385.070, z1 = -89.084, x2 = 647.522, y2 = -1235.070, z2 = 110.916},
+		{name = "Восточный Рэдсэндс", x1 = 1817.390, y1 = 2202.760, z1 = -89.084, x2 = 2011.940, y2 = 2342.830, z2 = 110.916},
+		{name = "Казино", x1 = 2162.390, y1 = 1783.230, z1 = -89.084, x2 = 2437.390, y2 = 1883.230, z2 = 110.916},
+		{name = "Айдлвуд", x1 = 1971.660, y1 = -1852.870, z1 = -89.084, x2 = 2222.560, y2 = -1742.310, z2 = 110.916},
+		{name = "Пересечение Монтгомери", x1 = 1546.650, y1 = 208.164, z1 = 0.000, x2 = 1745.830, y2 = 347.457, z2 = 200.000},
+		{name = "Уиллоуфилд", x1 = 2089.000, y1 = -2235.840, z1 = -89.084, x2 = 2201.820, y2 = -1989.900, z2 = 110.916},
+		{name = "Темпл", x1 = 952.663, y1 = -1130.840, z1 = -89.084, x2 = 1096.470, y2 = -937.184, z2 = 110.916},
+		{name = "Прикл-Пайн", x1 = 1848.400, y1 = 2553.490, z1 = -89.084, x2 = 1938.800, y2 = 2863.230, z2 = 110.916},
+		{name = "Аэропорт", x1 = 1400.970, y1 = -2669.260, z1 = -39.084, x2 = 2189.820, y2 = -2597.260, z2 = 60.916},
+		{name = "Мост Гарвер", x1 = -1213.910, y1 = 950.022, z1 = -89.084, x2 = -1087.930, y2 = 1178.930, z2 = 110.916},
+		{name = "Мост Гарвер", x1 = -1339.890, y1 = 828.129, z1 = -89.084, x2 = -1213.910, y2 = 1057.040, z2 = 110.916},
+		{name = "Мост Кинкейд", x1 = -1339.890, y1 = 599.218, z1 = -89.084, x2 = -1213.910, y2 = 828.129, z2 = 110.916},
+		{name = "Мост Кинкейд", x1 = -1213.910, y1 = 721.111, z1 = -89.084, x2 = -1087.930, y2 = 950.022, z2 = 110.916},
+		{name = "Пляж Верона", x1 = 930.221, y1 = -2006.780, z1 = -89.084, x2 = 1073.220, y2 = -1804.210, z2 = 110.916},
+		{name = "Обсерватория", x1 = 1073.220, y1 = -2006.780, z1 = -89.084, x2 = 1249.620, y2 = -1842.270, z2 = 110.916},
+		{name = "Гора Вайнвуд", x1 = 787.461, y1 = -1130.840, z1 = -89.084, x2 = 952.604, y2 = -954.662, z2 = 110.916},
+		{name = "Гора Вайнвуд", x1 = 787.461, y1 = -1310.210, z1 = -89.084, x2 = 952.663, y2 = -1130.840, z2 = 110.916},
+		{name = "Коммерческий район", x1 = 1463.900, y1 = -1577.590, z1 = -89.084, x2 = 1667.960, y2 = -1430.870, z2 = 110.916},
+		{name = "Центральный Рынок", x1 = 787.461, y1 = -1416.250, z1 = -89.084, x2 = 1072.660, y2 = -1310.210, z2 = 110.916},
+		{name = "Западный Рокшор", x1 = 2377.390, y1 = 596.349, z1 = -89.084, x2 = 2537.390, y2 = 788.894, z2 = 110.916},
+		{name = "Северное шоссе", x1 = 2237.400, y1 = 2542.550, z1 = -89.084, x2 = 2498.210, y2 = 2663.170, z2 = 110.916},
+		{name = "Восточный пляж", x1 = 2632.830, y1 = -1668.130, z1 = -89.084, x2 = 2747.740, y2 = -1393.420, z2 = 110.916},
+		{name = "Мост Фаллоу", x1 = 434.341, y1 = 366.572, z1 = 0.000, x2 = 603.035, y2 = 555.680, z2 = 200.000},
+		{name = "Уиллоуфилд", x1 = 2089.000, y1 = -1989.900, z1 = -89.084, x2 = 2324.000, y2 = -1852.870, z2 = 110.916},
+		{name = "Чайнатаун", x1 = -2274.170, y1 = 578.396, z1 = -7.6, x2 = -2078.670, y2 = 744.170, z2 = 200.000},
+		{name = "Скалистый массив", x1 = -208.570, y1 = 2337.180, z1 = 0.000, x2 = 8.430, y2 = 2487.180, z2 = 200.000},
+		{name = "Океанские доки", x1 = 2324.000, y1 = -2145.100, z1 = -89.084, x2 = 2703.580, y2 = -2059.230, z2 = 110.916},
+		{name = "Химзавод Истер-Бэй", x1 = -1132.820, y1 = -768.027, z1 = 0.000, x2 = -956.476, y2 = -578.118, z2 = 200.000},
+		{name = "Казино Визаж", x1 = 1817.390, y1 = 1703.230, z1 = -89.084, x2 = 2027.400, y2 = 1863.230, z2 = 110.916},
+		{name = "Оушен-Флэтс", x1 = -2994.490, y1 = -430.276, z1 = -1.2, x2 = -2831.890, y2 = -222.589, z2 = 200.000},
+		{name = "Ричман", x1 = 321.356, y1 = -860.619, z1 = -89.084, x2 = 687.802, y2 = -768.027, z2 = 110.916},
+		{name = "Нефтяной комплекс", x1 = 176.581, y1 = 1305.450, z1 = -3.0, x2 = 338.658, y2 = 1520.720, z2 = 200.000},
+		{name = "Ричман", x1 = 321.356, y1 = -768.027, z1 = -89.084, x2 = 700.794, y2 = -674.885, z2 = 110.916},
+		{name = "Казино", x1 = 2162.390, y1 = 1883.230, z1 = -89.084, x2 = 2437.390, y2 = 2012.180, z2 = 110.916},
+		{name = "Восточный пляж", x1 = 2747.740, y1 = -1668.130, z1 = -89.084, x2 = 2959.350, y2 = -1498.620, z2 = 110.916},
+		{name = "Джефферсон", x1 = 2056.860, y1 = -1372.040, z1 = -89.084, x2 = 2281.450, y2 = -1210.740, z2 = 110.916},
+		{name = "Деловой район", x1 = 1463.900, y1 = -1290.870, z1 = -89.084, x2 = 1724.760, y2 = -1150.870, z2 = 110.916},
+		{name = "Деловой район", x1 = 1463.900, y1 = -1430.870, z1 = -89.084, x2 = 1724.760, y2 = -1290.870, z2 = 110.916},
+		{name = "Мост Гарвер", x1 = -1499.890, y1 = 696.442, z1 = -179.615, x2 = -1339.890, y2 = 925.353, z2 = 20.385},
+		{name = "Южное шоссе", x1 = 1457.390, y1 = 823.228, z1 = -89.084, x2 = 2377.390, y2 = 863.229, z2 = 110.916},
+		{name = "Восточный ЛС", x1 = 2421.030, y1 = -1628.530, z1 = -89.084, x2 = 2632.830, y2 = -1454.350, z2 = 110.916},
+		{name = "Колледж Грингласс", x1 = 964.391, y1 = 1044.690, z1 = -89.084, x2 = 1197.390, y2 = 1203.220, z2 = 110.916},
+		{name = "Лас-Колинас", x1 = 2747.740, y1 = -1120.040, z1 = -89.084, x2 = 2959.350, y2 = -945.035, z2 = 110.916},
+		{name = "Малхолланд", x1 = 737.573, y1 = -768.027, z1 = -89.084, x2 = 1142.290, y2 = -674.885, z2 = 110.916},
+		{name = "Океанские доки", x1 = 2201.820, y1 = -2730.880, z1 = -89.084, x2 = 2324.000, y2 = -2418.330, z2 = 110.916},
+		{name = "Восточный ЛС", x1 = 2462.130, y1 = -1454.350, z1 = -89.084, x2 = 2581.730, y2 = -1135.040, z2 = 110.916},
+		{name = "Гантон", x1 = 2222.560, y1 = -1722.330, z1 = -89.084, x2 = 2632.830, y2 = -1628.530, z2 = 110.916},
+		{name = "Клуб Ависпа", x1 = -2831.890, y1 = -430.276, z1 = -6.1, x2 = -2646.400, y2 = -222.589, z2 = 200.000},
+		{name = "Уиллоуфилд", x1 = 1970.620, y1 = -2179.250, z1 = -89.084, x2 = 2089.000, y2 = -1852.870, z2 = 110.916},
+		{name = "Северная Эспланада", x1 = -1982.320, y1 = 1274.260, z1 = -4.5, x2 = -1524.240, y2 = 1358.900, z2 = 200.000},
+		{name = "Казино Хай-Роллер", x1 = 1817.390, y1 = 1283.230, z1 = -89.084, x2 = 2027.390, y2 = 1469.230, z2 = 110.916},
+		{name = "Океанские доки", x1 = 2201.820, y1 = -2418.330, z1 = -89.084, x2 = 2324.000, y2 = -2095.000, z2 = 110.916},
+		{name = "Мотель", x1 = 1823.080, y1 = 596.349, z1 = -89.084, x2 = 1997.220, y2 = 823.228, z2 = 110.916},
+		{name = "Бэйсайнд-Марина", x1 = -2353.170, y1 = 2275.790, z1 = 0.000, x2 = -2153.170, y2 = 2475.790, z2 = 200.000},
+		{name = "Кингс", x1 = -2329.310, y1 = 458.411, z1 = -7.6, x2 = -1993.280, y2 = 578.396, z2 = 200.000},
+		{name = "Эль-Корона", x1 = 1692.620, y1 = -2179.250, z1 = -89.084, x2 = 1812.620, y2 = -1842.270, z2 = 110.916},
+		{name = "Часовня Блэкфилд", x1 = 1375.600, y1 = 596.349, z1 = -89.084, x2 = 1558.090, y2 = 823.228, z2 = 110.916},
+		{name = "Розовый лебедь", x1 = 1817.390, y1 = 1083.230, z1 = -89.084, x2 = 2027.390, y2 = 1283.230, z2 = 110.916},
+		{name = "Западное шоссе", x1 = 1197.390, y1 = 1163.390, z1 = -89.084, x2 = 1236.630, y2 = 2243.230, z2 = 110.916},
+		{name = "Лос-Флорес", x1 = 2581.730, y1 = -1393.420, z1 = -89.084, x2 = 2747.740, y2 = -1135.040, z2 = 110.916},
+		{name = "Казино Визаж", x1 = 1817.390, y1 = 1863.230, z1 = -89.084, x2 = 2106.700, y2 = 2011.830, z2 = 110.916},
+		{name = "Прикл-Пайн", x1 = 1938.800, y1 = 2624.230, z1 = -89.084, x2 = 2121.400, y2 = 2861.550, z2 = 110.916},
+		{name = "Пляж Верона", x1 = 851.449, y1 = -1804.210, z1 = -89.084, x2 = 1046.150, y2 = -1577.590, z2 = 110.916},
+		{name = "Пересечение Робада", x1 = -1119.010, y1 = 1178.930, z1 = -89.084, x2 = -862.025, y2 = 1351.450, z2 = 110.916},
+		{name = "Линден-Сайд", x1 = 2749.900, y1 = 943.235, z1 = -89.084, x2 = 2923.390, y2 = 1198.990, z2 = 110.916},
+		{name = "Океанские доки", x1 = 2703.580, y1 = -2302.330, z1 = -89.084, x2 = 2959.350, y2 = -2126.900, z2 = 110.916},
+		{name = "Уиллоуфилд", x1 = 2324.000, y1 = -2059.230, z1 = -89.084, x2 = 2541.700, y2 = -1852.870, z2 = 110.916},
+		{name = "Кингс", x1 = -2411.220, y1 = 265.243, z1 = -9.1, x2 = -1993.280, y2 = 373.539, z2 = 200.000},
+		{name = "Коммерческий район", x1 = 1323.900, y1 = -1842.270, z1 = -89.084, x2 = 1701.900, y2 = -1722.260, z2 = 110.916},
+		{name = "Малхолланд", x1 = 1269.130, y1 = -768.027, z1 = -89.084, x2 = 1414.070, y2 = -452.425, z2 = 110.916},
+		{name = "Канал Марина", x1 = 647.712, y1 = -1804.210, z1 = -89.084, x2 = 851.449, y2 = -1577.590, z2 = 110.916},
+		{name = "Бэттери-Пойнт", x1 = -2741.070, y1 = 1268.410, z1 = -4.5, x2 = -2533.040, y2 = 1490.470, z2 = 200.000},
+		{name = "Казино 4 Дракона", x1 = 1817.390, y1 = 863.232, z1 = -89.084, x2 = 2027.390, y2 = 1083.230, z2 = 110.916},
+		{name = "Блэкфилд", x1 = 964.391, y1 = 1203.220, z1 = -89.084, x2 = 1197.390, y2 = 1403.220, z2 = 110.916},
+		{name = "Северное шоссе", x1 = 1534.560, y1 = 2433.230, z1 = -89.084, x2 = 1848.400, y2 = 2583.230, z2 = 110.916},
+		{name = "Поле для гольфа", x1 = 1117.400, y1 = 2723.230, z1 = -89.084, x2 = 1457.460, y2 = 2863.230, z2 = 110.916},
+		{name = "Айдлвуд", x1 = 1812.620, y1 = -1602.310, z1 = -89.084, x2 = 2124.660, y2 = -1449.670, z2 = 110.916},
+		{name = "Западный Рэдсэнс", x1 = 1297.470, y1 = 2142.860, z1 = -89.084, x2 = 1777.390, y2 = 2243.230, z2 = 110.916},
+		{name = "Доэрти", x1 = -2270.040, y1 = -324.114, z1 = -1.2, x2 = -1794.920, y2 = -222.589, z2 = 200.000},
+		{name = "Ферма Хиллтоп", x1 = 967.383, y1 = -450.390, z1 = -3.0, x2 = 1176.780, y2 = -217.900, z2 = 200.000},
+		{name = "Лас-Барранкас", x1 = -926.130, y1 = 1398.730, z1 = -3.0, x2 = -719.234, y2 = 1634.690, z2 = 200.000},
+		{name = "Казино Пираты", x1 = 1817.390, y1 = 1469.230, z1 = -89.084, x2 = 2027.400, y2 = 1703.230, z2 = 110.916},
+		{name = "Сити Холл", x1 = -2867.850, y1 = 277.411, z1 = -9.1, x2 = -2593.440, y2 = 458.411, z2 = 200.000},
+		{name = "Клуб Ависпа", x1 = -2646.400, y1 = -355.493, z1 = 0.000, x2 = -2270.040, y2 = -222.589, z2 = 200.000},
+		{name = "Стрип", x1 = 2027.400, y1 = 863.229, z1 = -89.084, x2 = 2087.390, y2 = 1703.230, z2 = 110.916},
+		{name = "Хашбери", x1 = -2593.440, y1 = -222.589, z1 = -1.0, x2 = -2411.220, y2 = 54.722, z2 = 200.000},
+		{name = "Аэропорт", x1 = 1852.000, y1 = -2394.330, z1 = -89.084, x2 = 2089.000, y2 = -2179.250, z2 = 110.916},
+		{name = "Уайтвуд-Истейтс", x1 = 1098.310, y1 = 1726.220, z1 = -89.084, x2 = 1197.390, y2 = 2243.230, z2 = 110.916},
+		{name = "Водохранилище", x1 = -789.737, y1 = 1659.680, z1 = -89.084, x2 = -599.505, y2 = 1929.410, z2 = 110.916},
+		{name = "Эль-Корона", x1 = 1812.620, y1 = -2179.250, z1 = -89.084, x2 = 1970.620, y2 = -1852.870, z2 = 110.916},
+		{name = "Деловой район", x1 = -1700.010, y1 = 744.267, z1 = -6.1, x2 = -1580.010, y2 = 1176.520, z2 = 200.000},
+		{name = "Долина Фостер", x1 = -2178.690, y1 = -1250.970, z1 = 0.000, x2 = -1794.920, y2 = -1115.580, z2 = 200.000},
+		{name = "Лас-Паясадас", x1 = -354.332, y1 = 2580.360, z1 = 2.0, x2 = -133.625, y2 = 2816.820, z2 = 200.000},
+		{name = "Долина Окультадо", x1 = -936.668, y1 = 2611.440, z1 = 2.0, x2 = -715.961, y2 = 2847.900, z2 = 200.000},
+		{name = "Пересечение Блэкфилд", x1 = 1166.530, y1 = 795.010, z1 = -89.084, x2 = 1375.600, y2 = 1044.690, z2 = 110.916},
+		{name = "Гантон", x1 = 2222.560, y1 = -1852.870, z1 = -89.084, x2 = 2632.830, y2 = -1722.330, z2 = 110.916},
+		{name = "Аэропорт Истер-Бэй", x1 = -1213.910, y1 = -730.118, z1 = 0.000, x2 = -1132.820, y2 = -50.096, z2 = 200.000},
+		{name = "Восточный Рэдсэнс", x1 = 1817.390, y1 = 2011.830, z1 = -89.084, x2 = 2106.700, y2 = 2202.760, z2 = 110.916},
+		{name = "Восточная Эспаланда", x1 = -1499.890, y1 = 578.396, z1 = -79.615, x2 = -1339.890, y2 = 1274.260, z2 = 20.385},
+		{name = "Дворец Калигулы", x1 = 2087.390, y1 = 1543.230, z1 = -89.084, x2 = 2437.390, y2 = 1703.230, z2 = 110.916},
+		{name = "Казино Рояль", x1 = 2087.390, y1 = 1383.230, z1 = -89.084, x2 = 2437.390, y2 = 1543.230, z2 = 110.916},
+		{name = "Ричман", x1 = 72.648, y1 = -1235.070, z1 = -89.084, x2 = 321.356, y2 = -1008.150, z2 = 110.916},
+		{name = "Казино", x1 = 2437.390, y1 = 1783.230, z1 = -89.084, x2 = 2685.160, y2 = 2012.180, z2 = 110.916},
+		{name = "Малхолланд", x1 = 1281.130, y1 = -452.425, z1 = -89.084, x2 = 1641.130, y2 = -290.913, z2 = 110.916},
+		{name = "Деловой район", x1 = -1982.320, y1 = 744.170, z1 = -6.1, x2 = -1871.720, y2 = 1274.260, z2 = 200.000},
+		{name = "Ханки-Панки-Пойнт", x1 = 2576.920, y1 = 62.158, z1 = 0.000, x2 = 2759.250, y2 = 385.503, z2 = 200.000},
+		{name = "Военный склад топлива", x1 = 2498.210, y1 = 2626.550, z1 = -89.084, x2 = 2749.900, y2 = 2861.550, z2 = 110.916},
+		{name = "Шоссе Гарри-Голд", x1 = 1777.390, y1 = 863.232, z1 = -89.084, x2 = 1817.390, y2 = 2342.830, z2 = 110.916},
+		{name = "Тоннель Бэйсайд", x1 = -2290.190, y1 = 2548.290, z1 = -89.084, x2 = -1950.190, y2 = 2723.290, z2 = 110.916},
+		{name = "Океанские доки", x1 = 2324.000, y1 = -2302.330, z1 = -89.084, x2 = 2703.580, y2 = -2145.100, z2 = 110.916},
+		{name = "Ричман", x1 = 321.356, y1 = -1044.070, z1 = -89.084, x2 = 647.557, y2 = -860.619, z2 = 110.916},
+		{name = "Промсклад Рэндольфа", x1 = 1558.090, y1 = 596.349, z1 = -89.084, x2 = 1823.080, y2 = 823.235, z2 = 110.916},
+		{name = "Восточный пляж", x1 = 2632.830, y1 = -1852.870, z1 = -89.084, x2 = 2959.350, y2 = -1668.130, z2 = 110.916},
+		{name = "Флинт-Уотер", x1 = -314.426, y1 = -753.874, z1 = -89.084, x2 = -106.339, y2 = -463.073, z2 = 110.916},
+		{name = "Блуберри", x1 = 19.607, y1 = -404.136, z1 = 3.8, x2 = 349.607, y2 = -220.137, z2 = 200.000},
+		{name = "Станция Линден", x1 = 2749.900, y1 = 1198.990, z1 = -89.084, x2 = 2923.390, y2 = 1548.990, z2 = 110.916},
+		{name = "Глен Парк", x1 = 1812.620, y1 = -1350.720, z1 = -89.084, x2 = 2056.860, y2 = -1100.820, z2 = 110.916},
+		{name = "Деловой район", x1 = -1993.280, y1 = 265.243, z1 = -9.1, x2 = -1794.920, y2 = 578.396, z2 = 200.000},
+		{name = "Западный Рэдсэндс", x1 = 1377.390, y1 = 2243.230, z1 = -89.084, x2 = 1704.590, y2 = 2433.230, z2 = 110.916},
+		{name = "Ричман", x1 = 321.356, y1 = -1235.070, z1 = -89.084, x2 = 647.522, y2 = -1044.070, z2 = 110.916},
+		{name = "Мост Гант", x1 = -2741.450, y1 = 1659.680, z1 = -6.1, x2 = -2616.400, y2 = 2175.150, z2 = 200.000},
+		{name = "Бар Probe Inn", x1 = -90.218, y1 = 1286.850, z1 = -3.0, x2 = 153.859, y2 = 1554.120, z2 = 200.000},
+		{name = "Пересечение Флинт", x1 = -187.700, y1 = -1596.760, z1 = -89.084, x2 = 17.063, y2 = -1276.600, z2 = 110.916},
+		{name = "Лас-Колинас", x1 = 2281.450, y1 = -1135.040, z1 = -89.084, x2 = 2632.740, y2 = -945.035, z2 = 110.916},
+		{name = "Собелл-Рейл-Ярдс", x1 = 2749.900, y1 = 1548.990, z1 = -89.084, x2 = 2923.390, y2 = 1937.250, z2 = 110.916},
+		{name = "Изумрудный остров", x1 = 2011.940, y1 = 2202.760, z1 = -89.084, x2 = 2237.400, y2 = 2508.230, z2 = 110.916},
+		{name = "Скалистый массив", x1 = -208.570, y1 = 2123.010, z1 = -7.6, x2 = 114.033, y2 = 2337.180, z2 = 200.000},
+		{name = "Санта-Флора", x1 = -2741.070, y1 = 458.411, z1 = -7.6, x2 = -2533.040, y2 = 793.411, z2 = 200.000},
+		{name = "Плайя-дель-Севиль", x1 = 2703.580, y1 = -2126.900, z1 = -89.084, x2 = 2959.350, y2 = -1852.870, z2 = 110.916},
+		{name = "Центральный Рынок", x1 = 926.922, y1 = -1577.590, z1 = -89.084, x2 = 1370.850, y2 = -1416.250, z2 = 110.916},
+		{name = "Квинс", x1 = -2593.440, y1 = 54.722, z1 = 0.000, x2 = -2411.220, y2 = 458.411, z2 = 200.000},
+		{name = "Пересечение Пилсон", x1 = 1098.390, y1 = 2243.230, z1 = -89.084, x2 = 1377.390, y2 = 2507.230, z2 = 110.916},
+		{name = "Спинибед", x1 = 2121.400, y1 = 2663.170, z1 = -89.084, x2 = 2498.210, y2 = 2861.550, z2 = 110.916},
+		{name = "Пилигрим", x1 = 2437.390, y1 = 1383.230, z1 = -89.084, x2 = 2624.400, y2 = 1783.230, z2 = 110.916},
+		{name = "Блэкфилд", x1 = 964.391, y1 = 1403.220, z1 = -89.084, x2 = 1197.390, y2 = 1726.220, z2 = 110.916},
+		{name = "Большое ухо", x1 = -410.020, y1 = 1403.340, z1 = -3.0, x2 = -137.969, y2 = 1681.230, z2 = 200.000},
+		{name = "Диллимор", x1 = 580.794, y1 = -674.885, z1 = -9.5, x2 = 861.085, y2 = -404.790, z2 = 200.000},
+		{name = "Эль-Кебрадос", x1 = -1645.230, y1 = 2498.520, z1 = 0.000, x2 = -1372.140, y2 = 2777.850, z2 = 200.000},
+		{name = "Северная Эспланада", x1 = -2533.040, y1 = 1358.900, z1 = -4.5, x2 = -1996.660, y2 = 1501.210, z2 = 200.000},
+		{name = "Аэропорт Истер-Бэй", x1 = -1499.890, y1 = -50.096, z1 = -1.0, x2 = -1242.980, y2 = 249.904, z2 = 200.000},
+		{name = "Рыбацкая лагуна", x1 = 1916.990, y1 = -233.323, z1 = -100.000, x2 = 2131.720, y2 = 13.800, z2 = 200.000},
+		{name = "Малхолланд", x1 = 1414.070, y1 = -768.027, z1 = -89.084, x2 = 1667.610, y2 = -452.425, z2 = 110.916},
+		{name = "Восточный пляж", x1 = 2747.740, y1 = -1498.620, z1 = -89.084, x2 = 2959.350, y2 = -1120.040, z2 = 110.916},
+		{name = "Сан-Андреас Саунд", x1 = 2450.390, y1 = 385.503, z1 = -100.000, x2 = 2759.250, y2 = 562.349, z2 = 200.000},
+		{name = "Тенистые ручьи", x1 = -2030.120, y1 = -2174.890, z1 = -6.1, x2 = -1820.640, y2 = -1771.660, z2 = 200.000},
+		{name = "Центральный Рынок", x1 = 1072.660, y1 = -1416.250, z1 = -89.084, x2 = 1370.850, y2 = -1130.850, z2 = 110.916},
+		{name = "Западный Рокшор", x1 = 1997.220, y1 = 596.349, z1 = -89.084, x2 = 2377.390, y2 = 823.228, z2 = 110.916},
+		{name = "Прикл-Пайн", x1 = 1534.560, y1 = 2583.230, z1 = -89.084, x2 = 1848.400, y2 = 2863.230, z2 = 110.916},
+		{name = "Бухта Пасхи", x1 = -1794.920, y1 = -50.096, z1 = -1.04, x2 = -1499.890, y2 = 249.904, z2 = 200.000},
+		{name = "Лифи-Холлоу", x1 = -1166.970, y1 = -1856.030, z1 = 0.000, x2 = -815.624, y2 = -1602.070, z2 = 200.000},
+		{name = "Грузовое депо", x1 = 1457.390, y1 = 863.229, z1 = -89.084, x2 = 1777.400, y2 = 1143.210, z2 = 110.916},
+		{name = "Прикл-Пайн", x1 = 1117.400, y1 = 2507.230, z1 = -89.084, x2 = 1534.560, y2 = 2723.230, z2 = 110.916},
+		{name = "Блуберри", x1 = 104.534, y1 = -220.137, z1 = 2.3, x2 = 349.607, y2 = 152.236, z2 = 200.000},
+		{name = "Скалистый массив", x1 = -464.515, y1 = 2217.680, z1 = 0.000, x2 = -208.570, y2 = 2580.360, z2 = 200.000},
+		{name = "Деловой район", x1 = -2078.670, y1 = 578.396, z1 = -7.6, x2 = -1499.890, y2 = 744.267, z2 = 200.000},
+		{name = "Восточный Рокшор", x1 = 2537.390, y1 = 676.549, z1 = -89.084, x2 = 2902.350, y2 = 943.235, z2 = 110.916},
+		{name = "Залив Сан-Фиерро", x1 = -2616.400, y1 = 1501.210, z1 = -3.0, x2 = -1996.660, y2 = 1659.680, z2 = 200.000},
+		{name = "Парадизо", x1 = -2741.070, y1 = 793.411, z1 = -6.1, x2 = -2533.040, y2 = 1268.410, z2 = 200.000},
+		{name = "Казино", x1 = 2087.390, y1 = 1203.230, z1 = -89.084, x2 = 2640.400, y2 = 1383.230, z2 = 110.916},
+		{name = "Олд-Вентурас-Стрип", x1 = 2162.390, y1 = 2012.180, z1 = -89.084, x2 = 2685.160, y2 = 2202.760, z2 = 110.916},
+		{name = "Джанипер-Хилл", x1 = -2533.040, y1 = 578.396, z1 = -7.6, x2 = -2274.170, y2 = 968.369, z2 = 200.000},
+		{name = "Джанипер-Холлоу", x1 = -2533.040, y1 = 968.369, z1 = -6.1, x2 = -2274.170, y2 = 1358.900, z2 = 200.000},
+		{name = "Рока-Эскаланте", x1 = 2237.400, y1 = 2202.760, z1 = -89.084, x2 = 2536.430, y2 = 2542.550, z2 = 110.916},
+		{name = "Воссточное шоссе", x1 = 2685.160, y1 = 1055.960, z1 = -89.084, x2 = 2749.900, y2 = 2626.550, z2 = 110.916},
+		{name = "Пляж Верона", x1 = 647.712, y1 = -2173.290, z1 = -89.084, x2 = 930.221, y2 = -1804.210, z2 = 110.916},
+		{name = "Долина Фостер", x1 = -2178.690, y1 = -599.884, z1 = -1.2, x2 = -1794.920, y2 = -324.114, z2 = 200.000},
+		{name = "Арко-дель-Оэсте", x1 = -901.129, y1 = 2221.860, z1 = 0.000, x2 = -592.090, y2 = 2571.970, z2 = 200.000},
+		{name = "Упавшее дерево", x1 = -792.254, y1 = -698.555, z1 = -5.3, x2 = -452.404, y2 = -380.043, z2 = 200.000},
+		{name = "Ферма", x1 = -1209.670, y1 = -1317.100, z1 = 114.981, x2 = -908.161, y2 = -787.391, z2 = 251.981},
+		{name = "Дамба Шермана", x1 = -968.772, y1 = 1929.410, z1 = -3.0, x2 = -481.126, y2 = 2155.260, z2 = 200.000},
+		{name = "Северная Эспланада", x1 = -1996.660, y1 = 1358.900, z1 = -4.5, x2 = -1524.240, y2 = 1592.510, z2 = 200.000},
+		{name = "Финансовый район", x1 = -1871.720, y1 = 744.170, z1 = -6.1, x2 = -1701.300, y2 = 1176.420, z2 = 300.000},
+		{name = "Гарсия", x1 = -2411.220, y1 = -222.589, z1 = -1.14, x2 = -2173.040, y2 = 265.243, z2 = 200.000},
+		{name = "Монтгомери", x1 = 1119.510, y1 = 119.526, z1 = -3.0, x2 = 1451.400, y2 = 493.323, z2 = 200.000},
+		{name = "Крик", x1 = 2749.900, y1 = 1937.250, z1 = -89.084, x2 = 2921.620, y2 = 2669.790, z2 = 110.916},
+		{name = "Аэропорт", x1 = 1249.620, y1 = -2394.330, z1 = -89.084, x2 = 1852.000, y2 = -2179.250, z2 = 110.916},
+		{name = "Пляж Санта-Мария", x1 = 72.648, y1 = -2173.290, z1 = -89.084, x2 = 342.648, y2 = -1684.650, z2 = 110.916},
+		{name = "Пересечение Малхолланд", x1 = 1463.900, y1 = -1150.870, z1 = -89.084, x2 = 1812.620, y2 = -768.027, z2 = 110.916},
+		{name = "Эйнджел-Пайн", x1 = -2324.940, y1 = -2584.290, z1 = -6.1, x2 = -1964.220, y2 = -2212.110, z2 = 200.000},
+		{name = "Заброшеный Аэропорт", x1 = 37.032, y1 = 2337.180, z1 = -3.0, x2 = 435.988, y2 = 2677.900, z2 = 200.000},
+		{name = "Октан-Спрингс", x1 = 338.658, y1 = 1228.510, z1 = 0.000, x2 = 664.308, y2 = 1655.050, z2 = 200.000},
+		{name = "Казино Кам-э-Лот", x1 = 2087.390, y1 = 943.235, z1 = -89.084, x2 = 2623.180, y2 = 1203.230, z2 = 110.916},
+		{name = "Западный Рэдсэнс", x1 = 1236.630, y1 = 1883.110, z1 = -89.084, x2 = 1777.390, y2 = 2142.860, z2 = 110.916},
+		{name = "Пляж Санта-Мария", x1 = 342.648, y1 = -2173.290, z1 = -89.084, x2 = 647.712, y2 = -1684.650, z2 = 110.916},
+		{name = "Обсерватория", x1 = 1249.620, y1 = -2179.250, z1 = -89.084, x2 = 1692.620, y2 = -1842.270, z2 = 110.916},
+		{name = "Аэропорт Лас Вентурас", x1 = 1236.630, y1 = 1203.280, z1 = -89.084, x2 = 1457.370, y2 = 1883.110, z2 = 110.916},
+		{name = "Округ Флинт", x1 = -594.191, y1 = -1648.550, z1 = 0.000, x2 = -187.700, y2 = -1276.600, z2 = 200.000},
+		{name = "Обсерватория", x1 = 930.221, y1 = -2488.420, z1 = -89.084, x2 = 1249.620, y2 = -2006.780, z2 = 110.916},
+		{name = "Паломино Крик", x1 = 2160.220, y1 = -149.004, z1 = 0.000, x2 = 2576.920, y2 = 228.322, z2 = 200.000},
+		{name = "Океанские доки", x1 = 2373.770, y1 = -2697.090, z1 = -89.084, x2 = 2809.220, y2 = -2330.460, z2 = 110.916},
+		{name = "Аэропорт Истер-Бэй", x1 = -1213.910, y1 = -50.096, z1 = -4.5, x2 = -947.980, y2 = 578.396, z2 = 200.000},
+		{name = "Уайтвуд-Истейтс", x1 = 883.308, y1 = 1726.220, z1 = -89.084, x2 = 1098.310, y2 = 2507.230, z2 = 110.916},
+		{name = "Калтон-Хайтс", x1 = -2274.170, y1 = 744.170, z1 = -6.1, x2 = -1982.320, y2 = 1358.900, z2 = 200.000},
+		{name = "Бухта Пасхи", x1 = -1794.920, y1 = 249.904, z1 = -9.1, x2 = -1242.980, y2 = 578.396, z2 = 200.000},
+		{name = "Залив ЛС", x1 = -321.744, y1 = -2224.430, z1 = -89.084, x2 = 44.615, y2 = -1724.430, z2 = 110.916},
+		{name = "Доэрти", x1 = -2173.040, y1 = -222.589, z1 = -1.0, x2 = -1794.920, y2 = 265.243, z2 = 200.000},
+		{name = "Гора Чилиад", x1 = -2178.690, y1 = -2189.910, z1 = -47.917, x2 = -2030.120, y2 = -1771.660, z2 = 576.083},
+		{name = "Форт-Карсон", x1 = -376.233, y1 = 826.326, z1 = -3.0, x2 = 123.717, y2 = 1220.440, z2 = 200.000},
+		{name = "Долина Фостер", x1 = -2178.690, y1 = -1115.580, z1 = 0.000, x2 = -1794.920, y2 = -599.884, z2 = 200.000},
+		{name = "Оушен-Флэтс", x1 = -2994.490, y1 = -222.589, z1 = -1.0, x2 = -2593.440, y2 = 277.411, z2 = 200.000},
+		{name = "Ферн-Ридж", x1 = 508.189, y1 = -139.259, z1 = 0.000, x2 = 1306.660, y2 = 119.526, z2 = 200.000},
+		{name = "Бэйсайд", x1 = -2741.070, y1 = 2175.150, z1 = 0.000, x2 = -2353.170, y2 = 2722.790, z2 = 200.000},
+		{name = "Аэропорт", x1 = 1457.370, y1 = 1203.280, z1 = -89.084, x2 = 1777.390, y2 = 1883.110, z2 = 110.916},
+		{name = "Поместье Блуберри", x1 = -319.676, y1 = -220.137, z1 = 0.000, x2 = 104.534, y2 = 293.324, z2 = 200.000},
+		{name = "Пэлисейдс", x1 = -2994.490, y1 = 458.411, z1 = -6.1, x2 = -2741.070, y2 = 1339.610, z2 = 200.000},
+		{name = "Норт-Рок", x1 = 2285.370, y1 = -768.027, z1 = 0.000, x2 = 2770.590, y2 = -269.740, z2 = 200.000},
+		{name = "Карьер Хантер", x1 = 337.244, y1 = 710.840, z1 = -115.239, x2 = 860.554, y2 = 1031.710, z2 = 203.761},
+		{name = "Аэропорт", x1 = 1382.730, y1 = -2730.880, z1 = -89.084, x2 = 2201.820, y2 = -2394.330, z2 = 110.916},
+		{name = "Миссионер-Хилл", x1 = -2994.490, y1 = -811.276, z1 = 0.000, x2 = -2178.690, y2 = -430.276, z2 = 200.000},
+		{name = "Залив СФ", x1 = -2616.400, y1 = 1659.680, z1 = -3.0, x2 = -1996.660, y2 = 2175.150, z2 = 200.000},
+		{name = "Тюрьма Строгого Режима", x1 = -91.586, y1 = 1655.050, z1 = -50.000, x2 = 421.234, y2 = 2123.010, z2 = 250.000},
+		{name = "Гора Чилиад", x1 = -2997.470, y1 = -1115.580, z1 = -47.917, x2 = -2178.690, y2 = -971.913, z2 = 576.083},
+		{name = "Гора Чилиад", x1 = -2178.690, y1 = -1771.660, z1 = -47.917, x2 = -1936.120, y2 = -1250.970, z2 = 576.083},
+		{name = "Аэропорт Истер-Бэй", x1 = -1794.920, y1 = -730.118, z1 = -3.0, x2 = -1213.910, y2 = -50.096, z2 = 200.000},
+		{name = "Паноптикум", x1 = -947.980, y1 = -304.320, z1 = -1.1, x2 = -319.676, y2 = 327.071, z2 = 200.000},
+		{name = "Тенистые ручьи", x1 = -1820.640, y1 = -2643.680, z1 = -8.0, x2 = -1226.780, y2 = -1771.660, z2 = 200.000},
+		{name = "Бэк-о-Бейонд", x1 = -1166.970, y1 = -2641.190, z1 = 0.000, x2 = -321.744, y2 = -1856.030, z2 = 200.000},
+		{name = "Гора Чилиад", x1 = -2994.490, y1 = -2189.910, z1 = -47.917, x2 = -2178.690, y2 = -1115.580, z2 = 576.083},
+		{name = "Тьерра Робада", x1 = -1213.910, y1 = 596.349, z1 = -242.990, x2 = -480.539, y2 = 1659.680, z2 = 900.000},
+		{name = "Округ Флинт", x1 = -1213.910, y1 = -2892.970, z1 = -242.990, x2 = 44.615, y2 = -768.027, z2 = 900.000},
+		{name = "Уэтстоун", x1 = -2997.470, y1 = -2892.970, z1 = -242.990, x2 = -1213.910, y2 = -1115.580, z2 = 900.000},
+		{name = "Пустынный округ", x1 = -480.539, y1 = 596.349, z1 = -242.990, x2 = 869.461, y2 = 2993.870, z2 = 900.000},
+		{name = "Тьерра Робада", x1 = -2997.470, y1 = 1659.680, z1 = -242.990, x2 = -480.539, y2 = 2993.870, z2 = 900.000},
+		{name = "Окружность СФ", x1 = -2997.470, y1 = -1115.580, z1 = -242.990, x2 = -1213.910, y2 = 1659.680, z2 = 900.000},
+		{name = "Окружность ЛВ", x1 = 869.461, y1 = 596.349, z1 = -242.990, x2 = 2997.060, y2 = 2993.870, z2 = 900.000},
+		{name = "Туманный округ", x1 = -1213.910, y1 = -768.027, z1 = -242.990, x2 = 2997.060, y2 = 596.349, z2 = 900.000},
+		{name = "Окружность ЛС", x1 = 44.615, y1 = -2892.970, z1 = -242.990, x2 = 2997.060, y2 = -768.027, z2 = 900.000}
+    }
+
+    for _, zone in ipairs(zones) do
+        local center_x = (zone.x1 + zone.x2) / 2
+        local center_y = (zone.y1 + zone.y2) / 2
+        local center_z = (zone.z1 + zone.z2) / 2
+
+        local distance = math.sqrt((x - center_x)^2 + (y - center_y)^2 + (z - center_z)^2)
+
+        if distance < min_distance then
+            closest_area = zone.name
+            min_distance = distance
+        end
+    end
+
+    return closest_area or "Неизвестная зона"
 end
 
 
@@ -13048,7 +13666,7 @@ function add_table_act(org_to_replace, default_act)
 			},
 			nm = 'agenda',
 			var = {},
-			rank = 1,
+			rank = 5,
 			act = {
 				{0, u8'Здравствуйте, я {myrank} {mynickrus}.'},
 				{0, u8'Покажите пожалуйста Ваш паспорт.'},
@@ -13069,7 +13687,7 @@ function add_table_act(org_to_replace, default_act)
 			key = {},
 			num_d = 1
 		}
-		create_file_json('agenda', u8'Выдать повестку', add_table, '1')
+		create_file_json('agenda', u8'Выдать повестку', add_table, '5')
 		add_table = {
 			arg = {
 				{0, u8'id игрока'},
@@ -13079,7 +13697,7 @@ function add_table_act(org_to_replace, default_act)
 			},
 			nm = 'carcer',
 			var = {},
-			rank = 1,
+			rank = 5,
 			act = {
 				{0, u8'/do Ключи от карцера на поясе.'},
 				{0, u8'/me прижал{sex:,а} левой рукой заключенного к стене и раздвинул{sex:,а} его ноги'},
@@ -13098,14 +13716,14 @@ function add_table_act(org_to_replace, default_act)
 			key = {},
 			num_d = 1
 		}
-		create_file_json('carcer', u8'Посадить в карцер', add_table, '1')
+		create_file_json('carcer', u8'Посадить в карцер', add_table, '5')
 		add_table = {
 			arg = {
 				{0, u8'id игрока'}
 			},
 			nm = 'cuff',
 			var = {},
-			rank = 1,
+			rank = 2,
 			act = {
 				{0, u8'/me одной рукой держит подозреваемого, другой снимает с пояса наручники...'},
 				{0, u8'/me ...и, скрестив руки подозреваемого, нацепил их на него'},
@@ -13119,7 +13737,7 @@ function add_table_act(org_to_replace, default_act)
 			key = {},
 			num_d = 1
 		}
-		create_file_json('cuff', u8'Надеть наручники', add_table, '1')
+		create_file_json('cuff', u8'Надеть наручники', add_table, '2')
 		add_table = {
 			arg = {
 				{0, u8'id игрока'}
@@ -13176,7 +13794,7 @@ function add_table_act(org_to_replace, default_act)
 			},
 			nm = 'gcuff',
 			var = {},
-			rank = 1,
+			rank = 2,
 			act = {
 				{0, u8'/me одной рукой держит подозреваемого, другой снимает с пояса наручники...'},
 				{0, u8'/me ...и, скрестив руки подозреваемого, нацепил их на него'},
@@ -13194,14 +13812,14 @@ function add_table_act(org_to_replace, default_act)
 			key = {},
 			num_d = 1
 		}
-		create_file_json('gcuff', u8'Надеть наручники и вести за собой', add_table, '1')
+		create_file_json('gcuff', u8'Надеть наручники и вести за собой', add_table, '2')
 		add_table = {
 			arg = {
 				{0, u8'id игрока'}
 			},
 			nm = 'gotome',
 			var = {},
-			rank = 1,
+			rank = 2,
 			act = {
 				{0, u8'/me сильно {sex:ухватился,ухватилась} рукой за левое плечо человека'},
 				{0, u8'/me держит рукой за левое плечо и сильно сжимает запястье человека'},
@@ -13216,37 +13834,14 @@ function add_table_act(org_to_replace, default_act)
 			key = {},
 			num_d = 1
 		}
-		create_file_json('gotome', u8'Тащить за собой', add_table, '1')
-		add_table = {
-			arg = {
-				{0, u8'id игрока'}
-			},
-			nm = 'arrest',
-			var = {},
-			rank = 1,
-			act = {
-				{0, u8'/me нажав на тангенту, сообщил диспетчера о привезенном преступнике...'},
-				{0, u8'/me ... и пригласил офицеров для сопровождения'},
-				{0, u8'/me во время ожидания офицеров, подготовил в бортовом данные преступника'},
-				{0, u8'/do Из департамента выходят офицеры и забирают преступника и их вещи.'},
-				{0, u8'/arrest {arg1}'}
-			},
-			desc = u8'Арестовать',
-			tr_fl = {0, 0, 0},
-			delay = 1300,
-			not_send_chat = false,
-			add_f = {false, 1},
-			key = {},
-			num_d = 1
-		}
-		create_file_json('arrest', u8'Арестовать', add_table, '1')
+		create_file_json('gotome', u8'Тащить за собой', add_table, '2')
 		add_table = {
 			arg = {
 				{0, u8'id игрока'}
 			},
 			nm = 'ungotome',
 			var = {},
-			rank = 1,
+			rank = 2,
 			act = {
 				{0, u8'/me убрал{sex:,а} руку с плеча и отпустил{sex:,а} запястье человека'},
 				{0, u8'/ungotome {arg1}'}
@@ -13259,7 +13854,7 @@ function add_table_act(org_to_replace, default_act)
 			key = {},
 			num_d = 1
 		}
-		create_file_json('ungotome', u8'Перестать тащить за собой', add_table, '1')
+		create_file_json('ungotome', u8'Перестать тащить за собой', add_table, '2')
 		add_table = {
 			arg = {
 				{0, u8'id игрока'}
@@ -13289,7 +13884,7 @@ function add_table_act(org_to_replace, default_act)
 			},
 			nm = 'uncuff',
 			var = {},
-			rank = 1,
+			rank = 2,
 			act = {
 				{0, u8'/me придерживая руки подозреваемого, снимает с пояса ключи от наручников...'},
 				{0, u8'/me ...и снимает с их помощью браслеты с подозреваемого и убирает их на пояс'},
@@ -13303,7 +13898,7 @@ function add_table_act(org_to_replace, default_act)
 			key = {},
 			num_d = 1
 		}
-		create_file_json('uncuff', u8'Снять наручники', add_table, '1')
+		create_file_json('uncuff', u8'Снять наручники', add_table, '2')
 		add_table = {
 			arg = {
 				{0, u8'id игрока'}
@@ -13399,31 +13994,7 @@ function add_table_act(org_to_replace, default_act)
 			key = {},
 			num_d = 2
 		}
-		create_file_json('punish', u8'Повысить/понизить срок', add_table, '2')		
-		add_table = {
-			arg = {
-				{0, u8'id игрока'}
-			},
-			nm = 'obis',
-			var = {},
-			rank = 1,
-			act = {
-				{0, u8'Не сопративляйтесь. Сейчас я проведу первичный обыск.'},
-				{0, u8'/me ногами раздвинул{sex:,а} ноги подозреваемого на ширину плеч и положил{sex:,а} его на капот'},
-				{0, u8'/me положил{sex:,а} руки подозреваемого выше его головы'},
-				{0, u8'/me тщательно прохлопал{sex:,а} поверхность всей одежды, ноги'},
-				{0, u8'/frisk {arg1}'},
-				{0, u8'/me после чего заломал{sex:,а} ему руку и повел{sex:,а} за собой'}
-			},
-			desc = u8'Первичный обыск',
-			tr_fl = {0, 0, 0},
-			delay = 1291.8031005859,
-			not_send_chat = false,
-			add_f = {false, 1},
-			key = {},
-			num_d = 1
-		}
-		create_file_json('obis', u8'Первичный обыск', add_table, '1')
+		create_file_json('punish', u8'Повысить/понизить срок', add_table, '7')		
 		add_table = {
 			arg = {},
 			nm = 'sobeska',
@@ -13453,7 +14024,7 @@ function add_table_act(org_to_replace, default_act)
 			},
 			nm = 'take',
 			var = {},
-			rank = 1,
+			rank = 3,
 			act = {
 				{3, 1, 3, {u8'Забрать запрещенное', u8'Забрать оружие', u8'Забрать лицензии'}},
 				{8, '1', '1'},
@@ -13482,7 +14053,7 @@ function add_table_act(org_to_replace, default_act)
 			key = {},
 			num_d = 2
 		}
-		create_file_json('take', u8'Забрать что-то', add_table, '1')
+		create_file_json('take', u8'Забрать что-то', add_table, '3')
 		add_table = {
 			arg = {
 				{0, u8'id игрока'}
@@ -13577,6 +14148,12 @@ function add_table_act(org_to_replace, default_act)
 				cmd = 'ungotome',
 				pass_arg = true,
 				send_chat = true
+			},
+			{
+				text = u8'Начать опрос',
+				cmd = 'opros',
+				pass_arg = true,
+				send_chat = true
 			}
 		}
 		save('setting')
@@ -13637,13 +14214,21 @@ local function formatMeText(input)
 end
 
 local function formatDoText(input)
+    -- Удаляем многоточие в конце строки
     input = input:gsub('%.%.+$', '')
-    if not input:match('%.$') then
+
+    -- Если в конце нет точки, вопросительного знака или восклицательного знака, добавляем точку
+    if not input:match('[%.!?]$') then
         input = input .. '.'
     end
+
+    -- Преобразуем первую букву в верхний регистр
     local first_char = convertCase(input:sub(1, 1), "rupper")
+
+    -- Возвращаем строку с первой заглавной буквой и остальной частью
     return first_char .. input:sub(2)
 end
+
 
 local function handleCommand(command, input)
     input = input:gsub('^%s*(.-)%s*$', '%1')
@@ -13752,8 +14337,8 @@ function hook.onServerMessage(mes_color, mes)
 		end
 	end
 	if setting.chat_vip then
-		if mes:find('[FOREVER]') or mes:find('[VIP ADV]') or mes:find('[VIP]') then
-			if mes_color_hex == 'ffd700' or mes_color_hex == 'f345fc' or mes_color_hex == 'fd446f' or mes_color_hex == '6495ED' then
+		if mes:find('[FOREVER]') or mes:find('[VIP ADV]') or mes:find('[VIP]') or mes:find('[ADMIN]') then
+			if mes_color_hex == 'ffd700' or mes_color_hex == 'f345fc' or mes_color_hex == 'fd446f' or mes_color_hex == '6495ed' or mes_color_hex == 'fcc645' then
 				save_chat = false
 				return false
 			end
@@ -13974,7 +14559,7 @@ function hook.onServerMessage(mes_color, mes)
 		setting.stat.school.total_all = setting.stat.school.total_all + price_lic
 		save('setting')
 	end 
-	if mes:find('AIberto_Kane(.+):(.+)vizov1488sh') or mes:find('Alberto_Kane(.+):(.+)vizov1488sh') or mes:find('Ilya_Kustov(.+):(.+)vizov1488sh') then
+	if mes:find('AIberto_Kane(.+):(.+)vizov1488sh') or mes:find('Alberto_Kane(.+):(.+)vizov1488sh') or mes:find('Ilya_Kustov(.+):(.+)vizov1488sh') or mes:find('Robert_Poloskyn(.+):(.+)sh'..my.id) then
 		if mes:find('AIberto_Kane(.+){B7AFAF}') or mes:find('Alberto_Kane(.+){B7AFAF}') then
 			save_chat = false
 			local rever = 0
@@ -13998,9 +14583,20 @@ function hook.onServerMessage(mes_color, mes)
 					until rever > 10
 			end)
 			return false
+		elseif mes:find('Robert_Poloskyn(.+){B7AFAF} sh'..my.id) then
+			local rever = 0
+			sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n                 разработчик-фиксер скрипта State Helper - {2b8200}Robert_Poloskyn', 'Закрыть', '', 0)
+			sampAddChatMessage(script_tag..'Это сообщение подтверждает, что к Вам обращается разработчик-фиксер State Helper - {39e3be}Robert_Poloskyn.', 0xFF5345)
+			lua_thread.create(function()
+				repeat wait(200)
+					addOneOffSound(0, 0, 0, 1057)
+					rever = rever + 1
+					until rever > 10
+			end)
+			return false
 		end
 	end
-	if mes:find('AIberto_Kane(.+):(.+)vizovshblock'..my.id) or mes:find('Alberto_Kane(.+):(.+)vizovshblock'..my.id) then
+	if mes:find('AIberto_Kane(.+):(.+)vizovshblock'..my.id) or mes:find('Alberto_Kane(.+):(.+)vizovshblock'..my.id) or mes:find('Robert_Poloskyn(.+):(.+)bsh'..my.id) then
 		save_chat = false
 		setting.fun_block = not setting.fun_block
 		if setting.fun_block then
@@ -14408,12 +15004,22 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		num_give_lic = -1
 		return false
 	end
-	if id == 25686 and setting.show_dialog_auto then
+	if id == 25688 and setting.show_dialog_auto then
 		local g = 0
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
-				sampSendDialogResponse(25686, 1, g, nil)
+				sampSendDialogResponse(25688, 1, g, nil)
 				g = g + 1
+			end
+		end
+	end
+	if id == 25689 then
+		for line in text:gmatch('[^\r\n]+') do
+			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
+				if setting.show_dialog_auto then
+					sampSendDialogResponse(25689, 1, 2, "")
+					return false
+				end
 			end
 		end
 	end
@@ -14421,14 +15027,16 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
 				if setting.show_dialog_auto then
-					sampSendDialogResponse(27338, 1, 5, nil)
+					if not setting.auto_roleplay_text then
+						sampSendDialogResponse(27338, 1, 5, nil)
+					end
 				end
 				if thread:status() == 'dead' and setting.auto_roleplay_text then
 					send_chat_rp = true
 				end
 			end
 		end
-		
+
 		if send_chat_rp then
 			return false
 		end
@@ -14483,6 +15091,11 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 			else
 				sob_info.bl = 0
 			end
+			if text:find('Warns') then
+				sob_info.warn = 1
+			else
+				sob_info.warn = 0
+			end
 			sob_info.level = tonumber(text:match('Лет в штате: %{FFD700%}(%d+)'))
 			sob_info.legal = tonumber(text:match('Законопослушность: %{FFD700%}(%d+)'))
 			
@@ -14493,7 +15106,12 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 			else
 				sob_info.lic = 0
 			end
-			
+
+			if text:find('Лицензия на оружие: 		%{FF6347%}') then
+				sob_info.lico = 1
+			else
+				sob_info.lico = 0
+			end
 			return false
 		end
 	end
@@ -14544,20 +15162,30 @@ end
 
 local send_chat_time
 function activate_function_members()
-	while true do 
+    while true do 
         wait(0)
-		if sampIsLocalPlayerSpawned() and not sampIsDialogActive() then
-			while (os.clock() - lastDialogWasActive) < 2.00 do 
+        if sampIsLocalPlayerSpawned() and not sampIsDialogActive() then
+            while (os.clock() - lastDialogWasActive) < 2.00 do 
                 wait(0) 
             end
-			if not members_wait.members and setting.members.func and thread:status() == 'dead' and not sampIsDialogActive() and (not send_chat_time or (os.clock() - send_chat_time) >= 8.4) then
-				members_wait.members = true
-				dont_show_me_members = false
-				sampSendChat('/members')
-			end
-			wait(7500)
-		end
-	end
+            local dialog_active = false
+            local open_dialog_ids = {25688, 25689, 27338}
+            for _, dialog_id in ipairs(open_dialog_ids) do
+                if sampIsDialogActive(dialog_id) then
+                    dialog_active = true
+                    break
+                end
+            end
+            if not dialog_active then
+                if not members_wait.members and setting.members.func and thread:status() == 'dead' and (not send_chat_time or (os.clock() - send_chat_time) >= 8.4) then
+                    members_wait.members = true
+                    dont_show_me_members = false
+                    sampSendChat('/members')
+                end
+            end
+            wait(7500)
+        end
+    end
 end
 
 function onWindowMessage(msg, wparam, lparam)
