@@ -1192,9 +1192,11 @@ function CefDialog()
 							end
 						end
                     end
-
 					if event == 'event.documents.inititalizeData' then --> Отыгровка после закрытия паспорта
-						document_opened = true
+						local data = json.decode(body)
+						if data['name'] ~= my.nick and data['type'] == 1 then
+							document_opened = true
+						end
 					end
 					
 					if event == 'event.arizonahud.updateGeoPositionVisibility' and body == "true" then --> Отыгровка после закрытия паспорта
@@ -1202,7 +1204,9 @@ function CefDialog()
 							sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
 							document_opened = false
 						end
-					end					
+					end
+					
+					
                 end
             end
         end
@@ -1417,10 +1421,20 @@ function main()
 		end
 		
 		if send_chat_rp then
-			local texts_rp_all = {'/me взял' .. sex('', 'а') .. ' документ с рук человека напротив, внимательно его изучил' .. sex('', 'а') .. ', после чего вернул' .. sex('', 'а') .. ' обратно', '/me внимательно рассмотрел' .. sex('', 'а') .. ' документ, который был передан ' .. sex('ему', 'ей') .. ' с рук человека напротив', '/me взял' .. sex('', 'а') .. ' документ с рук человека и осмотрел' .. sex('', 'а') .. ' его с пристальным вниманием', '/me взял' .. sex('', 'а') .. ' документ с рук собеседника и провел' .. sex('', 'а') .. ' по нему взглядом для ознакомления с его содержимым', '/me взял' .. sex('', 'а') .. ' документ и тщательно изучил' .. sex('', 'а') .. ' его, после чего вернул' .. sex('', 'а') .. ' обратно'}
-			local random_index = math.random(1, #texts_rp_all)
-			local text_rp = texts_rp_all[random_index]
-			sampSendChat(text_rp)
+			if setting.auto_close_doc then
+				sampSendChat("/me взял".. sex('', 'а') .. " документ с рук человека, затем начал".. sex('', 'а') .. " его осматривать")
+			else
+				local texts_rp_all = {
+					'/me взял' .. sex('', 'а') .. ' документ с рук человека напротив, внимательно его изучил' .. sex('', 'а') .. ', после чего вернул' .. sex('', 'а') .. ' обратно',
+					'/me внимательно рассмотрел' .. sex('', 'а') .. ' документ, который был передан ' .. sex('ему', 'ей') .. ' с рук человека напротив',
+					'/me взял' .. sex('', 'а') .. ' документ с рук человека и осмотрел' .. sex('', 'а') .. ' его с пристальным вниманием',
+					'/me взял' .. sex('', 'а') .. ' документ с рук собеседника и провел' .. sex('', 'а') .. ' по нему взглядом для ознакомления с его содержимым',
+					'/me взял' .. sex('', 'а') .. ' документ и тщательно изучил' .. sex('', 'а') .. ' его, после чего вернул' .. sex('', 'а') .. ' обратно'
+				}
+				local random_index = math.random(1, #texts_rp_all)
+				local text_rp = texts_rp_all[random_index]
+				sampSendChat(text_rp)
+			end
 			send_chat_rp = false
 		end
 		
@@ -15885,7 +15899,6 @@ function time()
 				sampSendDialogResponse(27337, 1, 5, nil)
 			end
 			if setting.auto_cmd_doc and thread:status() == 'dead' then
-				timer_send = 5
 				send_chat_rp = true
 			end
 			confirm_action_dialog = false
