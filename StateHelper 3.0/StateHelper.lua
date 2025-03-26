@@ -15282,6 +15282,8 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 	if id == 1214 and lspawncar then
 		sampSendDialogResponse(1214, 1, 3, -1)
 		lspawncar = false
+		closeDialog(1214, 0)
+		return false
 	end
 	--[[if id == id and setting.org == 11 then
         dialogData = {
