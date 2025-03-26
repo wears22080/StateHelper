@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.2')
+script_version('3.2.1')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -269,6 +269,7 @@ tab = 'settings'
 name_tab = u8'Главное'
 tab_settings = 1
 bool_go_stat_set = false
+lspawncar = false
 close_win = {main = false, fast = false}
 imgui.Scroller = {
 	id_bool_scroll = {}
@@ -1092,8 +1093,8 @@ function CefDialog()
                             local document_type = data['type']
 
                             if document_type == 1 then 		--> Паспорт
-                                if data['name'] ~= sob_info.nick then
-                                    return
+                               if data['name'] ~= sob_info.nick then
+                                	return
                                 end
                                 sob_info.valid = true
                                 local sex = data['sex']
@@ -1102,11 +1103,11 @@ function CefDialog()
                                 local level = tonumber(tostring(data['level']):match("%d+")) or -2
                                 local agenda = tostring(data['agenda'] or "Нет")
 
-                                if agenda:find("Есть", 1, true) then
+                                if agenda:find("Имеется", 1, true) then
                                     sob_info.ticket = 1
                                 else
                                     sob_info.ticket = 2
-                                end  
+                                end
                                 sob_info.law = zakono
                                 sob_info.exp = level
 
@@ -1132,10 +1133,13 @@ function CefDialog()
                                             sob_info.gun = is_active
                                         end
                                     end
+
                                     sendCef('documents.changePage|4')
                                 elseif document_type == 4 then 		--> Мед.карта
                                     local zavisimost = tonumber(data['zavisimost']) or 0
                                     local state = data['state'] or ""
+									 local sub_text = (data['demorgan'] and data['demorgan']['sub_text']) or ""
+
 
                                     local med_status_m = {
                                         ["Полностью здоров"] = 1,
@@ -1144,6 +1148,7 @@ function CefDialog()
                                         ["Не определён"] = 4
                                     }
 
+									
                                     local med_status = 4
                                     local found_status = false
                                     for key, value in pairs(med_status_m) do
@@ -1153,11 +1158,12 @@ function CefDialog()
                                             break
                                         end
                                     end
-                                    if state:find("Обновите мед. карту", 1, true) then
-                                        sob_info.org = 1
-                                    else
-                                        sob_info.org = 2
-                                    end
+									
+									if sub_text == "Обновите мед. карту" then
+										sob_info.org = 2
+									else
+										sob_info.org = 1
+									end
 
                                     if not found_status then
                                         med_status = 5
@@ -1190,6 +1196,9 @@ function CefDialog()
 							else
 								sob_info.warn = 0
 							end
+							sendCef('loadInfo')
+							sendCef('selectMenuItem|4')
+							sendCef('exit')
 						end
                     end
 					if event == 'event.documents.inititalizeData' then --> Отыгровка после закрытия паспорта
@@ -1205,8 +1214,6 @@ function CefDialog()
 							document_opened = false
 						end
 					end
-					
-					
                 end
             end
         end
@@ -2903,6 +2910,22 @@ function hall.settings()
 						cmd_start(arg, tostring(cmd_defoult.jail[i].UID) .. cmd_defoult.jail[i].cmd) end)
 					end
 					setting.gun_func = true
+				end
+			elseif setting.org == 11 then
+				for i = 1, #cmd_defoult.smi do
+					local command_return = false
+					if #cmd[1] ~= 0 then
+						for c = 1, #cmd[1] do
+							if cmd[1][c].cmd == cmd_defoult.smi[i].cmd then
+								command_return = true
+							end
+						end
+					end
+					if not command_return then
+						table.insert(cmd[1], cmd_defoult.smi[i])
+						sampRegisterChatCommand(cmd_defoult.smi[i].cmd, function(arg) 
+						cmd_start(arg, tostring(cmd_defoult.smi[i].UID) .. cmd_defoult.smi[i].cmd) end)
+					end
 				end
 			end
 			add_cmd_in_all_cmd()
@@ -10414,7 +10437,9 @@ function tags_in_cmd()
 			{'{prtsc}', 'Сделает скриншот игры F8'},
 			{'{random[мин. число][мах. число]}', 'Выведет рандомное число'},
 			{'{nearplayer}', 'Получить id ближайшего игрока'},
-			{'{getlevel[id игрока]}', 'Получить игровой уровень игрока'}
+			{'{getlevel[id игрока]}', 'Получить игровой уровень игрока'},
+			{'{spcar}', 'Заспавнить транспорт организации (/lmenu)'},
+			{'{PhoneApp[номер приложения]}', 'Открывает приложение в телефоне по списку (всего 36 пиложений)'}
 		}
 		
 		if an[25][1] > 0 then
@@ -10902,7 +10927,7 @@ win.main = imgui.OnFrame(
 					end
 					gui.Button(u8'Назад', {640, 403}, {62, 30}, false)
 					
-					setting.org = gui.LT_First_Start({300, 116}, {249, 248}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима'}, setting.org, u8'Выбрать организацию')
+					setting.org = gui.LT_First_Start({300, 110}, {249, 273}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима'}, setting.org, u8'Выбрать организацию')
 				end
 			elseif first_start == 3 then
 				imgui.PushFont(bold_font[2])
@@ -11164,6 +11189,13 @@ win.main = imgui.OnFrame(
 									cmd_start(arg, tostring(cmd_defoult.jail[i].UID) .. cmd_defoult.jail[i].cmd) end)
 								end
 								setting.gun_func = true
+							elseif setting.org == 11 then --> Для СМИ
+								for i = 1, #cmd_defoult.smi do
+									table.insert(cmd[1], cmd_defoult.smi[i])
+									sampRegisterChatCommand(cmd_defoult.smi[i].cmd, function(arg) 
+									cmd_start(arg, tostring(cmd_defoult.smi[i].UID) .. cmd_defoult.smi[i].cmd) end)
+								end
+
 							end
 							add_cmd_in_all_cmd()
 							save_cmd()
@@ -12470,6 +12502,18 @@ win.main = imgui.OnFrame(
 	end
 )
 
+local inputField = imgui.new.char[256]()
+local sx, sy = getScreenResolution()
+
+win.smi = imgui.OnFrame(
+    function()
+        return dialogData ~= nil
+    end,
+    function(main)
+        SmiEdit()
+    end
+)
+
 win.shpora = imgui.OnFrame(
 	function() return windows.shpora[0] and not scene_active end,
 	function(main)
@@ -12537,6 +12581,8 @@ win.reminder = imgui.OnFrame(
 	end
 )
 	
+
+
 win.mini_player = imgui.OnFrame(
 	function() return windows.player[0] and not scene_active end,
 	function(mini_player)
@@ -14184,7 +14230,7 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 						sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игрок не в сети, либо это Вы.', 0xFF5345)
 					end
 				elseif val:find('{getlevel%[(%d+)%]}') then
-					local num_id = string.match(val, '{getlevel%[(.-)%]}')
+					local num_id = tonumber(string.match(val, '{getlevel%[(%d+)%]}'))
 					if sampIsPlayerConnected(tonumber(num_id)) then
 						extracted_str[i][2] = sampGetPlayerScore(tonumber(num_id))
 					else
@@ -14278,7 +14324,16 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 				elseif val == '{target}' then
 					extracted_str[i][2] = targ_id or -1
 				elseif val == '{prtsc}' then
-					
+				elseif val:find('{spcar}') then
+					extracted_str[i][2] = ''
+					lspawncar = true
+					sampSendChat('/lmenu')
+				elseif val:find('{PhoneApp%[(%d+)%]}') then
+					extracted_str[i][2] = ''
+					sampSendChat('/phone')
+					local app_id = tonumber(string.match(val, '{PhoneApp%[(%d+)%]}'))
+					sendCef('launchedApp|'.. app_id)
+					sampSendChat('/phone')
 				elseif val == '{nearplayer}' then
 					local near_pl = getNearestID()
 					if near_pl then
@@ -14311,7 +14366,7 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					text = text:gsub(pattern, extracted_str[t][2])
 				end
 			end
-			
+
 			if text:find('{prtsc}') then
 				stop_send_chat = true
 				text = text:gsub('{prtsc}', '')
@@ -15217,7 +15272,28 @@ function hook.onServerMessage(color_mes, mes)
 	end
 end
 
+function closeDialog(a, b)
+    lua_thread.create(function()
+        wait(5)
+        sampSendDialogResponse(a, b)
+    end)
+end
 function hook.onShowDialog(id, style, title, but_1, but_2, text)
+	if id == 1214 and lspawncar then
+		sampSendDialogResponse(1214, 1, 3, -1)
+		lspawncar = false
+	end
+	--[[if id == id and setting.org == 11 then
+        dialogData = {
+            id = id,
+            style = style,
+            title = title,
+            but_1 = but_1,
+            but_2 = but_2,
+            text = text
+        }
+        return false
+    end]]
 	if id == 235 then
 		if text:find('Должность: {B83434}(.-)') then
 			local text_org, rank_org = text:match('Должность: {B83434}(.-)%((%d+)%)')
@@ -15226,11 +15302,12 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 			save()
 		end
 		if close_stats then 
+			closeDialog(235, 0)
 			close_stats = false
 			return false
 		end
 	end
-	
+
 	if id == 25689 and setting.show_dialog_auto then
 		local g = 0
 		for line in text:gmatch('[^\r\n]+') do
@@ -15903,7 +15980,7 @@ function time()
 			end
 			confirm_action_dialog = false
 		end
-		
+
 		if anti_spam_gun[3] > 0 then
 			anti_spam_gun[3] = anti_spam_gun[3] - 1
 		end
@@ -16711,6 +16788,10 @@ function update_download()
 							table.insert(cmd[1], cmd_defoult.jail[i])
 						end
 						setting.gun_func = true
+					elseif setting.org == 11 then --> Для СМИ
+						for i = 1, #cmd_defoult.smi do
+							table.insert(cmd[1], cmd_defoult.smi[i])
+						end
 					end
 					add_cmd_in_all_cmd()
 					save_cmd()
@@ -23632,7 +23713,10 @@ local cmd_defoult_json_for_jail = {
   }
 ]]
 }
+--> Для СМИ
+local cmd_defoult_json_for_smi = {
 
+	}
 --> Мед карта для феникса
 local medcard_phoenix = [[
 {
@@ -24072,7 +24156,8 @@ cmd_defoult = {
 	government = {}, --> Для сотрудников правительства
 	army = {}, --> Для служащих в армии
 	fire_department = {}, --> Для сотрудников пожарного департмамента
-	jail = {} --> Для сотрудников тюрьмы
+	jail = {}, --> Для сотрудников тюрьмы
+	smi = {} --> Для сотрудников СМИ
 }
 
 function add_cmd_defoult()
@@ -24145,6 +24230,16 @@ function add_cmd_defoult()
 			cmd_defoult.jail[#cmd_defoult.jail].UID = math.random(20, 95000000)
 		end
 	end
+
+		--> Добавить команды для СМИ
+		for i = 1, #cmd_defoult_json_for_smi do
+			local res, set = pcall(decodeJson, cmd_defoult_json_for_smi[i])
+			if res and type(set) == 'table' then
+				set = convertToUTF8(set)
+				table.insert(cmd_defoult.smi, set)
+				cmd_defoult.smi[#cmd_defoult.smi].UID = math.random(20, 95000000)
+			end
+		end
 	
 	local res, set = pcall(decodeJson, medcard_phoenix)
 	if res and type(set) == 'table' then
@@ -24260,4 +24355,13 @@ function onScriptTerminate(script, game_quit)
 		end
 	end
 end
+
+
+--[[function SmiEdit()
+    if dialogData then
+
+    end
+end
+]]
+
 
