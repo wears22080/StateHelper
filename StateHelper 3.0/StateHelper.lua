@@ -15310,22 +15310,22 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		end
 	end
 
-	if id == 25689 and setting.show_dialog_auto then
+	if id == 25690 and setting.show_dialog_auto then
 		local g = 0
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
-				sampSendDialogResponse(25689, 1, g, -1)
+				sampSendDialogResponse(25690, 1, g, -1)
 				g = g + 1
 				return false
 			end
 		end
 	end
 
-	if id == 27339 then
+	if id == 27340 then
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
 				if setting.show_dialog_auto or setting.auto_cmd_doc then
-					sampSendDialogResponse(27339, 1, 2, -1)
+					sampSendDialogResponse(27340, 1, 2, -1)
 					confirm_action_dialog = true
 					return false
 				end
@@ -15333,11 +15333,11 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		end
 	end
 	
-	if id == 25690 then
+	if id == 25691 then
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
 				if setting.show_dialog_auto then
-					sampSendDialogResponse(25690, 1, 2, nil)
+					sampSendDialogResponse(25691, 1, 2, nil)
 					return false
 				end
 			end
@@ -15480,12 +15480,12 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		sampSendDialogResponse(26036, 0, 2, -1)
 		return false
 	end
-	if id == 26362 and num_give_lic > -1 then
-		sampSendDialogResponse(26362, 1, num_give_lic, nil) 
+	if id == 26363 and num_give_lic > -1 then
+		sampSendDialogResponse(26363, 1, num_give_lic, nil) 
 		return false
 	end
-	if id == 26363 and num_give_lic > -1 then
-		sampSendDialogResponse(26363, 1, num_give_lic_term, nil)
+	if id == 26364 and num_give_lic > -1 then
+		sampSendDialogResponse(26364, 1, num_give_lic_term, nil)
 		num_give_lic = -1
 		return false
 	end
