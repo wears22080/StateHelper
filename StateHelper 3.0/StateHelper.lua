@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.2.1')
+script_version('3.2.2')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
