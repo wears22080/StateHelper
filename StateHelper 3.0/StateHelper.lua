@@ -270,6 +270,7 @@ name_tab = u8'Главное'
 tab_settings = 1
 bool_go_stat_set = false
 lspawncar = false
+
 close_win = {main = false, fast = false}
 imgui.Scroller = {
 	id_bool_scroll = {}
@@ -833,6 +834,11 @@ setting = {
 	scene = {},
 	visible_fast = 100,
 	replace_not_flood = true,
+	color_nick = false,
+	replace_ic = true,
+	replace_s = true,
+	replace_c = true,
+	replace_b = true,
 	auto_edit = false,
 	command_tabs = {'', '', '', '', '', '', '', '', '', '', '', '', '', '', ''},
 	key_tabs = {{'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}},
@@ -1093,9 +1099,9 @@ function CefDialog()
                             local document_type = data['type']
 
                             if document_type == 1 then 		--> Паспорт
-                               if data['name'] ~= sob_info.nick then
-                                	return
-                                end
+                            	if data['name'] ~= sob_info.nick then
+                            		return
+                            	end
                                 sob_info.valid = true
                                 local sex = data['sex']
                                 local birthday = data['birthday']
@@ -1123,7 +1129,7 @@ function CefDialog()
                                     for _, v in pairs(licenses) do
                                         local license = v['license']
                                         local date_text = v['date_text'] or ""
-                                        local is_active = date_text:find("Действует", 1, true) and 1 or 2
+                                        local is_active = (date_text:find("Действует", 1, true) or date_text:find("Бессрочная", 1, true)) and 1 or 2
 
                                         if license == "car" then
                                             sob_info.car = is_active
@@ -1140,7 +1146,6 @@ function CefDialog()
                                     local state = data['state'] or ""
 									 local sub_text = (data['demorgan'] and data['demorgan']['sub_text']) or ""
 
-
                                     local med_status_m = {
                                         ["Полностью здоров"] = 1,
                                         ["Псих. отклонени"] = 2,
@@ -1148,7 +1153,6 @@ function CefDialog()
                                         ["Не определён"] = 4
                                     }
 
-									
                                     local med_status = 4
                                     local found_status = false
                                     for key, value in pairs(med_status_m) do
@@ -2638,7 +2642,13 @@ function hall.settings()
 	else
 		gui.DrawCircle({29, 32}, 20, cl.circ_im)
 	end
-	
+	--[[
+	local smi_text = 'СМИ'
+	if setting.smi_name and setting.smi_name ~= '' then
+		smi_text = smi_text ..' ' .. setting.smi_name
+	end
+	local all_org = {'Больница Лос-Сантос', 'Больница Сан-Фиерро', 'Больница Лас-Вентурас', 'Больница Джефферсон', 'Центр Лицензирования', 'Правительство', 'Армия Лос-Сантос', 'Армия Сан-Фиерро', 'Пожарный департамент', 'Тюрьма строгого режима', smi_text}
+	]]
 	local all_org = {'Больница Лос-Сантос', 'Больница Сан-Фиерро', 'Больница Лас-Вентурас', 'Больница Джефферсон', 'Центр Лицензирования', 'Правительство', 'Армия Лос-Сантос', 'Армия Сан-Фиерро', 'Пожарный департамент', 'Тюрьма строгого режима'}
 	local num_char = #u8:decode(setting.name_rus)
 	if num_char <= 19 then
@@ -2803,6 +2813,13 @@ function hall.settings()
 		
 		gui.Text(26, 181, 'Организация', font[3])
 		local bool_set_org = setting.org
+		--[[
+		local smi_text = u8'СМИ'
+		if setting.smi_name and setting.smi_name ~= '' then
+    		smi_text = smi_text ..' ' .. setting.smi_name
+		end
+		setting.org = gui.ListTableMove({572, 181},{u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима', smi_text},setting.org, 'Select Organization')
+]]
 		setting.org = gui.ListTableMove({572, 181}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима'}, setting.org, 'Select Organization')
 		if setting.org ~= bool_set_org then
 			if setting.org <= 4 then --> Для Больниц
@@ -2945,9 +2962,9 @@ function hall.settings()
 		end
 	elseif tab_settings == 2 then
 		gui.Text(25, 12, 'Получаемые сообщения', bold_font[1])
-		new_draw(37, 395)
+		new_draw(37, 431)
 		
-		for i = 0, 9 do
+		for i = 0, 10 do
 			gui.DrawLine({16, 72 + (i * 36)}, {602, 72 + (i * 36)}, cl.line)
 		end
 		
@@ -3017,108 +3034,168 @@ function hall.settings()
 			setting.replace_not_flood = not setting.replace_not_flood
 			save()
 		end
+		gui.Text(26, 442, 'Изменить цвет ника по цвету организации', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 437))
+		if gui.Switch(u8'##Цветные ники', setting.color_nick) then
+			setting.color_nick = not setting.color_nick
+			save()
+		end
+		if setting.color_nick then
+			if gui.Button(u8'Настроить', {370, 442}, {130, 20}) then
+				imgui.OpenPopup(u8'Настроить цвет ника')
+			end
+		else
+			imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+			imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+			imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+			gui.Button(u8'Настроить', {370, 442}, {130, 20}, false)
+			imgui.PopStyleColor(3)
+		end
+		if imgui.BeginPopupModal(u8'Настроить цвет ника', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+			imgui.SetCursorPos(imgui.ImVec2(0, 0))
+			imgui.BeginChild(u8'Настройки цветов', imgui.ImVec2(730, 164), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoScrollbar)
+			imgui.SetCursorPos(imgui.ImVec2(710, 2))
+			if imgui.InvisibleButton(u8'##Закрыть окно настроек', imgui.ImVec2(20, 20)) then
+				save()
+				imgui.CloseCurrentPopup()
+			end
+			if imgui.IsItemHovered() then
+				gui.DrawCircle({721, 12}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
+			else
+				gui.DrawCircle({721, 12}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00))
+			end			
+			gui.Draw({16, 16}, {698, 148}, cl.tab, 7, 15)
+			gui.Text(26, 26, 'Заменять цвет текста в IC сообщениях', font[3])
+			imgui.SameLine(0, 10)
+			if gui.Switch(u8'##Заменить IC', setting.replace_ic) then
+				setting.replace_ic = not setting.replace_ic
+				save()
+			end
+			gui.Text(26, 62, 'Заменять цвет текста в /s', font[3])
+			imgui.SameLine(0, 10)
+			if gui.Switch(u8'##Заменить /s', setting.replace_s) then
+				setting.replace_s = not setting.replace_s
+				save()
+			end
+			gui.Text(26, 98, 'Заменять цвет текста в /c', font[3])
+			imgui.SameLine(0, 10)
+			if gui.Switch(u8'##Заменить /c', setting.replace_c) then
+				setting.replace_c = not setting.replace_c
+				save()
+			end
+			gui.Text(26, 134, 'Заменять цвет текста в /b', font[3])
+			imgui.SameLine(0, 10)
+			if gui.Switch(u8'##Заменить /b', setting.replace_b) then
+				setting.replace_b = not setting.replace_b
+				save()
+			end
+			imgui.Dummy(imgui.ImVec2(0, 20))
+			imgui.EndChild()
+			imgui.Dummy(imgui.ImVec2(0, 13))
+			imgui.EndPopup()
+		end
+
+		gui.Text(25, 487, 'Отыгровки', bold_font[1])
+		new_draw(512, 399)
 		
-		gui.Text(25, 451, 'Отыгровки', bold_font[1])
-		new_draw(476, 363)
-		
-		gui.Text(26, 485, 'Автокоррекция отыгровок /me, /do, /todo', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 480))
+		gui.Text(26, 521, 'Автокоррекция отыгровок /me, /do, /todo', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 516))
 		if gui.Switch(u8'##Автокоррекция отыгровок', setting.auto_edit) then
 			setting.auto_edit = not setting.auto_edit
 			save()
 		end
-		gui.DrawLine({16, 511}, {602, 511}, cl.line)
-		gui.Text(26, 521, 'Автоотыгровка при принятии документов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 516))
+		gui.DrawLine({16, 547}, {602, 547}, cl.line)
+		gui.Text(26, 557, 'Автоотыгровка при принятии документов', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 552))
 		if gui.Switch(u8'##Автоотыгровка при принятии документов', setting.auto_cmd_doc) then
 			setting.auto_cmd_doc = not setting.auto_cmd_doc
 			save()
 		end
-		gui.TextInfo({26, 540}, {'При просмотре паспорта, лицензий, медицинской карты или трудовой книжки, будет', 'автоматически воспроизведена отыгровка взятия просматриваемого документа.'})
-		gui.DrawLine({16, 579}, {602, 579}, cl.line)
-		gui.Text(26, 589, 'Автоотыгровка при закрытии документов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 585))
+		gui.TextInfo({26, 576}, {'При просмотре паспорта, лицензий, медицинской карты или трудовой книжки, будет', 'автоматически воспроизведена отыгровка взятия просматриваемого документа.'})
+		gui.DrawLine({16, 615}, {602, 615}, cl.line)
+		gui.Text(26, 625, 'Автоотыгровка при закрытии документов', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 621))
 		if gui.Switch(u8'##Автоотыгровка при закрытии документов', setting.auto_close_doc) then
     		setting.auto_close_doc = not setting.auto_close_doc
     		save()
 		end
-		gui.TextInfo({26, 608}, {'При закрытии окна с документами в чате автоматически будет воспроизведена отыгровка.'})
-		gui.DrawLine({16, 637}, {602, 637}, cl.line)
-		gui.Text(26, 647, 'Автоотыгровка дубинки', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 643))
+		gui.TextInfo({26, 644}, {'При закрытии окна с документами в чате автоматически будет воспроизведена отыгровка.'})
+		gui.DrawLine({16, 673}, {602, 673}, cl.line)
+		gui.Text(26, 683, 'Автоотыгровка дубинки', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 679))
 		if gui.Switch(u8'##Автоотыгровка дубинки', setting.auto_cmd_tazer) then
     		setting.auto_cmd_tazer = not setting.auto_cmd_tazer
     		save()
 		end
-		gui.DrawLine({16, 674}, {602, 674}, cl.line)
-		gui.Text(26, 688, 'Автоотыгровка /time', font[3])
+		gui.DrawLine({16, 710}, {602, 710}, cl.line)
+		gui.Text(26, 724, 'Автоотыгровка /time', font[3])
 		local bool_set_time = setting.auto_cmd_time
-		setting.auto_cmd_time = gui.InputText({190, 690}, 391, setting.auto_cmd_time, u8'Автоотыгровка time', 230, u8'Введите текст отыгровки')
+		setting.auto_cmd_time = gui.InputText({190, 726}, 391, setting.auto_cmd_time, u8'Автоотыгровка time', 230, u8'Введите текст отыгровки')
 		if setting.auto_cmd_time ~= bool_set_time then
     		save()
 		end
-		gui.TextInfo({26, 717}, {'После ввода команды /time, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
-		gui.DrawLine({16, 753}, {602, 753}, cl.line)
-		gui.Text(26, 767, 'Автоотыгровка /r', font[3])
+		gui.TextInfo({26, 753}, {'После ввода команды /time, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
+		gui.DrawLine({16, 789}, {602, 789}, cl.line)
+		gui.Text(26, 803, 'Автоотыгровка /r', font[3])
 		local bool_set_r = setting.auto_cmd_r
-		setting.auto_cmd_r = gui.InputText({190, 769}, 391, setting.auto_cmd_r, u8'Автоотыгровка r', 230, u8'Введите текст отыгровки')
+		setting.auto_cmd_r = gui.InputText({190, 805}, 391, setting.auto_cmd_r, u8'Автоотыгровка r', 230, u8'Введите текст отыгровки')
 		if setting.auto_cmd_r ~= bool_set_r then
     		save()
 		end
-		new_draw(848, 71)
-		gui.TextInfo({26, 796}, {'После ввода команды /r, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
-		gui.Text(26, 862, 'Тег в рацию /r', font[3])
+		new_draw(884, 107)
+		gui.TextInfo({26, 832}, {'После ввода команды /r, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
+		gui.Text(26, 898, 'Тег в рацию /r', font[3])
 		local bool_set_teg = setting.teg_r
-		setting.teg_r = gui.InputText({190, 864}, 311, setting.teg_r, u8'Тег в рацию организации', 250, u8'Введите тег для рации')
+		setting.teg_r = gui.InputText({190, 900}, 311, setting.teg_r, u8'Тег в рацию организации', 250, u8'Введите тег для рации')
 		if setting.teg_r ~= bool_set_teg then
     		save()
 		end
-		gui.TextInfo({26, 891}, {'О необходимости использования тега уточните у лидера Вашей организации.'})
-		new_draw(928, 80)
+		gui.TextInfo({26, 927}, {'О необходимости использования тега уточните у лидера Вашей организации.'})
+		new_draw(964, 116)
 		if setting.gun_func then
-	gui.Text(26, 978, 'Отыгровки оружия', font[3])
-			if gui.Button(u8'Редактировать...', {460, 975}, {130, 25}) then
+		gui.Text(26, 1014, 'Отыгровки оружия', font[3])
+			if gui.Button(u8'Редактировать...', {460, 1011}, {130, 25}) then
 				imgui.OpenPopup(u8'Редактировать отыгровки оружия')
 				gun_bool = deep_copy(setting.gun)
 			end
 		else
 			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-			gui.Text(26, 978, 'Отыгровки оружия', font[3])
+			gui.Text(26, 1014, 'Отыгровки оружия', font[3])
 			imgui.PopStyleColor(1)
-			gui.Button(u8'Редактировать...', {460, 975}, {130, 25}, false)
+			gui.Button(u8'Редактировать...', {460, 1011}, {130, 25}, false)
 		end
 
-		gui.Text(26, 942, 'Использовать автоотыгровки при взаимодействии с оружием', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 938))
+		gui.Text(26, 978, 'Использовать автоотыгровки при взаимодействии с оружием', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 974))
 		if gui.Switch(u8'##Автоотыгровка взаимодействия с оружием', setting.gun_func) then
 			setting.gun_func = not setting.gun_func
 			save()
 		end
-		new_draw(1017, 91)
+		new_draw(1053, 127)
 
-		gui.Text(26, 1032, 'Автоматический перенос длинного текста в игровом чате', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 1027))
+		gui.Text(26, 1068, 'Автоматический перенос длинного текста в игровом чате', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 1063))
 		if gui.Switch(u8'##Автоматический перенос длинного текста в игровом чате', setting.wrap_text_chat.func) then
 			setting.wrap_text_chat.func = not setting.wrap_text_chat.func
 			save()
 		end
 
 		if setting.wrap_text_chat.func then
-			gui.Text(26, 1070, 'Переносить текст после достижения', font[3])
+			gui.Text(26, 1106, 'Переносить текст после достижения', font[3])
 			local bool_set_wrap = setting.wrap_text_chat.num_char
-			setting.wrap_text_chat.num_char = gui.InputText({274, 1070}, 30, setting.wrap_text_chat.num_char, u8'Количество символов переносимого текста', 4, u8'Число', 'num')
+			setting.wrap_text_chat.num_char = gui.InputText({274, 1106}, 30, setting.wrap_text_chat.num_char, u8'Количество символов переносимого текста', 4, u8'Число', 'num')
 			if setting.wrap_text_chat.num_char ~= bool_set_wrap then
 				if setting.wrap_text_chat.num_char == '' then
 					setting.wrap_text_chat.num_char = '128'
 				end
 				save()
 			end
-			gui.Text(320, 1070, 'символов', font[3])
+			gui.Text(320, 1106, 'символов', font[3])
 		else
 			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-			gui.Text(26, 1070, 'Переносить текст после достижения', font[3])
-			gui.Text(320, 1070, 'символов', font[3])
-			gui.InputFalse(setting.wrap_text_chat.num_char, 274, 1070, 30)
+			gui.Text(26, 1106, 'Переносить текст после достижения', font[3])
+			gui.Text(320, 1106, 'символов', font[3])
+			gui.InputFalse(setting.wrap_text_chat.num_char, 274, 1106, 30)
 			imgui.PopStyleColor(1)
 		end
 
@@ -10926,8 +11003,8 @@ win.main = imgui.OnFrame(
 						first_start = 3
 					end
 					gui.Button(u8'Назад', {640, 403}, {62, 30}, false)
-					
-					setting.org = gui.LT_First_Start({300, 110}, {249, 273}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима'}, setting.org, u8'Выбрать организацию')
+					--					setting.org = gui.LT_First_Start({300, 110}, {249, 273}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима', u8'СМИ'}, setting.org, u8'Выбрать организацию')
+					setting.org = gui.LT_First_Start({300, 116}, {249, 248}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима'}, setting.org, u8'Выбрать организацию')
 				end
 			elseif first_start == 3 then
 				imgui.PushFont(bold_font[2])
@@ -12501,7 +12578,7 @@ win.main = imgui.OnFrame(
         imgui.End()
 	end
 )
-
+--[[
 local inputField = imgui.new.char[256]()
 local sx, sy = getScreenResolution()
 
@@ -12513,7 +12590,7 @@ win.smi = imgui.OnFrame(
         SmiEdit()
     end
 )
-
+]]
 win.shpora = imgui.OnFrame(
 	function() return windows.shpora[0] and not scene_active end,
 	function(main)
@@ -14446,7 +14523,7 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 						if CMD.act[i - 1][1] == 'SEND' or CMD.act[i - 1][1] == 'SEND_ME' then
 							wait(delay)
 						else
-							wait(600)
+							wait(delay)
 						end
 					end
 					if CMD.send_end_mes or i ~= #CMD.act then
@@ -15002,6 +15079,43 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 
+	if setting.color_nick then
+		if mes:find('говорит:') and setting.replace_ic then
+			local playerId = mes:match('%d+')
+			if playerId then
+				local playerColor = sampGetPlayerColor(playerId)
+				sampAddChatMessage(mes, playerColor)
+				return false
+			end
+		elseif mes:find('кричит:') and setting.replace_s then
+		local playerId = mes:match('%d+')
+		if playerId then
+			local playerColor = sampGetPlayerColor(playerId)
+			local mes = mes:gsub("кричит:", "кричит:{F0E68C}")
+			sampAddChatMessage(mes, playerColor)
+			return false
+		end
+		elseif mes:find('говорит шепотом:') and setting.replace_c then
+			local playerId = mes:match('%d+')
+			if playerId then
+				local playerColor = sampGetPlayerColor(playerId)
+				sampAddChatMessage(mes, playerColor)
+				return false
+			end
+		elseif mes:match('%(%(.+%[%d+%]: {B7AFAF}.+%)%)$') and setting.replace_b then
+			local nickname, id, text = mes:match('%(%(%s*(.-)%[(%d+)%]: {B7AFAF}(.-)%)%)$')
+			if nickname and id and text then
+				local playerId = tonumber(id)
+				local playerColor = sampGetPlayerColor(playerId)
+				local cleanText = text:gsub("{B7AFAF}", "")
+				local formatted = string.format('{%06X}(( %s[%s]: {B7AFAF}%s{%06X}))',
+					bit.band(playerColor, 0xFFFFFF), nickname, id, cleanText, bit.band(playerColor, 0xFFFFFF))
+				sampAddChatMessage(formatted, playerColor)
+				return false
+			end
+		end
+	end
+	
 	if mes:find('Купите лотерейный билет и получите возможность выиграть') or mes:find('Купить лотерейные билеты можно в уличных киосках')
 	and setting.put_mes[7] then
 		return false
@@ -15281,11 +15395,12 @@ end
 function hook.onShowDialog(id, style, title, but_1, but_2, text)
 	if id == 1214 and lspawncar then
 		sampSendDialogResponse(1214, 1, 3, -1)
-		lspawncar = false
 		closeDialog(1214, 0)
+		lspawncar = false
 		return false
 	end
-	--[[if id == id and setting.org == 11 then
+	--[[
+	if id == 557 and setting.org == 11 then
         dialogData = {
             id = id,
             style = style,
@@ -15294,8 +15409,10 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
             but_2 = but_2,
             text = text
         }
+		board = true
         return false
-    end]]
+    end
+	]]
 	if id == 235 then
 		if text:find('Должность: {B83434}(.-)') then
 			local text_org, rank_org = text:match('Должность: {B83434}(.-)%((%d+)%)')
@@ -15303,6 +15420,12 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 			setting.rank = tonumber(rank_org)
 			save()
 		end
+		--if setting.org == 11 then
+		--	local name_org = text:match("студия%s*([^%]]+)]")
+		--	if name_org then
+		--		setting.smi_name = u8(name_org)
+		--	end
+		--end		
 		if close_stats then 
 			closeDialog(235, 0)
 			close_stats = false
@@ -24357,13 +24480,29 @@ function onScriptTerminate(script, game_quit)
 		end
 	end
 end
+--[[
+local inputTextCallback = ffi.cast("ImGuiInputTextCallback", function(data)
+    if needSetCursorToEnd then
+        data.CursorPos = #ffi.string(inputField)
+        needSetCursorToEnd = false
+    end
+    return 0
+end)
 
 
---[[function SmiEdit()
-    if dialogData then
+function SmiEdit()
+    if not dialogData then return end
+        local startIdx, endIdx = string.find(dialogText, "{33AA33}([^\n]+)")
+		if imgui.IsItemHovered() then
+			gui.DrawLine({arrowPosX - 5, arrowPosY - 5}, {arrowPosX + 5, arrowPosY}, imgui.ImVec4(0.98, 0.30, 0.38, 1.00), 2)
+			gui.DrawLine({arrowPosX + 5, arrowPosY}, {arrowPosX - 5, arrowPosY + 5}, imgui.ImVec4(0.98, 0.30, 0.38, 1.00), 2)
+			imgui.SetTooltip(u8("Скопировать в поле ввода"))
+		else
+			gui.DrawLine({arrowPosX - 5, arrowPosY - 5}, {arrowPosX + 5, arrowPosY}, imgui.ImVec4(0.98, 0.40, 0.38, 1.00), 2)
+			gui.DrawLine({arrowPosX + 5, arrowPosY}, {arrowPosX - 5, arrowPosY + 5}, imgui.ImVec4(0.98, 0.40, 0.38, 1.00), 2)
+		end
+
+		-- А дописать не хоч?
 
     end
-end
 ]]
-
-
