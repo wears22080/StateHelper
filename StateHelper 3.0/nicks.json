@@ -1,4 +1,10 @@
-{
-
-  }
-  
+[
+	{
+		"name": "Robert Poloskyn",
+		"server": "185.169.134.173:7777"
+	},
+	{
+		"name": "Ilya Kustov",
+		"server": "185.169.134.3:7777"
+	}
+]
