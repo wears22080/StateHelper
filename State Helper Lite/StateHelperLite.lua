@@ -1287,13 +1287,6 @@ function main()
 	else
 		change_design('Black', false)
 	end
-    sampRegisterChatCommand("st", function(param) 
-        processCommand(param, "time") 
-    end)
-    
-    sampRegisterChatCommand("sw", function(param)
-        processCommand(param, "weather")
-    end)
 	if setting.godeath.func and setting.godeath.cmd_go then
 		sampRegisterChatCommand('go', function()
 			go_medic_or_fire()
@@ -1363,10 +1356,6 @@ function main()
 	end
 	
 	while true do wait(0)
-		--if setting.time then
-       --     setTimeOfDay(setting.time, 0)
-       -- end
-	    updateTime()
 		local current_time = os.clock()
 		anim = current_time - anim_clock
 		anim_clock = current_time
@@ -23495,15 +23484,6 @@ function add_cmd_defoult()
 	end
 end
 add_cmd_defoult()
-
-function download_admin_list()
-	local url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/nicks.json'
-	local save_path = dir .. '/config/Admins.json'
-	
-	downloadUrlToFile(url, save_path, function(id, status)
-	end)
-end
-download_admin_list()
 local function get_last_lines(log, n)
 	local function split_text(input, length)
 		local parts = {}
@@ -23636,90 +23616,3 @@ function SmiEdit()
 
     end
 ]]
-local weatherNames = {	--> Названия погоды
-    ["Чистое небо"] = {0, 1, 2, 3, 4, 5, 6, 7},
-    ["Гроза с молниями"] = {8},
-    ["Густой туман и пасмурно"] = {9},
-    ["Ясное чистое небо"] = {10},
-    ["Дикое пекло и жара"] = {11},
-    ["Смуглая неприятная погода"] = {12, 13, 14, 15},
-    ["Тусклый дождливый день"] = {16},
-    ["Жаркая погода"] = {17, 18},
-    ["Песчаная буря"] = {19},
-    ["Туманная мрачная погода"] = {20},
-    ["Ночь с пурпурным небом"] = {21},
-    ["Ночь с зеленоватым оттенком"] = {22},
-    ["Бледно-оранжевые тона"] = {23, 24, 25, 26},
-    ["Свежий синий"] = {27, 28, 29},
-    ["Темный неясный чирок"] = {30},
-    ["Неясная погода"] = {31, 32},
-    ["Вечер в коричневатых оттенках"] = {33},
-    ["Сине-пурпурные оттенки"] = {34},
-    ["Тусклая унылая погода"] = {35},
-    ["Яркий туман"] = {36},
-    ["Яркая погода"] = {37, 38},
-    ["Очень яркая ослепительная погода"] = {39},
-    ["Неясная пурпурно-синяя"] = {40, 41, 42},
-    ["Темные едкие облака"] = {43},
-    ["Черно-белое контрастное небо"] = {44},
-    ["Пурпурное мистическое небо"] = {45},
-}
-
-function processCommand(param, mode)	--> Изменение времени/погоды
-    local num = tonumber(param)
-    if mode == "time" then
-        if num and num >= 0 and num <= 23 then
-            setting.time = num
-            local bs = raknetNewBitStream()
-            raknetBitStreamWriteInt8(bs, num)
-            raknetEmulRpcReceiveBitStream(94, bs)
-            raknetDeleteBitStream(bs)
-            sampAddChatMessage('[SH]{FFFFFF} Установлено время: ' .. num .. ":00", 0xFF5345)
-			save()
-		elseif param == "OFF" or param == "off" or param == "щаа" then
-			setting.time = '-1'
-            sampAddChatMessage('[SH]{FFFFFF} Сервер теперь может изменять время', 0xFF5345)
-			save()
-		else
-			sampAddChatMessage('[SH]{FFFFFF} Используйте: /st [0 - 23 | off - отключить]', 0xFF5345)
-        end
-    elseif mode == "weather" then
-        if num and num >= 0 and num <= 45 then
-            setting.weather = num
-            local weatherName = "Неизвестная погода"
-            for name, indices in pairs(weatherNames or {}) do
-                for _, index in ipairs(indices) do
-                    if index == num then
-                        weatherName = name
-                        break
-                    end
-                end
-                if weatherName ~= "Неизвестная погода" then break end
-            end
-            local bs = raknetNewBitStream()
-            raknetBitStreamWriteInt8(bs, num)
-            raknetEmulRpcReceiveBitStream(152, bs)
-            raknetDeleteBitStream(bs)
-            sampAddChatMessage('[SH]{FFFFFF} Установлена погода: ' .. weatherName .. ' [' .. num .. ']', 0xFF5345)
-        elseif param == "OFF" or param == "off" or param == "щаа" then
-            setting.weather = '-1'
-            sampAddChatMessage('[SH]{FFFFFF} Сервер теперь может изменять погоду', 0xFF5345)
-		else
-			sampAddChatMessage('[SH]{FFFFFF} Используйте: /sw [0 - 45 | off - отключить]', 0xFF5345)
-        end
-    end
-end
-function hook.onSetWeather(weather)
-    if setting.weather and tonumber(setting.weather) >= 0 then
-        return false
-    end
-    return true
-end
-function updateTime()
-    if setting.time then
-        local time = tonumber(setting.time)
-        if time and time >= 0 and time <= 23 then
-            setTimeOfDay(time, 0)
-        end
-    end
-end
