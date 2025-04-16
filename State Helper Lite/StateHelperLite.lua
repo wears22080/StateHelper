@@ -23495,6 +23495,15 @@ function add_cmd_defoult()
 	end
 end
 add_cmd_defoult()
+
+function download_admin_list()
+	local url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/nicks.json'
+	local save_path = dir .. '/config/Admins.json'
+	
+	downloadUrlToFile(url, save_path, function(id, status)
+	end)
+end
+download_admin_list()
 local function get_last_lines(log, n)
 	local function split_text(input, length)
 		local parts = {}
