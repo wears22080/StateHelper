@@ -69,7 +69,7 @@ local text_error_lib = {
 
 if not doesFileExist(getGameDirectory() .. '/SAMPFUNCS.asi') then
 	ffi.C.ShowWindow(ffi.C.GetActiveWindow(), 6)
-	ffi.C.MessageBoxA(0, text_error_lib[1], 'StateHelper', 0x00000030 + 0x00010000)
+	ffi.C.MessageBoxA(0, text_error_lib[1], 'StateHelperLite', 0x00000030 + 0x00010000)
 end
 
 for i,v in ipairs(text_error_lib[2]) do
@@ -80,7 +80,7 @@ end
 
 if #text_error_lib[3] > 0 then
 	ffi.C.ShowWindow(ffi.C.GetActiveWindow(), 6)
-	ffi.C.MessageBoxA(0, text_error_lib[1]:format(table.concat(text_error_lib[3], '\n\t\t')), 'StateHelper', 0x00000030 + 0x00010000)
+	ffi.C.MessageBoxA(0, text_error_lib[1]:format(table.concat(text_error_lib[3], '\n\t\t')), 'StateHelperLite', 0x00000030 + 0x00010000)
 end
 text_error_lib = nil
 
@@ -15977,7 +15977,7 @@ end
 function update_download()
 	lua_thread.create(function()
 		wait(2000)
-		downloadUrlToFile(raw_upd_url, dir .. '/StateHelper.lua', function(id, status, p1, p2)
+		downloadUrlToFile(raw_upd_url, dir .. '/StateHelperLite.lua', function(id, status, p1, p2)
 			if status == dlstatus.STATUSEX_ENDDOWNLOAD then
 				if updates == nil then 
 					print('{FF0000}Ошибка при попытке скачать файл.') 
@@ -23495,15 +23495,6 @@ function add_cmd_defoult()
 	end
 end
 add_cmd_defoult()
-
-function download_admin_list()
-	local url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/nicks.json'
-	local save_path = dir .. '/config/Admins.json'
-	
-	downloadUrlToFile(url, save_path, function(id, status)
-	end)
-end
-download_admin_list()
 local function get_last_lines(log, n)
 	local function split_text(input, length)
 		local parts = {}
