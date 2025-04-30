@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.2.2')
+script_version('3.2.3')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -104,7 +104,6 @@ local shell32 = ffi.load 'Shell32'
 local ole32 = ffi.load 'Ole32'
 ole32.CoInitializeEx(nil, 6)
 local hook = require 'lib.samp.events'
-
 vkeys.key_names[vkeys.VK_RBUTTON] = u8'ПКМ'
 vkeys.key_names[vkeys.VK_LBUTTON] = u8'ЛКМ'
 vkeys.key_names[vkeys.VK_XBUTTON1] = 'XBut1'
@@ -270,7 +269,7 @@ name_tab = u8'Главное'
 tab_settings = 1
 bool_go_stat_set = false
 lspawncar = false
-
+carcers = false
 close_win = {main = false, fast = false}
 imgui.Scroller = {
 	id_bool_scroll = {}
@@ -348,6 +347,7 @@ bool_sob_rp_scroll = false
 run_sob = false
 sob_info = {}
 text_sob_chat = ''
+support_text = ''
 new_reminder = false
 new_rem = {}
 last_mouse_pos = {0, 0}
@@ -703,6 +703,9 @@ setting = {
 	auto_cmd_time = '',
 	auto_cmd_r = '',
 	teg_r = '',
+	time = '',
+	weather = '',
+	watherlock = false,
 	price = {
 		{
 			lec = '10000',
@@ -1195,7 +1198,7 @@ function CefDialog()
 						if event == 'event.employment.updateData' then --> Трудовая книжка
 							local data = json.decode(body)
 							local member = data['member']
-							if member == 0 then						   --> Проверка на оргу, потом поменяю
+							if member == 0 then						   --> Проверка на оргу, потом поменяю :)
 								sob_info.warn = 1
 							else
 								sob_info.warn = 0
@@ -1234,7 +1237,6 @@ function sendCef(str)
     raknetDeleteBitStream(bs)
 	end
 end
-
 
 function main()
 	repeat wait(300) until isSampAvailable()
@@ -1337,7 +1339,13 @@ function main()
 	else
 		change_design('Black', false)
 	end
-	
+    sampRegisterChatCommand("st", function(param) 
+        processCommand(param, "time") 
+    end)
+    
+    sampRegisterChatCommand("sw", function(param)
+        processCommand(param, "weather")
+    end)
 	if setting.godeath.func and setting.godeath.cmd_go then
 		sampRegisterChatCommand('go', function()
 			go_medic_or_fire()
@@ -1407,6 +1415,10 @@ function main()
 	end
 	
 	while true do wait(0)
+		--if setting.time then
+       --     setTimeOfDay(setting.time, 0)
+       -- end
+	    updateTime()
 		local current_time = os.clock()
 		anim = current_time - anim_clock
 		anim_clock = current_time
@@ -4967,7 +4979,7 @@ function hall.settings()
 			new_draw(512, 107)
 		else
 			new_draw(512, 35)
-		end
+		end	
 		gui.Text(26, 521, 'Автоматически кикать при привышении нормы АФК', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(561, 516))
 		if gui.Switch(u8'##Автокик АФК', setting.kick_afk.func) then
@@ -5470,6 +5482,7 @@ function hall.settings()
 			'Ilya_Kustov, Phoenix {FF9500}(QA-инженер, поддержка скрипта и обработка предложений)',
 			'Emma_Simmons, Phoenix {FF9500}(QA-инженер, помощь в разработке функциональности)',
 			'Oliver_Blain, Love {FF9500}(QA-инженер стадии Бета)',
+			'Richard_Forbes, Surprise {FF9500}(Разработчик сайта, помощь в разработке функций)',
 			'Robert_Poloskyn, Winslow {FF9500}(QA-инженер стадии Бета, помощь в разработке функций)',
 			'Maestro_Hennessy, Phoenix {FF9500}(QA-инженер стадии Бета)',
 			'Daniel_Heiliger, Love {FF9500}(QA-инженер стадии Бета)',
@@ -8359,6 +8372,9 @@ function hall.sob()
 				end
 				if gui.Button(text_name_sob .. '##rff4' .. i, {10, 8 + pos_y_b}, {274, 27}) then
 					start_sob_cmd(setting.sob.rp_fit[i].rp)
+					open_main()
+					run_sob = false
+					
 					imgui.CloseCurrentPopup()
 				end
 				pos_y_b = pos_y_b + 35
@@ -8711,7 +8727,6 @@ function hall.reminder()
 	
 	imgui.EndChild()
 end
-
 function hall.stat()
 	local color_ItemActive = imgui.ImVec4(0.20, 0.20, 0.20, 1.00)
 	local color_ItemHovered = imgui.ImVec4(0.24, 0.24, 0.24, 1.00)
@@ -12578,9 +12593,45 @@ win.main = imgui.OnFrame(
         imgui.End()
 	end
 )
+
+--[[win.fast_TCP = imgui.OnFrame(
+	function()
+		return carcer ~= nil and carcers == true
+	end,
+	function(main)
+		imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(500, 300))
+
+		imgui.Begin('Умный карцер', nil,
+			imgui.WindowFlags.NoCollapse +
+			imgui.WindowFlags.NoResize +
+			imgui.WindowFlags.NoTitleBar +
+			imgui.WindowFlags.NoScrollbar +
+			imgui.WindowFlags.NoScrollWithMouse)
+		gui.Draw({4, 4}, {492, 292}, cl.main, 12, 15)
+		gui.DrawLine({4, 38}, {496, 38}, cl.line)
+		imgui.SetCursorPos(imgui.ImVec2(11, 11))
+		if imgui.InvisibleButton(u8'##Закрыть окно TCP', imgui.ImVec2(20, 20)) then
+			carcers = false
+		end
+		if imgui.IsItemHovered() then
+			gui.DrawCircle({21, 21}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
+		else
+			gui.DrawCircle({21, 21}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00))
+		end
+		imgui.SetCursorPos(imgui.ImVec2(20, 50))
+		imgui.PushFont(font[3])
+		imgui.TextWrapped(u8"Выбран игрок: " .. tostring(carcer or "Неизвестно"))
+		imgui.PopFont()
+		imgui.EndChild()
+
+		imgui.End()
+	end
+)
+]]
+
 --[[
 local inputField = imgui.new.char[256]()
-local sx, sy = getScreenResolution()
 
 win.smi = imgui.OnFrame(
     function()
@@ -13372,7 +13423,24 @@ function change_design(design_bool, bool_theme)
 		theme()
 	end
 end
+--[[
+--> Для ТСР
+sampRegisterChatCommand("carcer", function(param)
+	if setting.org ~= 10 then
+		sampAddChatMessage("")
+		return
+	end
 
+	local num = tonumber(param)
+	if num and num >= 0 and num <= 1000 then
+		carcer = num
+		carcers = true
+		sampAddChatMessage("")
+	else
+		sampAddChatMessage("")
+	end
+end)
+]]
 --> Акценты
 sampRegisterChatCommand('r', function(text_accents_r) 
 	if setting.teg_r ~= '' and setting.teg_r ~= ' ' and text_accents_r ~= '' and not setting.accent.func then
@@ -13728,7 +13796,19 @@ function on_hot_key(id_pr_key)
 	
 	if not isGamePaused() and not isPauseMenuActive() and not sampIsDialogActive() and not sampIsChatInputActive() then
 		if pressed_key == '72' and setting.speed_door then
-			sampSendChat('/opengate')
+			if isCharInAnyCar(PLAYER_PED) then
+				setGameKeyState(18, 255)
+			else
+				local data = allocateMemory(68)
+				local _, myId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+				sampStorePlayerOnfootData(myId, data)
+		
+				local weaponId = getCurrentCharWeapon(PLAYER_PED)
+				setStructElement(data, 36, 1, weaponId + 192, true)
+		
+				sampSendOnfootData(data)
+				freeMemory(data)
+			end
 		end
 		
 		if pressed_key == tostring(table.concat(setting.fast.key, ' ')) and setting.fast.func then
@@ -15080,14 +15160,14 @@ function hook.onServerMessage(color_mes, mes)
 	end
 
 	if setting.color_nick then
-		if mes:find('говорит:') and setting.replace_ic then
+		if mes:find('говорит:') and mes_col == 'ffffff' and setting.replace_ic then
 			local playerId = mes:match('%d+')
 			if playerId then
 				local playerColor = sampGetPlayerColor(playerId)
 				sampAddChatMessage(mes, playerColor)
 				return false
 			end
-		elseif mes:find('кричит:') and setting.replace_s then
+		elseif mes:find('кричит:') and mes_col == 'f0e68c' and setting.replace_s then
 		local playerId = mes:match('%d+')
 		if playerId then
 			local playerColor = sampGetPlayerColor(playerId)
@@ -15095,14 +15175,14 @@ function hook.onServerMessage(color_mes, mes)
 			sampAddChatMessage(mes, playerColor)
 			return false
 		end
-		elseif mes:find('говорит шепотом:') and setting.replace_c then
+		elseif mes:find('говорит шепотом:') and mes_col == '94b0c1' and setting.replace_c then
 			local playerId = mes:match('%d+')
 			if playerId then
 				local playerColor = sampGetPlayerColor(playerId)
 				sampAddChatMessage(mes, playerColor)
 				return false
 			end
-		elseif mes:match('%(%(.+%[%d+%]: {B7AFAF}.+%)%)$') and setting.replace_b then
+		elseif mes:match('%(%(.+%[%d+%]: {B7AFAF}.+%)%)$') and mes_col == 'ffffff' and setting.replace_b then
 			local nickname, id, text = mes:match('%(%(%s*(.-)%[(%d+)%]: {B7AFAF}(.-)%)%)$')
 			if nickname and id and text then
 				local playerId = tonumber(id)
@@ -15278,6 +15358,19 @@ function hook.onServerMessage(color_mes, mes)
 				addOneOffSound(0, 0, 0, 1057)
 				rever = rever + 1
 				until rever > 10
+		end)
+		return false
+	end
+
+	if mes:find('Robert_Poloskyn(.+) sh'..my.id) then	
+		local rever = 0
+		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n                 разработчик-фиксер скрипта State Helper Lite - {2b8200}Robert_Poloskyn', 'Закрыть', '', 0)
+		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик-фиксер State Helper Lite - {39e3be}Robert_Poloskyn.', 0xFF5345)
+		lua_thread.create(function()
+			repeat wait(200)
+				addOneOffSound(0, 0, 0, 1057)
+				rever = rever + 1
+			until rever > 10
 		end)
 		return false
 	end
@@ -15487,6 +15580,10 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 					if line:find('%(Вы%)') then
 						color, nick, id, prefix, rank_name, rank_id, color_nil, warns, idk, afk, muted, quests = 
 							string.match(line, '{(%x+)}(.-)%((%d+)%)%{(%x+)}%(Вы%)\t(.-)%((%d+)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
+					elseif line:find('%(%d+ дней%)') then
+						color, nick, id, rank_name, rank_id, color, days, color_nil, warns, idk, afk, muted, quests = 
+						string.match(line, '{(%x+)}(.-)%((%d+)%)\t(.-)%((%d+)%) {(%x+)}%((.-)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
+
 					else
 						color, nick, id, rank_name, rank_id, color_nil, warns, idk, afk, muted, quests = 
 							string.match(line, '{(%x+)}(.-)%((%d+)%)\t(.-)%((%d+)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
@@ -24374,6 +24471,14 @@ function add_cmd_defoult()
 end
 add_cmd_defoult()
 
+function download_admin_list()
+	local url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/nicks.json'
+	local save_path = dir .. '/config/Admins.json'
+	
+	downloadUrlToFile(url, save_path, function(id, status)
+	end)
+end
+download_admin_list()
 local function get_last_lines(log, n)
 	local function split_text(input, length)
 		local parts = {}
@@ -24506,3 +24611,90 @@ function SmiEdit()
 
     end
 ]]
+local weatherNames = {	--> Названия погоды
+    ["Чистое небо"] = {0, 1, 2, 3, 4, 5, 6, 7},
+    ["Гроза с молниями"] = {8},
+    ["Густой туман и пасмурно"] = {9},
+    ["Ясное чистое небо"] = {10},
+    ["Дикое пекло и жара"] = {11},
+    ["Смуглая неприятная погода"] = {12, 13, 14, 15},
+    ["Тусклый дождливый день"] = {16},
+    ["Жаркая погода"] = {17, 18},
+    ["Песчаная буря"] = {19},
+    ["Туманная мрачная погода"] = {20},
+    ["Ночь с пурпурным небом"] = {21},
+    ["Ночь с зеленоватым оттенком"] = {22},
+    ["Бледно-оранжевые тона"] = {23, 24, 25, 26},
+    ["Свежий синий"] = {27, 28, 29},
+    ["Темный неясный чирок"] = {30},
+    ["Неясная погода"] = {31, 32},
+    ["Вечер в коричневатых оттенках"] = {33},
+    ["Сине-пурпурные оттенки"] = {34},
+    ["Тусклая унылая погода"] = {35},
+    ["Яркий туман"] = {36},
+    ["Яркая погода"] = {37, 38},
+    ["Очень яркая ослепительная погода"] = {39},
+    ["Неясная пурпурно-синяя"] = {40, 41, 42},
+    ["Темные едкие облака"] = {43},
+    ["Черно-белое контрастное небо"] = {44},
+    ["Пурпурное мистическое небо"] = {45},
+}
+function processCommand(param, mode)	--> Изменение времени/погоды
+    local num = tonumber(param)
+    if mode == "time" then
+        if num and num >= 0 and num <= 23 then
+            setting.time = num
+            local bs = raknetNewBitStream()
+            raknetBitStreamWriteInt8(bs, num)
+            raknetEmulRpcReceiveBitStream(94, bs)
+            raknetDeleteBitStream(bs)
+            sampAddChatMessage('[SH]{FFFFFF} Установлено время: ' .. num .. ":00", 0xFF5345)
+			save()
+		elseif param == "OFF" or param == "off" or param == "щаа" then
+			setting.time = '-1'
+            sampAddChatMessage('[SH]{FFFFFF} Сервер теперь может изменять время', 0xFF5345)
+			save()
+		else
+			sampAddChatMessage('[SH]{FFFFFF} Используйте: /st [0 - 23 | off - отключить]', 0xFF5345)
+        end
+    elseif mode == "weather" then
+        if num and num >= 0 and num <= 45 then
+            setting.weather = num
+            local weatherName = "Неизвестная погода"
+            for name, indices in pairs(weatherNames or {}) do
+                for _, index in ipairs(indices) do
+                    if index == num then
+                        weatherName = name
+                        break
+                    end
+                end
+                if weatherName ~= "Неизвестная погода" then break end
+            end
+            local bs = raknetNewBitStream()
+            raknetBitStreamWriteInt8(bs, num)
+            raknetEmulRpcReceiveBitStream(152, bs)
+            raknetDeleteBitStream(bs)
+            sampAddChatMessage('[SH]{FFFFFF} Установлена погода: ' .. weatherName .. ' [' .. num .. ']', 0xFF5345)
+			bweather = true
+        elseif param == "OFF" or param == "off" or param == "щаа" then
+            sampAddChatMessage('[SH]{FFFFFF} Сервер теперь может изменять погоду', 0xFF5345)
+			bweather = false
+		else
+			sampAddChatMessage('[SH]{FFFFFF} Используйте: /sw [0 - 45 | off - отключить]', 0xFF5345)
+        end
+    end
+end
+function hook.onSetWeather(weather)
+    if bweather then
+        return false
+    end
+    return true
+end
+function updateTime()
+    if setting.time then
+        local time = tonumber(setting.time)
+        if time and time >= 0 and time <= 23 then
+            setTimeOfDay(time, 0)
+        end
+    end
+end
