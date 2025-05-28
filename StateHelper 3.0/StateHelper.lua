@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.2.3')
+script_version('3.2.4')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -1208,13 +1208,17 @@ function CefDialog()
 							sendCef('exit')
 						end
                     end
-					if event == 'event.documents.inititalizeData' then --> Отыгровка после закрытия паспорта
+					if event == 'event.documents.inititalizeData' then
 						local data = json.decode(body)
 						if data['name'] ~= my.nick and data['type'] == 1 then
 							document_opened = true
+							lua_thread.create(function()
+								wait(100)
+								sampSendChat("/me взял".. sex('', 'а') .. " документ с рук человека, затем начал".. sex('', 'а') .. " его осматривать")
+							end)
 						end
 					end
-					
+
 					if event == 'event.arizonahud.updateGeoPositionVisibility' and body == "true" then --> Отыгровка после закрытия паспорта
 						if document_opened and setting.auto_close_doc then
 							sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
@@ -1415,9 +1419,6 @@ function main()
 	end
 	
 	while true do wait(0)
-		--if setting.time then
-       --     setTimeOfDay(setting.time, 0)
-       -- end
 	    updateTime()
 		local current_time = os.clock()
 		anim = current_time - anim_clock
@@ -1444,9 +1445,7 @@ function main()
 		end
 		
 		if send_chat_rp then
-			if setting.auto_close_doc then
-				sampSendChat("/me взял".. sex('', 'а') .. " документ с рук человека, затем начал".. sex('', 'а') .. " его осматривать")
-			else
+			if not setting.auto_close_doc then
 				local texts_rp_all = {
 					'/me взял' .. sex('', 'а') .. ' документ с рук человека напротив, внимательно его изучил' .. sex('', 'а') .. ', после чего вернул' .. sex('', 'а') .. ' обратно',
 					'/me внимательно рассмотрел' .. sex('', 'а') .. ' документ, который был передан ' .. sex('ему', 'ей') .. ' с рук человека напротив',
@@ -1457,8 +1456,8 @@ function main()
 				local random_index = math.random(1, #texts_rp_all)
 				local text_rp = texts_rp_all[random_index]
 				sampSendChat(text_rp)
+				send_chat_rp = false
 			end
-			send_chat_rp = false
 		end
 		
 		if isKeyJustPressed(VK_Q) then
@@ -7767,39 +7766,44 @@ function hall.sob()
 	imgui.BeginChild(u8'Собеседование', imgui.ImVec2(840, 369), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse)
 	imgui.Scroller(u8'Собеседование', img_step[1][0], img_duration[1][0], imgui.HoveredFlags.AllowWhenBlockedByActiveItem)
 	
-	if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
-		gui.DrawBox({16, 16}, {808, 37}, cl.tab, cl.line, 7, 15)
-		gui.Text(26, 26, 'Введите id игрока, чтобы начать собеседование', font[3])
-		id_sobes, ret_bool = gui.InputText({520, 28}, 100, id_sobes, u8'id игрока собеседование', 4, u8'Введите id', 'num')
-		if id_sobes ~= '' and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp) and (setting.sob.min_law ~= '' or not setting.sob.auto_law)
-		and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
-			if gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}) or ret_bool then
+if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
+	gui.DrawBox({16, 16}, {808, 37}, cl.tab, cl.line, 7, 15)
+	gui.Text(26, 26, 'Введите id игрока, чтобы начать собеседование', font[3])
+	id_sobes, ret_bool = gui.InputText({520, 28}, 100, id_sobes, u8'id игрока собеседование', 4, u8'Введите id', 'num')
+
+	if id_sobes ~= '' and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp) and (setting.sob.min_law ~= '' or not setting.sob.auto_law)
+	and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
+		if gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}) or ret_bool then
+			if sampIsPlayerConnected(tonumber(id_sobes)) then
 				run_sob = true
-				if sampIsPlayerConnected(id_sobes) then
-					sob_info = {
-						exp = -1,
-						law = -1,
-						narko = -1,
-						org = -1,
-						med = -1,
-						blacklist = -1,
-						ticket = -1,
-						bilet = -1,
-						car = -1,
-						moto = -1,
-						gun = -1,
-						warn = -1,
-						bl_info = {},
-						org_info = '',
-						id = tonumber(id_sobes),
-						nick = sampGetPlayerNickname(id_sobes),
-						history = {}
-					}
-				end
+				sob_info = {
+					exp = -1,
+					law = -1,
+					narko = -1,
+					org = -1,
+					med = -1,
+					blacklist = -1,
+					ticket = -1,
+					bilet = -1,
+					car = -1,
+					moto = -1,
+					gun = -1,
+					warn = -1,
+					bl_info = {},
+					org_info = '',
+					id = tonumber(id_sobes),
+					nick = sampGetPlayerNickname(tonumber(id_sobes)),
+					history = {}
+				}
+			else
+				sampAddChatMessage("[SH] {FFFFFF}Игрок с таким ID не найден, либо это Вы", 0xFF5345)
 			end
-		else
-			gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}, false)
 		end
+	else
+		gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}, false)
+	end
+
+
 		gui.Text(297, 67, 'Настройки меню собеседования', bold_font[1])
 		gui.DrawBox({16, 92}, {808, 417}, cl.tab, cl.line, 7, 15)
 		for i = 1, 10 do
@@ -10070,10 +10074,22 @@ function hall.actions()
 	gui.DrawLine({16, 265}, {824, 265}, cl.line)
 	gui.DrawLine({16, 303}, {824, 303}, cl.line)
 	if gui.Button(u8'Переключить показ никнеймов игроков', {220, 195}, {400, 27}) then
-		sampSendChat('/settings')
-		nickname_dialog = true
-		time_dialog_nickname = 0
+		local Hnick = sampGetServerSettingsPtr()
+		if Hnick ~= 0 then
+			local currentDist = mem.getfloat(Hnick + 39)
+			local currentWall = mem.getint8(Hnick + 47)
+
+			if currentDist < 1.0 then
+				mem.setfloat(Hnick + 39, 50.0)
+				mem.setint8(Hnick + 47, 1)
+			else
+				mem.setfloat(Hnick + 39, 0.00001)
+				mem.setint8(Hnick + 47, 0)
+			end
+		end
 	end
+
+
 	if gui.Button(u8'Узнать дистанцию до серверной метки на карте', {220, 233}, {400, 27}) then
 		local my_int = getActiveInterior()
 		if my_int == 0 then
@@ -12611,7 +12627,7 @@ win.main = imgui.OnFrame(
 		gui.Draw({4, 4}, {492, 292}, cl.main, 12, 15)
 		gui.DrawLine({4, 38}, {496, 38}, cl.line)
 		imgui.SetCursorPos(imgui.ImVec2(11, 11))
-		if imgui.InvisibleButton(u8'##Закрыть окно TCP', imgui.ImVec2(20, 20)) then
+		if imgui.InvisibleButton(u8'##Закрыть', imgui.ImVec2(20, 20)) then
 			carcers = false
 		end
 		if imgui.IsItemHovered() then
@@ -13487,31 +13503,34 @@ function start_other_cmd(cmd_func, arguments)
 				if i == 4 and arguments:find('(%d+)') and setting.sob_id_arg then
 					local arg_id = arguments:match('(%d+)')
 					arg_id = tonumber(arg_id)
-					
-					if arg_id ~= '' and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp) and (setting.sob.min_law ~= '' 
-					or not setting.sob.auto_law) and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
-						run_sob = true
-						if sampIsPlayerConnected(arg_id) then
-							sob_info = {
-								exp = -1,
-								law = -1,
-								narko = -1,
-								org = -1,
-								med = -1,
-								blacklist = -1,
-								ticket = -1,
-								bilet = -1,
-								car = -1,
-								gun = -1,
-								moto = -1,
-								warn = -1,
-								bl_info = {},
-								org_info = '',
-								id = tonumber(arg_id),
-								nick = sampGetPlayerNickname(arg_id),
-								history = {}
-							}
+					if arg_id ~= nil and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp)
+					and (setting.sob.min_law ~= '' or not setting.sob.auto_law)
+					and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
+						if not sampIsPlayerConnected(arg_id) then
+							sampAddChatMessage("[SH] {FFFFFF}Игрок с таким ID не найден, либо это Вы", 0xFF5345)
+							windows.main[0] = false
+							return
 						end
+						run_sob = true
+						sob_info = {
+							exp = -1,
+							law = -1,
+							narko = -1,
+							org = -1,
+							med = -1,
+							blacklist = -1,
+							ticket = -1,
+							bilet = -1,
+							car = -1,
+							moto = -1,
+							gun = -1,
+							warn = -1,
+							bl_info = {},
+							org_info = '',
+							id = arg_id,
+							nick = sampGetPlayerNickname(arg_id),
+							history = {}
+						}
 					end
 				end
 			end
@@ -14387,12 +14406,13 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 						sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игрок не в сети, либо это Вы.', 0xFF5345)
 					end
 				elseif val:find('{getlevel%[(%d+)%]}') then
-					local num_id = tonumber(string.match(val, '{getlevel%[(%d+)%]}'))
-					if sampIsPlayerConnected(tonumber(num_id)) then
-						extracted_str[i][2] = sampGetPlayerScore(tonumber(num_id))
+					local num_id = tonumber(val:match('{getlevel%[(%d+)%]}'))
+					if sampIsPlayerConnected(num_id) then
+						local score = sampGetPlayerScore(num_id)
+						if score == 0 then wait(100) score = sampGetPlayerScore(num_id) end
+						extracted_str[i][2] = score
 					else
 						extracted_str[i][2] = '0'
-						sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игрок не в сети, либо это Вы.', 0xFF5345)
 					end
 				elseif val == '{med7}' then
 					extracted_str[i][2] = setting.price[1].mc[1]:gsub('%D', '')
@@ -15364,8 +15384,8 @@ function hook.onServerMessage(color_mes, mes)
 
 	if mes:find('Robert_Poloskyn(.+) sh'..my.id) then	
 		local rever = 0
-		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n                 разработчик-фиксер скрипта State Helper Lite - {2b8200}Robert_Poloskyn', 'Закрыть', '', 0)
-		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик-фиксер State Helper Lite - {39e3be}Robert_Poloskyn.', 0xFF5345)
+		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n                 разработчик-фиксер скрипта State Helper - {2b8200}Robert_Poloskyn', 'Закрыть', '', 0)
+		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик-фиксер State Helper - {39e3be}Robert_Poloskyn.', 0xFF5345)
 		lua_thread.create(function()
 			repeat wait(200)
 				addOneOffSound(0, 0, 0, 1057)
@@ -15486,12 +15506,19 @@ function closeDialog(a, b)
     end)
 end
 function hook.onShowDialog(id, style, title, but_1, but_2, text)
-	if id == 1214 and lspawncar then
-		sampSendDialogResponse(1214, 1, 3, -1)
-		closeDialog(1214, 0)
-		lspawncar = false
-		return false
-	end
+    if id == 1214 then
+        if lspawncar then
+            sampSendDialogResponse(1214, 1, 3, -1)
+            lsclose = true
+            lspawncar = false
+            return false
+        elseif lsclose then
+            sampCloseCurrentDialogWithButton(0)
+            lsclose = false
+            return false
+        end
+    end
+	
 	--[[
 	if id == 557 and setting.org == 11 then
         dialogData = {
@@ -15537,11 +15564,11 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		end
 	end
 
-	if id == 27340 then
+	if id == 27342 then
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
 				if setting.show_dialog_auto or setting.auto_cmd_doc then
-					sampSendDialogResponse(27340, 1, 2, -1)
+					sampSendDialogResponse(27342, 1, 2, -1)
 					confirm_action_dialog = true
 					return false
 				end
