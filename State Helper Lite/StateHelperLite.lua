@@ -1067,8 +1067,9 @@ function CefDialog()
                                 end
                                 sob_info.law = zakono
                                 sob_info.exp = level
-
+							if setting.sob.close_doc then
                                 sendCef('documents.changePage|2')
+							end
                             elseif sob_info.valid then
                                 if document_type == 2 then 		--> Лицензии
                                     local licenses = data['info']
@@ -1090,8 +1091,9 @@ function CefDialog()
                                             sob_info.gun = is_active
                                         end
                                     end
-
-                                    sendCef('documents.changePage|4')
+									if setting.sob.close_doc then
+                                    	sendCef('documents.changePage|4')
+									end
                                 elseif document_type == 4 then 		--> Мед.карта
                                     local zavisimost = tonumber(data['zavisimost']) or 0
                                     local state = data['state'] or ""
@@ -1127,7 +1129,9 @@ function CefDialog()
 
                                     sob_info.narko = zavisimost
                                     sob_info.med = med_status
-                                    sendCef('documents.changePage|8')
+									if setting.sob.close_doc then
+                                    	sendCef('documents.changePage|8')
+									end
                                 elseif document_type == 8 then			--> Военный билет
                                     local have_army_ticket = tostring(data['have_army_ticket'] or 1)
 
@@ -1138,7 +1142,9 @@ function CefDialog()
                                     else
                                         sob_info.bilet = 1
                                     end
-                                    sendCef('documents.close')
+									if setting.sob.close_doc then
+                                    	sendCef('documents.close')
+									end
                                 end
 
                             end
@@ -1151,18 +1157,33 @@ function CefDialog()
 							else
 								sob_info.warn = 0
 							end
-							sendCef('loadInfo')
-							sendCef('selectMenuItem|4')
-							sendCef('exit')
+							if setting.sob.close_doc then
+								sendCef('loadInfo')
+								sendCef('selectMenuItem|4')
+								sendCef('exit')
+							end
 						end
+						--if setting.sob.close_doc and event == 'event.setActiveView' then		--> Не уверен что можно сделать, потому что name появляется после окна
+							--local data = json.decode(body)
+							--if data == 'Documents' then
+								--sampAddChatMessage(data)
+								--return false
+							--end
+						--end
                     end
-					if event == 'event.documents.inititalizeData' then --> Отыгровка после закрытия паспорта
+					if event == 'event.documents.inititalizeData' then
 						local data = json.decode(body)
 						if data['name'] ~= my.nick and data['type'] == 1 then
 							document_opened = true
+							if setting.auto_close_doc then
+								lua_thread.create(function()
+									wait(0)
+									sampSendChat("/me взял".. sex('', 'а') .. " документ с рук человека, затем начал".. sex('', 'а') .. " его осматривать")
+								end)
+							end
 						end
 					end
-					
+
 					if event == 'event.arizonahud.updateGeoPositionVisibility' and body == "true" then --> Отыгровка после закрытия паспорта
 						if document_opened and setting.auto_close_doc then
 							sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
@@ -1287,6 +1308,15 @@ function main()
 	else
 		change_design('Black', false)
 	end
+
+	sampRegisterChatCommand("st", function(param) 
+        processCommand(param, "time") 
+    end)
+    
+    sampRegisterChatCommand("sw", function(param)
+        processCommand(param, "weather")
+    end)
+
 	if setting.godeath.func and setting.godeath.cmd_go then
 		sampRegisterChatCommand('go', function()
 			go_medic_or_fire()
@@ -1356,6 +1386,7 @@ function main()
 	end
 	
 	while true do wait(0)
+	updateTime()
 		local current_time = os.clock()
 		anim = current_time - anim_clock
 		anim_clock = current_time
@@ -1381,9 +1412,7 @@ function main()
 		end
 		
 		if send_chat_rp then
-			if setting.auto_close_doc then
-				sampSendChat("/me взял".. sex('', 'а') .. " документ с рук человека, затем начал".. sex('', 'а') .. " его осматривать")
-			else
+			if not setting.auto_close_doc then
 				local texts_rp_all = {
 					'/me взял' .. sex('', 'а') .. ' документ с рук человека напротив, внимательно его изучил' .. sex('', 'а') .. ', после чего вернул' .. sex('', 'а') .. ' обратно',
 					'/me внимательно рассмотрел' .. sex('', 'а') .. ' документ, который был передан ' .. sex('ему', 'ей') .. ' с рук человека напротив',
@@ -1394,8 +1423,8 @@ function main()
 				local random_index = math.random(1, #texts_rp_all)
 				local text_rp = texts_rp_all[random_index]
 				sampSendChat(text_rp)
+				send_chat_rp = false
 			end
-			send_chat_rp = false
 		end
 		
 		if isKeyJustPressed(VK_Q) then
@@ -3229,13 +3258,9 @@ function hall.settings()
 			local bool_set_rec = setting.price[1].rec
 			setting.price[1].rec = gui.InputText({481, 52}, 100, setting.price[1].rec, u8'Цена рецепта', 20, u8'Цена', 'num')
 			if setting.price[1].rec ~= bool_set_rec then save() end
-			gui.Text(381, 94, 'Тату', font[3])
-			local bool_set_tatu = setting.price[1].tatu
-			setting.price[1].tatu = gui.InputText({481, 96}, 100, setting.price[1].tatu, u8'Цена тату', 20, u8'Цена', 'num')
-			if setting.price[1].tatu ~= bool_set_tatu then save() end
-			gui.Text(381, 138, 'Антибиотик', font[3])
+			gui.Text(381, 94, 'Антибиотик', font[3])
 			local bool_set_ant = setting.price[1].ant
-			setting.price[1].ant = gui.InputText({481, 140}, 100, setting.price[1].ant, u8'Цена антибиотика', 20, u8'Цена', 'num')
+			setting.price[1].ant = gui.InputText({481, 96}, 100, setting.price[1].ant, u8'Цена антибиотика', 20, u8'Цена', 'num')
 			if setting.price[1].ant ~= bool_set_ant then save() end
 			
 			gui.Text(25, 187, 'Медицинская карта', bold_font[1])
@@ -7699,11 +7724,12 @@ function hall.sob()
 		gui.DrawBox({16, 16}, {808, 37}, cl.tab, cl.line, 7, 15)
 		gui.Text(26, 26, 'Введите id игрока, чтобы начать собеседование', font[3])
 		id_sobes, ret_bool = gui.InputText({520, 28}, 100, id_sobes, u8'id игрока собеседование', 4, u8'Введите id', 'num')
+
 		if id_sobes ~= '' and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp) and (setting.sob.min_law ~= '' or not setting.sob.auto_law)
 		and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
 			if gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}) or ret_bool then
-				run_sob = true
-				if sampIsPlayerConnected(id_sobes) then
+				if sampIsPlayerConnected(tonumber(id_sobes)) then
+					run_sob = true
 					sob_info = {
 						exp = -1,
 						law = -1,
@@ -7720,9 +7746,11 @@ function hall.sob()
 						bl_info = {},
 						org_info = '',
 						id = tonumber(id_sobes),
-						nick = sampGetPlayerNickname(id_sobes),
+						nick = sampGetPlayerNickname(tonumber(id_sobes)),
 						history = {}
 					}
+				else
+					sampAddChatMessage("[SH] {FFFFFF}Игрок с таким ID не найден, либо это Вы", 0xFF5345)
 				end
 			end
 		else
@@ -9165,9 +9193,19 @@ function hall.actions()
 	gui.DrawLine({16, 265}, {824, 265}, cl.line)
 	gui.DrawLine({16, 303}, {824, 303}, cl.line)
 	if gui.Button(u8'Переключить показ никнеймов игроков', {220, 195}, {400, 27}) then
-		sampSendChat('/settings')
-		nickname_dialog = true
-		time_dialog_nickname = 0
+		local Hnick = sampGetServerSettingsPtr()
+		if Hnick ~= 0 then
+			local currentDist = mem.getfloat(Hnick + 39)
+			local currentWall = mem.getint8(Hnick + 47)
+
+			if currentDist < 1.0 then
+				mem.setfloat(Hnick + 39, 50.0)
+				mem.setint8(Hnick + 47, 1)
+			else
+				mem.setfloat(Hnick + 39, 0.00001)
+				mem.setint8(Hnick + 47, 0)
+			end
+		end
 	end
 	if gui.Button(u8'Узнать дистанцию до серверной метки на карте', {220, 233}, {400, 27}) then
 		local my_int = getActiveInterior()
@@ -9577,7 +9615,6 @@ function tags_in_cmd()
 			{'{medup60}', 'Выведет цену на обновлённую мед. карту на 60 дней'},
 			{'{pricenarko}', 'Выведет цену на снятие укропозависимости'},
 			{'{pricerecept}', 'Выведет цену на рецепт'},
-			{'{pricetatu}', 'Выведет цену удаление татуировки с тела'},
 			{'{priceant}', 'Выведет цену на антибиотик'},
 			{'{pricelec}', 'Выведет цену на лечение'},
 			{'{priceosm}', 'Выведет цену на мед. осмотр'},
@@ -12519,31 +12556,34 @@ function start_other_cmd(cmd_func, arguments)
 				if i == 4 and arguments:find('(%d+)') and setting.sob_id_arg then
 					local arg_id = arguments:match('(%d+)')
 					arg_id = tonumber(arg_id)
-					
-					if arg_id ~= '' and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp) and (setting.sob.min_law ~= '' 
-					or not setting.sob.auto_law) and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
-						run_sob = true
-						if sampIsPlayerConnected(arg_id) then
-							sob_info = {
-								exp = -1,
-								law = -1,
-								narko = -1,
-								org = -1,
-								med = -1,
-								blacklist = -1,
-								ticket = -1,
-								bilet = -1,
-								car = -1,
-								gun = -1,
-								moto = -1,
-								warn = -1,
-								bl_info = {},
-								org_info = '',
-								id = tonumber(arg_id),
-								nick = sampGetPlayerNickname(arg_id),
-								history = {}
-							}
+					if arg_id ~= nil and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp)
+					and (setting.sob.min_law ~= '' or not setting.sob.auto_law)
+					and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
+						if not sampIsPlayerConnected(arg_id) then
+							sampAddChatMessage("[SH] {FFFFFF}Игрок с таким ID не найден, либо это Вы", 0xFF5345)
+							windows.main[0] = false
+							return
 						end
+						run_sob = true
+						sob_info = {
+							exp = -1,
+							law = -1,
+							narko = -1,
+							org = -1,
+							med = -1,
+							blacklist = -1,
+							ticket = -1,
+							bilet = -1,
+							car = -1,
+							moto = -1,
+							gun = -1,
+							warn = -1,
+							bl_info = {},
+							org_info = '',
+							id = arg_id,
+							nick = sampGetPlayerNickname(arg_id),
+							history = {}
+						}
 					end
 				end
 			end
@@ -12828,7 +12868,19 @@ function on_hot_key(id_pr_key)
 	
 	if not isGamePaused() and not isPauseMenuActive() and not sampIsDialogActive() and not sampIsChatInputActive() then
 		if pressed_key == '72' and setting.speed_door then
-			sampSendChat('/opengate')
+			if isCharInAnyCar(PLAYER_PED) then
+				setGameKeyState(18, 255)
+			else
+				local data = allocateMemory(68)
+				local _, myId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+				sampStorePlayerOnfootData(myId, data)
+		
+				local weaponId = getCurrentCharWeapon(PLAYER_PED)
+				setStructElement(data, 36, 1, weaponId + 192, true)
+		
+				sampSendOnfootData(data)
+				freeMemory(data)
+			end
 		end
 		
 		if pressed_key == tostring(table.concat(setting.fast.key, ' ')) and setting.fast.func then
@@ -13407,12 +13459,13 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 						sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игрок не в сети, либо это Вы.', 0xFF5345)
 					end
 				elseif val:find('{getlevel%[(%d+)%]}') then
-					local num_id = tonumber(string.match(val, '{getlevel%[(%d+)%]}'))
-					if sampIsPlayerConnected(tonumber(num_id)) then
-						extracted_str[i][2] = sampGetPlayerScore(tonumber(num_id))
+					local num_id = tonumber(val:match('{getlevel%[(%d+)%]}'))
+					if sampIsPlayerConnected(num_id) then
+						local score = sampGetPlayerScore(num_id)
+						if score == 0 then wait(100) score = sampGetPlayerScore(num_id) end
+						extracted_str[i][2] = score
 					else
 						extracted_str[i][2] = '0'
-						sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игрок не в сети, либо это Вы.', 0xFF5345)
 					end
 				elseif val == '{med7}' then
 					extracted_str[i][2] = setting.price[1].mc[1]:gsub('%D', '')
@@ -13434,8 +13487,6 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					extracted_str[i][2] = setting.price[1].narko:gsub('%D', '')
 				elseif val == '{pricerecept}' then
 					extracted_str[i][2] = setting.price[1].rec:gsub('%D', '')
-				elseif val == '{pricetatu}' then
-					extracted_str[i][2] = setting.price[1].tatu:gsub('%D', '')
 				elseif val == '{priceant}' then
 					extracted_str[i][2] = setting.price[1].ant:gsub('%D', '')
 				elseif val == '{pricelec}' then
@@ -14506,12 +14557,18 @@ function closeDialog(a, b)
     end)
 end
 function hook.onShowDialog(id, style, title, but_1, but_2, text)
-	if id == 1214 and lspawncar then
-		sampSendDialogResponse(1214, 1, 3, -1)
-		closeDialog(1214, 0)
-		lspawncar = false
-		return false
-	end
+    if id == 1214 then
+        if lspawncar then
+            sampSendDialogResponse(1214, 1, 3, -1)
+            lsclose = true
+            lspawncar = false
+            return false
+        elseif lsclose then
+            sampCloseCurrentDialogWithButton(0)
+            lsclose = false
+            return false
+        end
+    end
 	--[[
 	if id == 557 and setting.org == 11 then
         dialogData = {
@@ -14527,11 +14584,17 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
     end
 	]]
 	if id == 235 then
-		if text:find('Должность: {B83434}(.-)') then
-			local text_org, rank_org = text:match('Должность: {B83434}(.-)%((%d+)%)')
+		local text_org, rank_org = text:match('Должность: {B83434}(.-)%((%d+)%)')
+		if text_org and rank_org then
 			setting.job_title = u8(text_org)
 			setting.rank = tonumber(rank_org)
 			save()
+		else
+			if text:find('Должность: {B83434}Судья') then
+				setting.job_title = u8('Судья')
+				setting.rank = 10
+				save()
+			end
 		end
 		--if setting.org == 11 then
 		--	local name_org = text:match("студия%s*([^%]]+)]")
@@ -14557,11 +14620,11 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		end
 	end
 
-	if id == 27340 then
+	if id == 27342 then
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
 				if setting.show_dialog_auto or setting.auto_cmd_doc then
-					sampSendDialogResponse(27340, 1, 2, -1)
+					sampSendDialogResponse(27342, 1, 2, -1)
 					confirm_action_dialog = true
 					return false
 				end
@@ -15966,7 +16029,9 @@ end
 function update_download()
 	lua_thread.create(function()
 		wait(2000)
-		downloadUrlToFile(raw_upd_url, dir .. '/StateHelperLite.lua', function(id, status, p1, p2)
+		local this_file_path = thisScript().path
+		os.remove(this_file_path)
+		downloadUrlToFile(raw_upd_url, this_file_path, function(id, status, p1, p2)
 			if status == dlstatus.STATUSEX_ENDDOWNLOAD then
 				if updates == nil then 
 					print('{FF0000}Ошибка при попытке скачать файл.') 
@@ -23616,3 +23681,90 @@ function SmiEdit()
 
     end
 ]]
+local weatherNames = {	--> Названия погоды
+    ["Чистое небо"] = {0, 1, 2, 3, 4, 5, 6, 7},
+    ["Гроза с молниями"] = {8},
+    ["Густой туман и пасмурно"] = {9},
+    ["Ясное чистое небо"] = {10},
+    ["Дикое пекло и жара"] = {11},
+    ["Смуглая неприятная погода"] = {12, 13, 14, 15},
+    ["Тусклый дождливый день"] = {16},
+    ["Жаркая погода"] = {17, 18},
+    ["Песчаная буря"] = {19},
+    ["Туманная мрачная погода"] = {20},
+    ["Ночь с пурпурным небом"] = {21},
+    ["Ночь с зеленоватым оттенком"] = {22},
+    ["Бледно-оранжевые тона"] = {23, 24, 25, 26},
+    ["Свежий синий"] = {27, 28, 29},
+    ["Темный неясный чирок"] = {30},
+    ["Неясная погода"] = {31, 32},
+    ["Вечер в коричневатых оттенках"] = {33},
+    ["Сине-пурпурные оттенки"] = {34},
+    ["Тусклая унылая погода"] = {35},
+    ["Яркий туман"] = {36},
+    ["Яркая погода"] = {37, 38},
+    ["Очень яркая ослепительная погода"] = {39},
+    ["Неясная пурпурно-синяя"] = {40, 41, 42},
+    ["Темные едкие облака"] = {43},
+    ["Черно-белое контрастное небо"] = {44},
+    ["Пурпурное мистическое небо"] = {45},
+}
+function processCommand(param, mode)	--> Изменение времени/погоды
+    local num = tonumber(param)
+    if mode == "time" then
+        if num and num >= 0 and num <= 23 then
+            setting.time = num
+            local bs = raknetNewBitStream()
+            raknetBitStreamWriteInt8(bs, num)
+            raknetEmulRpcReceiveBitStream(94, bs)
+            raknetDeleteBitStream(bs)
+            sampAddChatMessage('[SH]{FFFFFF} Установлено время: ' .. num .. ":00", 0xFF5345)
+			save()
+		elseif param == "OFF" or param == "off" or param == "щаа" then
+			setting.time = '-1'
+            sampAddChatMessage('[SH]{FFFFFF} Сервер теперь может изменять время', 0xFF5345)
+			save()
+		else
+			sampAddChatMessage('[SH]{FFFFFF} Используйте: /st [0 - 23 | off - отключить]', 0xFF5345)
+        end
+    elseif mode == "weather" then
+        if num and num >= 0 and num <= 45 then
+            setting.weather = num
+            local weatherName = "Неизвестная погода"
+            for name, indices in pairs(weatherNames or {}) do
+                for _, index in ipairs(indices) do
+                    if index == num then
+                        weatherName = name
+                        break
+                    end
+                end
+                if weatherName ~= "Неизвестная погода" then break end
+            end
+            local bs = raknetNewBitStream()
+            raknetBitStreamWriteInt8(bs, num)
+            raknetEmulRpcReceiveBitStream(152, bs)
+            raknetDeleteBitStream(bs)
+            sampAddChatMessage('[SH]{FFFFFF} Установлена погода: ' .. weatherName .. ' [' .. num .. ']', 0xFF5345)
+			bweather = true
+        elseif param == "OFF" or param == "off" or param == "щаа" then
+            sampAddChatMessage('[SH]{FFFFFF} Сервер теперь может изменять погоду', 0xFF5345)
+			bweather = false
+		else
+			sampAddChatMessage('[SH]{FFFFFF} Используйте: /sw [0 - 45 | off - отключить]', 0xFF5345)
+        end
+    end
+end
+function hook.onSetWeather(weather)
+    if bweather then
+        return false
+    end
+    return true
+end
+function updateTime()
+    if setting.time then
+        local time = tonumber(setting.time)
+        if time and time >= 0 and time <= 23 then
+            setTimeOfDay(time, 0)
+        end
+    end
+end
