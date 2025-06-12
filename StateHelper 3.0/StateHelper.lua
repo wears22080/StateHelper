@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.2.4')
+script_version('3.2.5')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -1119,8 +1119,9 @@ function CefDialog()
                                 end
                                 sob_info.law = zakono
                                 sob_info.exp = level
-
+							if setting.sob.close_doc then
                                 sendCef('documents.changePage|2')
+							end
                             elseif sob_info.valid then
                                 if document_type == 2 then 		--> Лицензии
                                     local licenses = data['info']
@@ -1142,8 +1143,9 @@ function CefDialog()
                                             sob_info.gun = is_active
                                         end
                                     end
-
-                                    sendCef('documents.changePage|4')
+									if setting.sob.close_doc then
+                                    	sendCef('documents.changePage|4')
+									end
                                 elseif document_type == 4 then 		--> Мед.карта
                                     local zavisimost = tonumber(data['zavisimost']) or 0
                                     local state = data['state'] or ""
@@ -1179,7 +1181,9 @@ function CefDialog()
 
                                     sob_info.narko = zavisimost
                                     sob_info.med = med_status
-                                    sendCef('documents.changePage|8')
+									if setting.sob.close_doc then
+                                    	sendCef('documents.changePage|8')
+									end
                                 elseif document_type == 8 then			--> Военный билет
                                     local have_army_ticket = tostring(data['have_army_ticket'] or 1)
 
@@ -1190,7 +1194,9 @@ function CefDialog()
                                     else
                                         sob_info.bilet = 1
                                     end
-                                    sendCef('documents.close')
+									if setting.sob.close_doc then
+                                    	sendCef('documents.close')
+									end
                                 end
 
                             end
@@ -1203,25 +1209,43 @@ function CefDialog()
 							else
 								sob_info.warn = 0
 							end
-							sendCef('loadInfo')
-							sendCef('selectMenuItem|4')
-							sendCef('exit')
+							if setting.sob.close_doc then
+								sendCef('loadInfo')
+								sendCef('selectMenuItem|4')
+								sendCef('exit')
+							end
 						end
+						--if setting.sob.close_doc and event == 'event.setActiveView' then		--> Не уверен что можно сделать, потому что name появляется после окна
+							--local data = json.decode(body)
+							--if data == 'Documents' then
+								--sampAddChatMessage(data)
+								--return false
+							--end
+						--end
                     end
 					if event == 'event.documents.inititalizeData' then
 						local data = json.decode(body)
 						if data['name'] ~= my.nick and data['type'] == 1 then
 							document_opened = true
-							lua_thread.create(function()
-								wait(100)
-								sampSendChat("/me взял".. sex('', 'а') .. " документ с рук человека, затем начал".. sex('', 'а') .. " его осматривать")
-							end)
+							if setting.auto_close_doc then
+								lua_thread.create(function()
+									wait(0)
+									sampSendChat("/me взял".. sex('', 'а') .. " документ с рук человека, затем начал".. sex('', 'а') .. " его осматривать")
+								end)
+							end
 						end
 					end
 
-					if event == 'event.arizonahud.updateGeoPositionVisibility' and body == "true" then --> Отыгровка после закрытия паспорта
+					if event == 'event.arizonahud.updateGeoPositionVisibility' and body == "false" then --> Отыгровка после закрытия паспорта
 						if document_opened and setting.auto_close_doc then
-							sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
+							if run_sob then
+								lua_thread.create(function()
+									wait(500)
+									sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
+								end)
+							else
+								sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
+							end
 							document_opened = false
 						end
 					end
@@ -3291,13 +3315,9 @@ function hall.settings()
 			local bool_set_rec = setting.price[1].rec
 			setting.price[1].rec = gui.InputText({481, 52}, 100, setting.price[1].rec, u8'Цена рецепта', 20, u8'Цена', 'num')
 			if setting.price[1].rec ~= bool_set_rec then save() end
-			gui.Text(381, 94, 'Тату', font[3])
-			local bool_set_tatu = setting.price[1].tatu
-			setting.price[1].tatu = gui.InputText({481, 96}, 100, setting.price[1].tatu, u8'Цена тату', 20, u8'Цена', 'num')
-			if setting.price[1].tatu ~= bool_set_tatu then save() end
-			gui.Text(381, 138, 'Антибиотик', font[3])
+			gui.Text(381, 94, 'Антибиотик', font[3])
 			local bool_set_ant = setting.price[1].ant
-			setting.price[1].ant = gui.InputText({481, 140}, 100, setting.price[1].ant, u8'Цена антибиотика', 20, u8'Цена', 'num')
+			setting.price[1].ant = gui.InputText({481, 96}, 100, setting.price[1].ant, u8'Цена антибиотика', 20, u8'Цена', 'num')
 			if setting.price[1].ant ~= bool_set_ant then save() end
 			
 			gui.Text(25, 187, 'Медицинская карта', bold_font[1])
@@ -6429,7 +6449,7 @@ function hall.cmd()
 		gui.DrawBox({428, 16}, {396, 113}, cl.tab, cl.line, 7, 15)
 		
 		gui.Text(26, 26, 'Команда', font[3])
-		bl_cmd.cmd = gui.InputText({191, 28}, 200, bl_cmd.cmd, u8'Установка команды', 30, u8'Введите команду', 'en')
+		bl_cmd.cmd = gui.InputText({191, 28}, 200, bl_cmd.cmd, u8'Установка команды', 30, u8'Введите команду', 'esp')
 		gui.DrawLine({16, 53}, {412, 53}, cl.line)
 		gui.Text(26, 64, 'Описание', font[3])
 		bl_cmd.desc = gui.InputText({191, 66}, 200, bl_cmd.desc, u8'Описание команды', 150, u8'Введите описание команды')
@@ -6945,33 +6965,35 @@ function hall.cmd()
 						bl_cmd.act[i][2] = gui.InputText({123 + if_disp, 330 + pxl}, 120, bl_cmd.act[i][2], u8'Имя диалога' .. i, 20, u8'Имя диалога', 'esp')
 						gui.DrawLine({16 + if_disp, 353 + pxl}, {824, 353 + pxl}, cl.line)
 					end
-						for vr = 1, #bl_cmd.act[i][3] do
-							if not optimization then
-								local txt_inp_buf = imgui.new.char[60](bl_cmd.act[i][3][vr])
-								imgui.SetCursorPos(imgui.ImVec2(50 + if_disp, 362 + pxl))
-								imgui.PushItemWidth(763 - if_disp)
-								imgui.InputText('##BOOL_DIALOG' .. i .. vr, txt_inp_buf, ffi.sizeof(txt_inp_buf))
-								if bl_cmd.act[i][3][vr] == '' then
-									imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-									gui.Text(52 + if_disp, 362 + pxl, 'Текст варианта', font[3])
-									imgui.PopStyleColor(1)
-								end
-								imgui.PopItemWidth()
-								bl_cmd.act[i][3][vr] = ffi.string(txt_inp_buf)
-								imgui.SetCursorPos(imgui.ImVec2(24 + if_disp, 358 + pxl))
-								if imgui.InvisibleButton('DEL_OPTION' .. i .. vr, imgui.ImVec2(23, 23)) then
-									table.remove(bl_cmd.act[i][3], vr)
-									break
-								end
-								if imgui.IsItemActive() then
-									gui.FaText(27 + if_disp, 361 + pxl, fa.CIRCLE_MINUS, fa_font[4], imgui.ImVec4(1.00, 0.09, 0.19, 1.00))
-								else
-									gui.FaText(27 + if_disp, 361 + pxl, fa.CIRCLE_MINUS, fa_font[4], imgui.ImVec4(1.00, 0.23, 0.19, 1.00))
-								end
-								gui.DrawLine({16 + if_disp, 387 + pxl}, {824, 387 + pxl}, cl.line)
+					local max_variants = 10
+					local count = math.min(#bl_cmd.act[i][3], max_variants)
+					for vr = 1, count do
+						if not optimization then
+							local txt_inp_buf = imgui.new.char[60](bl_cmd.act[i][3][vr])
+							imgui.SetCursorPos(imgui.ImVec2(50 + if_disp, 362 + pxl))
+							imgui.PushItemWidth(763 - if_disp)
+							imgui.InputText('##BOOL_DIALOG' .. i .. vr, txt_inp_buf, ffi.sizeof(txt_inp_buf))
+							if bl_cmd.act[i][3][vr] == '' then
+								imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+								gui.Text(52 + if_disp, 362 + pxl, 'Текст варианта', font[3])
+								imgui.PopStyleColor(1)
 							end
-							pxl = pxl + 34
+							imgui.PopItemWidth()
+							bl_cmd.act[i][3][vr] = ffi.string(txt_inp_buf)
+							imgui.SetCursorPos(imgui.ImVec2(24 + if_disp, 358 + pxl))
+							if imgui.InvisibleButton('DEL_OPTION' .. i .. vr, imgui.ImVec2(23, 23)) then
+								table.remove(bl_cmd.act[i][3], vr)
+								break
+							end
+							if imgui.IsItemActive() then
+								gui.FaText(27 + if_disp, 361 + pxl, fa.CIRCLE_MINUS, fa_font[4], imgui.ImVec4(1.00, 0.09, 0.19, 1.00))
+							else
+								gui.FaText(27 + if_disp, 361 + pxl, fa.CIRCLE_MINUS, fa_font[4], imgui.ImVec4(1.00, 0.23, 0.19, 1.00))
+							end
+							gui.DrawLine({16 + if_disp, 387 + pxl}, {824, 387 + pxl}, cl.line)
 						end
+						pxl = pxl + 34
+					end
 					if not optimization then
 						if #bl_cmd.act[i][3] <= 9 then
 							imgui.SetCursorPos(imgui.ImVec2(23 + if_disp, 358 + pxl))
@@ -10507,7 +10529,6 @@ function tags_in_cmd()
 			{'{medup60}', 'Выведет цену на обновлённую мед. карту на 60 дней'},
 			{'{pricenarko}', 'Выведет цену на снятие укропозависимости'},
 			{'{pricerecept}', 'Выведет цену на рецепт'},
-			{'{pricetatu}', 'Выведет цену удаление татуировки с тела'},
 			{'{priceant}', 'Выведет цену на антибиотик'},
 			{'{pricelec}', 'Выведет цену на лечение'},
 			{'{priceosm}', 'Выведет цену на мед. осмотр'},
@@ -14434,8 +14455,6 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					extracted_str[i][2] = setting.price[1].narko:gsub('%D', '')
 				elseif val == '{pricerecept}' then
 					extracted_str[i][2] = setting.price[1].rec:gsub('%D', '')
-				elseif val == '{pricetatu}' then
-					extracted_str[i][2] = setting.price[1].tatu:gsub('%D', '')
 				elseif val == '{priceant}' then
 					extracted_str[i][2] = setting.price[1].ant:gsub('%D', '')
 				elseif val == '{pricelec}' then
@@ -15534,12 +15553,19 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
     end
 	]]
 	if id == 235 then
-		if text:find('Должность: {B83434}(.-)') then
-			local text_org, rank_org = text:match('Должность: {B83434}(.-)%((%d+)%)')
+		local text_org, rank_org = text:match('Должность: {B83434}(.-)%((%d+)%)')
+		if text_org and rank_org then
 			setting.job_title = u8(text_org)
 			setting.rank = tonumber(rank_org)
 			save()
+		else
+			if text:find('Должность: {B83434}Судья') then
+				setting.job_title = u8('Судья')
+				setting.rank = 10
+				save()
+			end
 		end
+
 		--if setting.org == 11 then
 		--	local name_org = text:match("студия%s*([^%]]+)]")
 		--	if name_org then
@@ -16979,7 +17005,9 @@ end
 function update_download()
 	lua_thread.create(function()
 		wait(2000)
-		downloadUrlToFile(raw_upd_url, dir .. '/StateHelper.lua', function(id, status, p1, p2)
+		local this_file_path = thisScript().path
+		os.remove(this_file_path)
+		downloadUrlToFile(raw_upd_url, this_file_path, function(id, status, p1, p2)
 			if status == dlstatus.STATUSEX_ENDDOWNLOAD then
 				if updates == nil then 
 					print('{FF0000}Ошибка при попытке скачать файл.') 
@@ -23969,430 +23997,517 @@ local cmd_defoult_json_for_smi = {
 --> Мед карта для феникса
 local medcard_phoenix = [[
 {
-  "folder": 4,
-  "UID": 61764606,
+  "folder": 1,
+  "UID": 94205371,
   "var": [
-	{
-	  "name": "period",
-	  "value": "1"
-	},
-	{
-	  "name": "levelpl",
-	  "value": "{getlevel[{idplayer}]}"
-	},
-	{
-	  "name": "term",
-	  "value": "0"
-	},
-	{
-	  "name": "price",
-	  "value": "1000"
-	},
-	{
-	  "name": "price7",
-	  "value": "20000"
-	},
-	{
-	  "name": "price14",
-	  "value": "35000"
-	},
-	{
-	  "name": "price30",
-	  "value": "45000"
-	},
-	{
-	  "name": "price60",
-	  "value": "65000"
-	}
+    {
+      "name": "lvl",
+      "value": "{getlevel[{arg1}]}"
+    },
+    {
+      "name": "price7",
+      "value": "20000"
+    },
+    {
+      "name": "price14",
+      "value": "35000"
+    },
+    {
+      "name": "price30",
+      "value": "45000"
+    },
+    {
+      "name": "price60",
+      "value": "65000"
+    },
+    {
+      "name": "stat",
+      "value": "3"
+    },
+    {
+      "name": "days",
+      "value": "4"
+    }
   ],
-  "rank": 3,
+  "rank": 1,
   "act": [
-	[
-	  "SEND",
-	  "Для оформления медицинской карты предоставьте, пожалуйста, Ваш паспорт."
-	],
-	[
-	  "SEND",
-	  "/b Для этого введите /showpass {myid}"
-	],
-	[
-	  "WAIT_ENTER"
-	],
-	[
-	  "SEND",
-	  "/me взял{sex[][а]} паспорт из рук пациента и внимательно изучил{sex[][а]} его"
-	],
-	[
-	  "SEND",
-	  "Хорошо, сейчас задам пару вопросов, отвечайте честно."
-	],
-	[
-	  "SEND",
-	  "Вы можете видеть имена проходящих мимо Вас людей?"
-	],
-	[
-	  "WAIT_ENTER"
-	],
-	[
-	  "SEND",
-	  "Вас когда-нибудь убивали?"
-	],
-	[
-	  "DIALOG",
-	  "mentalstate",
-	  [
-		"Полностью здоров",
-		"Наблюдаются откл.",
-		"Псих. нездоров",
-		"Неопределён"
-	  ]
-	],
-	[
-	  "IF",
-	  2, [
-		"mentalstate",
-		"2"
-	  ],
-	  10, 1],
-	[
-	  "NEW_VAR",
-	  "period",
-	  "2"
-	],
-	[
-	  "ELSE",
-	  10],
-	[
-	  "IF",
-	  2, [
-		"mentalstate",
-		"3"
-	  ],
-	  12, 1],
-	[
-	  "NEW_VAR",
-	  "period",
-	  "1"
-	],
-	[
-	  "ELSE",
-	  12],
-	[
-	  "IF",
-	  2, [
-		"mentalstate",
-		"4"
-	  ],
-	  15, 1],
-	[
-	  "NEW_VAR",
-	  "period",
-	  "0"
-	],
-	[
-	  "ELSE",
-	  15],
-	[
-	  "END",
-	  15],
-	[
-	  "END",
-	  12],
-	[
-	  "END",
-	  10],
-	[
-	  "IF",
-	  4, [
-		"levelpl",
-		"6"
-	  ],
-	  22, 3],
-	[
-	  "IF",
-	  4, [
-		"levelpl",
-		"10"
-	  ],
-	  23, 5],
-	[
-	  "SEND",
-	  "Стоимость оформления мед карты зависит от его срока."
-	],
-	[
-	  "SEND",
-	  "7 дней - 20.000$. 14 дней - 35.000$. 30 дней - 45.000$. 60 дней - 65.000$."
-	],
-	[
-	  "ELSE",
-	  23],
-	[
-	  "IF",
-	  4, [
-		"levelpl",
-		"15"
-	  ],
-	  29, 5],
-	[
-	  "SEND",
-	  "Стоимость оформления мед карты зависит от его срока."
-	],
-	[
-	  "SEND",
-	  "7 дней - 35.000$. 14 дней - 50.000$. 30 дней - 60.000$. 60 дней - 75.000$."
-	],
-	[
-	  "NEW_VAR",
-	  "price7",
-	  "35000"
-	],
-	[
-	  "NEW_VAR",
-	  "price14",
-	  "50000"
-	],
-	[
-	  "NEW_VAR",
-	  "price30",
-	  "60000"
-	],
-	[
-	  "NEW_VAR",
-	  "price60",
-	  "75000"
-	],
-	[
-	  "ELSE",
-	  29],
-	[
-	  "IF",
-	  4, [
-		"levelpl",
-		"20"
-	  ],
-	  31, 5],
-	[
-	  "SEND",
-	  "Стоимость оформления мед карты зависит от его срока."
-	],
-	[
-	  "SEND",
-	  "7 дней - 50.000$. 14 дней - 60.000$. 30 дней - 85.000$. 60 дней - 100.000$."
-	],
-	[
-	  "NEW_VAR",
-	  "price7",
-	  "50000"
-	],
-	[
-	  "NEW_VAR",
-	  "price14",
-	  "60000"
-	],
-	[
-	  "NEW_VAR",
-	  "price30",
-	  "85000"
-	],
-	[
-	  "NEW_VAR",
-	  "price60",
-	  "100000"
-	],
-	[
-	  "ELSE",
-	  31],
-	[
-	  "SEND",
-	  "Стоимость оформления мед карты зависит от его срока."
-	],
-	[
-	  "SEND",
-	  "7 дней - 140.000$. 14 дней - 160.000$. 30 дней - 180.000$. 60 дней - 200.000$."
-	],
-	[
-	  "NEW_VAR",
-	  "price7",
-	  "140000"
-	],
-	[
-	  "NEW_VAR",
-	  "price14",
-	  "160000"
-	],
-	[
-	  "NEW_VAR",
-	  "price30",
-	  "180000"
-	],
-	[
-	  "NEW_VAR",
-	  "price60",
-	  "200000"
-	],
-	[
-	  "END",
-	  31],
-	[
-	  "END",
-	  29],
-	[
-	  "END",
-	  23],
-	[
-	  "SEND",
-	  "Выберите срок оформления и мы продолжим."
-	],
-	[
-	  "ELSE",
-	  22],
-	[
-	  "SEND",
-	  "Для Вас стоимость медицинской карты составляет всего 1000$. Оформляем?"
-	],
-	[
-	  "END",
-	  22],
-	[
-	  "IF",
-	  4, [
-		"levelpl",
-		"6"
-	  ],
-	  49, 3],
-	[
-	  "DIALOG",
-	  "termmed",
-	  [
-		"7 дней",
-		"14 дней",
-		"30 дней",
-		"60 дней"
-	  ]
-	],
-	[
-	  "IF",
-	  2, [
-		"termmed",
-		"1"
-	  ],
-	  51, 1],
-	[
-	  "NEW_VAR",
-	  "price",
-	  "{price7}"
-	],
-	[
-	  "ELSE",
-	  51],
-	[
-	  "IF",
-	  2, [
-		"termmed",
-		"2"
-	  ],
-	  53, 1],
-	[
-	  "NEW_VAR",
-	  "price",
-	  "{price14}"
-	],
-	[
-	  "ELSE",
-	  53],
-	[
-	  "IF",
-	  2, [
-		"termmed",
-		"3"
-	  ],
-	  55, 1],
-	[
-	  "NEW_VAR",
-	  "price",
-	  "{price30}"
-	],
-	[
-	  "ELSE",
-	  55],
-	[
-	  "IF",
-	  2, [
-		"termmed",
-		"4"
-	  ],
-	  57, 1],
-	[
-	  "NEW_VAR",
-	  "price",
-	  "{price60}"
-	],
-	[
-	  "ELSE",
-	  57],
-	[
-	  "END",
-	  57],
-	[
-	  "END",
-	  55],
-	[
-	  "END",
-	  53],
-	[
-	  "END",
-	  51],
-	[
-	  "ELSE",
-	  49],
-	[
-	  "WAIT_ENTER"
-	],
-	[
-	  "END",
-	  49],
-	[
-	  "SEND",
-	  "/me берёт в правую руку из мед. кейса печать и наносит штамп в углу бланка"
-	],
-	[
-	  "SEND",
-	  "/do Печать больницы нанесена на бланк."
-	],
-	[
-	  "SEND",
-	  "/me кладёт печать в мед. кейс, после чего ручкой ставит подпись и сегодняшнюю дату"
-	],
-	[
-	  "SEND",
-	  "/do Страница медицинской карты полностью заполнена."
-	],
-	[
-	  "SEND",
-	  "/me передаёт медицинскую карту в руки обратившемуся"
-	],
-	[
-	  "SEND",
-	  "/medcard {idplayer} {period} {term} {price}"
-	]
+    [
+      "SEND",
+      "Для оформления медицинской карты предоставьте, пожалуйста, Ваш паспорт."
+    ],
+    [
+      "SEND",
+      "/b Для этого введите /showpass {myid}"
+    ],
+    [
+      "WAIT_ENTER"
+    ],
+    [
+      "SEND",
+      "/me взял{sex[][а]} паспорт из рук пациента и внимательно изучил{sex[][а]} его"
+    ],
+    [
+      "SEND",
+      "Хорошо, сейчас задам пару вопросов, отвечайте честно."
+    ],
+    [
+      "SEND",
+      "Вы можете видеть имена проходящих мимо Вас людей?"
+    ],
+    [
+      "WAIT_ENTER"
+    ],
+    [
+      "SEND",
+      "Вас когда-нибудь убивали?"
+    ],
+    [
+      "DIALOG",
+      "status",
+      [
+        "Полностью здоров",
+        "Наблюдаются откл.",
+        "Псих. нездоров",
+        "Неопределён"
+      ]
+    ],
+    [
+      "IF",
+      2,
+      [
+        "status",
+        "1"
+      ],
+      10,
+      1
+    ],
+    [
+      "NEW_VAR",
+      "stat",
+      "3"
+    ],
+    [
+      "ELSE",
+      10
+    ],
+    [
+      "IF",
+      2,
+      [
+        "status",
+        "2"
+      ],
+      12,
+      1
+    ],
+    [
+      "NEW_VAR",
+      "stat",
+      "2"
+    ],
+    [
+      "ELSE",
+      12
+    ],
+    [
+      "END",
+      12
+    ],
+    [
+      "IF",
+      2,
+      [
+        "status",
+        "3"
+      ],
+      13,
+      1
+    ],
+    [
+      "NEW_VAR",
+      "stat",
+      "1"
+    ],
+    [
+      "ELSE",
+      13
+    ],
+    [
+      "END",
+      13
+    ],
+    [
+      "IF",
+      2,
+      [
+        "status",
+        "4"
+      ],
+      17,
+      1
+    ],
+    [
+      "NEW_VAR",
+      "stat",
+      "0"
+    ],
+    [
+      "ELSE",
+      17
+    ],
+    [
+      "END",
+      17
+    ],
+    [
+      "END",
+      10
+    ],
+    [
+      "IF",
+      4,
+      [
+        "lvl",
+        "6"
+      ],
+      19,
+      4
+    ],
+    [
+      "SEND",
+      "Для Вас стоимость медицинской карты составляет всего 1000$. Оформляем?"
+    ],
+    [
+      "WAIT_ENTER"
+    ],
+    [
+      "SEND",
+      "/me берёт в правую руку из мед. кейса печать и наносит штамп в углу бланка"
+    ],
+    [
+      "SEND",
+      "/do Печать больницы нанесена на бланк."
+    ],
+    [
+      "SEND",
+      "/me кладёт печать в мед. кейс, после чего ручкой ставит подпись и сегодняшнюю дату"
+    ],
+    [
+      "SEND",
+      "/do Страница медицинской карты полностью заполнена."
+    ],
+    [
+      "SEND",
+      "/me передаёт медицинскую карту в руки обратившемуся"
+    ],
+    [
+      "SEND",
+      "/medcard {arg1} {stat} 7 1000"
+    ],
+    [
+      "STOP"
+    ],
+    [
+      "ELSE",
+      19
+    ],
+    [
+      "IF",
+      4,
+      [
+        "lvl",
+        "10"
+      ],
+      28,
+      5
+    ],
+    [
+      "NEW_VAR",
+      "price7",
+      "20000"
+    ],
+    [
+      "NEW_VAR",
+      "price14",
+      "35000"
+    ],
+    [
+      "NEW_VAR",
+      "price30",
+      "45000"
+    ],
+    [
+      "NEW_VAR",
+      "price60",
+      "65000"
+    ],
+    [
+      "ELSE",
+      28
+    ],
+    [
+      "IF",
+      4,
+      [
+        "lvl",
+        "15"
+      ],
+      36,
+      5
+    ],
+    [
+      "NEW_VAR",
+      "price7",
+      "35000"
+    ],
+    [
+      "NEW_VAR",
+      "price14",
+      "50000"
+    ],
+    [
+      "NEW_VAR",
+      "price30",
+      "60000"
+    ],
+    [
+      "NEW_VAR",
+      "price60",
+      "75000"
+    ],
+    [
+      "ELSE",
+      36
+    ],
+    [
+      "IF",
+      4,
+      [
+        "lvl",
+        "20"
+      ],
+      38,
+      5
+    ],
+    [
+      "NEW_VAR",
+      "price7",
+      "50000"
+    ],
+    [
+      "NEW_VAR",
+      "price14",
+      "60000"
+    ],
+    [
+      "NEW_VAR",
+      "price30",
+      "85000"
+    ],
+    [
+      "NEW_VAR",
+      "price60",
+      "100000"
+    ],
+    [
+      "ELSE",
+      38
+    ],
+    [
+      "IF",
+      4,
+      [
+        "lvl",
+        "20"
+      ],
+      40,
+      3
+    ],
+    [
+      "COMMENT",
+      "20+"
+    ],
+    [
+      "ELSE",
+      40
+    ],
+    [
+      "END",
+      40
+    ],
+    [
+      "END",
+      38
+    ],
+    [
+      "END",
+      36
+    ],
+    [
+      "END",
+      28
+    ],
+    [
+      "END",
+      19
+    ],
+    [
+      "DIALOG",
+      "day",
+      [
+        "7 дней",
+        "14 дней",
+        "30 дней",
+        "60 дней"
+      ]
+    ],
+    [
+      "SEND",
+      "/me берёт в правую руку из мед. кейса печать и наносит штамп в углу бланка"
+    ],
+    [
+      "SEND",
+      "/do Печать больницы нанесена на бланк."
+    ],
+    [
+      "SEND",
+      "/me кладёт печать в мед. кейс, после чего ручкой ставит подпись и сегодняшнюю дату"
+    ],
+    [
+      "SEND",
+      "/do Страница медицинской карты полностью заполнена."
+    ],
+    [
+      "SEND",
+      "/me передаёт медицинскую карту в руки обратившемуся"
+    ],
+    [
+      "IF",
+      2,
+      [
+        "day",
+        "1"
+      ],
+      62,
+      1
+    ],
+    [
+      "NEW_VAR",
+      "days",
+      "0"
+    ],
+    [
+      "SEND",
+      "/medcard {arg1} {stat} {days} {price7}"
+    ],
+    [
+      "ELSE",
+      62
+    ],
+    [
+      "IF",
+      2,
+      [
+        "day",
+        "2"
+      ],
+      64,
+      1
+    ],
+    [
+      "NEW_VAR",
+      "days",
+      "1"
+    ],
+    [
+      "SEND",
+      "/medcard {arg1} {stat} {days} {price14}"
+    ],
+    [
+      "ELSE",
+      64
+    ],
+    [
+      "END",
+      64
+    ],
+    [
+      "IF",
+      2,
+      [
+        "day",
+        "3"
+      ],
+      66,
+      1
+    ],
+    [
+      "NEW_VAR",
+      "days",
+      "2"
+    ],
+    [
+      "SEND",
+      "/medcard {arg1} {stat} {days} {price30}"
+    ],
+    [
+      "ELSE",
+      66
+    ],
+    [
+      "END",
+      66
+    ],
+    [
+      "IF",
+      2,
+      [
+        "day",
+        "4"
+      ],
+      68,
+      1
+    ],
+    [
+      "NEW_VAR",
+      "days",
+      "3"
+    ],
+    [
+      "SEND",
+      "/medcard {arg1} {stat} {days} {price60}"
+    ],
+    [
+      "ELSE",
+      68
+    ],
+    [
+      "END",
+      68
+    ],
+    [
+      "END",
+      62
+    ],
+    [
+      "STOP"
+    ]
   ],
-  "desc": "Оформить медицинскую карту",
-  "id_element": 77,
-  "delay": 2.5,
+  "desc": "Выдать мед карту",
+  "id_element": 85,
+  "delay": 1.3,
   "send_end_mes": true,
   "cmd": "mc",
   "key": [
-	"",
-	{
-
-	}
+    "",
+    {}
   ],
   "arg": [
-	{
-	  "desc": "id игрока",
-	  "name": "idplayer",
-	  "type": 2
-	}
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 1
+    }
   ]
 }
 ]]
