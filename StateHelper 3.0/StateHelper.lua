@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.2.5')
+script_version('3.2.6')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -261,13 +261,14 @@ anim_clock = os.clock()
 anim = 0
 an = {[1] = 4, [2] = 0.001, [3] = 0, [4] = 187, [5] = {0, 420, 0, 0, 0}, [6] = {0.00, 1}, [7] = {0.00, 0.00, 0.00}, [8] = {0.00, 0.00, 0.00, 0.00, 0.00, 0.00},
 	[9] = {0, 0, 0, 0}, [10] = {0.00, 0}, [11] = {0, 0}, [12] = {0, 0, false}, [13] = 0, [14] = {0, 0, 0}, [15] = 0, [16] = 0, [17] = {0.00, 0.00, 0.00}, [18] = {0.00, 0.00, 0.00, 0.00, 0.00, 0.00},
-	[19] = {0.00, 0.00}, [20] = {0.00, 0.00, 0.00}, [21] = {0, 0}, [22] = {0, 0, 0, 0, 0}, [23] = 0, [24] = {0, 0, 0, 0, 0}, [25] = {0, 0},
+	[19] = {0.00, 0.00}, [20] = {0.00, 0.00, 0.00}, [21] = {0, 0, 0}, [22] = {0, 0, 0, 0, 0}, [23] = 0, [24] = {0, 0, 0, 0, 0}, [25] = {0, 0},
 	[26] = 0, [27] = 0, [28] = 0, [29] = 0, [30] = {0, 0}}
 stop_anim = {false}
 tab = 'settings'
 name_tab = u8'Главное'
 tab_settings = 1
 bool_go_stat_set = false
+track_time = true
 lspawncar = false
 carcers = false
 close_win = {main = false, fast = false}
@@ -858,6 +859,7 @@ setting = {
 		ses_day = false,
 		ses_afk = false,
 		ses_all = false,
+		stop_timer = false,
 		visible = 60
 	},
 	position_stat = {x = sx - 160, y = sy / 2 - 50},
@@ -1111,12 +1113,17 @@ function CefDialog()
                                 local zakono = tonumber(tostring(data['zakono']):match("%d+")) or -2
                                 local level = tonumber(tostring(data['level']):match("%d+")) or -2
                                 local agenda = tostring(data['agenda'] or "Нет")
-
+								local charity_info = data['charity']
                                 if agenda:find("Имеется", 1, true) then
                                     sob_info.ticket = 1
                                 else
                                     sob_info.ticket = 2
                                 end
+								if charity_info ~= 'Нет' then
+									sob_info.warn = 0
+								else
+									sob_info.warn = 1
+								end
                                 sob_info.law = zakono
                                 sob_info.exp = level
 							if setting.sob.close_doc then
@@ -1240,7 +1247,7 @@ function CefDialog()
 						if document_opened and setting.auto_close_doc then
 							if run_sob then
 								lua_thread.create(function()
-									wait(500)
+									wait(1000)
 									sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
 								end)
 							else
@@ -1313,7 +1320,7 @@ function main()
 					end
 				end
 			end
-			
+
 			if cmd[1][i].cmd ~= '' then
 				sampRegisterChatCommand(cmd[1][i].cmd, function(arg) cmd_start(arg, tostring(cmd[1][i].UID) .. cmd[1][i].cmd) end)
 				
@@ -1348,10 +1355,11 @@ function main()
 	end
 	if #setting.shp ~= 0 then
 		for i = 1, #setting.shp do
-			sampRegisterChatCommand(setting.shp[i].cmd, function(arg) cmd_shpora_open(arg, tostring(setting.shp[i].UID) .. setting.shp[i].cmd) end)
-			if #setting.shp[i].key[2] ~= 0 then
-				rkeys.registerHotKey(setting.shp[i].key[2], 3, true, function() on_hot_key(setting.shp[i].key[2]) end)
-				table.insert(all_keys, setting.shp[i].key[2])
+			local shp_to_reg = setting.shp[i]
+			sampRegisterChatCommand(shp_to_reg.cmd, function(arg) cmd_shpora_open(arg, tostring(shp_to_reg.UID) .. shp_to_reg.cmd) end)
+			if #shp_to_reg.key[2] ~= 0 then
+				rkeys.registerHotKey(shp_to_reg.key[2], 3, true, function() on_hot_key(shp_to_reg.key[2]) end)
+				table.insert(all_keys, shp_to_reg.key[2])
 			end
 		end
 	end
@@ -1382,7 +1390,7 @@ function main()
 	
 	if setting.dep_off then
 		sampRegisterChatCommand('d', function()
-			sampAddChatMessage('[SH]{FFFFFF} Вы отключили команду /d в настройках.', 0xFF5345)
+			sampAddChatMessage('[SH]{FFFFFF} Вы отключили команду /d Ънастройках.', 0xFF5345)
 		end)
 	end
 	
@@ -2178,26 +2186,15 @@ function gui.GetCursorScroll()
 end
 
 function gui.SliderBar(slider_text, slider_arg, slider_min, slider_max, slider_width, slider_pos, saving_it)
-	local function convert(param)
-		param = tonumber(param) * 100
-		return round(param, 1)
-	end
-	
-	local tbl_per = {}
-	local arg_buf_format
-	local pere_arg
-	local saveinter
-	local tap_slid = false
-	
-	arg_buf_format = imgui.new.float(slider_arg)
+	local arg_buf_format = imgui.new.float(slider_arg)
 	if arg_buf_format[0] == 'nil' then
 		arg_buf_format[0] = ''
 	end
 	
 	local slider_width_end = (slider_width - 15) / slider_max
 	imgui.SetCursorPos(imgui.ImVec2(slider_pos[1] + 5, slider_pos[2] + 9))
+
 	local p = imgui.GetCursorScreenPos()
-	local DragPos = imgui.GetCursorPos()
 	imgui.SetCursorPos(imgui.ImVec2(slider_pos[1], slider_pos[2]))
 	imgui.PushItemWidth(slider_width)
 	imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(0.00, 0.00, 0.00, 0.00))
@@ -2205,16 +2202,15 @@ function gui.SliderBar(slider_text, slider_arg, slider_min, slider_max, slider_w
 	imgui.PushStyleColor(imgui.Col.SliderGrabActive, imgui.ImVec4(0.00, 0.00, 0.00, 0.00))
 	imgui.SliderFloat(u8'##'..slider_text, arg_buf_format, slider_min, slider_max, u8'')
 	imgui.PopStyleColor(3)
-	
-	local col_sl_non = imgui.ImVec4(0.60, 0.60, 0.60 ,1.00)
-	local col_sl_circle = imgui.ImVec4(1.00, 1.00, 1.00 ,1.00)
-	if setting.cl == 'White' then
-		col_sl_non = imgui.ImVec4(0.83, 0.81, 0.81 ,1.00)
-	end
-	imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + slider_width - 15, p.y + 5), imgui.GetColorU32Vec4(imgui.ImVec4(0.90, 0.90, 0.90, 1.00)), 10, 15)
+
+	local track_color = (setting.cl == 'White' and imgui.ImVec4(0.85, 0.85, 0.85, 1.00)) or imgui.ImVec4(0.21, 0.21, 0.21, 1.00)
+	local knob_color = (setting.cl == 'White' and cl.def) or imgui.ImVec4(0.90, 0.90, 0.90, 1.00)
+
+	imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + slider_width - 15, p.y + 5), imgui.GetColorU32Vec4(track_color), 10, 15)
 	imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + (arg_buf_format[0] * slider_width_end), p.y + 5), imgui.GetColorU32Vec4(cl.def), 10, 15)
-	imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x + (arg_buf_format[0] * slider_width_end), p.y + 2), 9, imgui.GetColorU32Vec4(imgui.ImVec4(0.90, 0.90, 0.90, 1.00)), 60)
+	imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x + (arg_buf_format[0] * slider_width_end), p.y + 2.5), 9, imgui.GetColorU32Vec4(knob_color), 60)
 	imgui.SameLine()
+
 	if not slider_text:find('##') then
 		imgui.PushFont(font[1])
 		imgui.Text(slider_text)
@@ -3287,6 +3283,13 @@ function hall.settings()
 			if gui.Button(u8'Сбросить отыгровки до дефолта', {490, 381}, {230, 31}) then
 				gun_bool = deep_copy(gun_orig)
 			end
+			if gui.Button(u8'Отключить все', {250, 417}, {230, 31}) then
+				for i = 1, #gun_bool do
+					gun_bool[i].take = false
+					gun_bool[i].put = false
+				end
+			end
+
 			imgui.Dummy(imgui.ImVec2(0, 13))
 			imgui.EndPopup()
 		end
@@ -3319,7 +3322,11 @@ function hall.settings()
 			local bool_set_ant = setting.price[1].ant
 			setting.price[1].ant = gui.InputText({481, 96}, 100, setting.price[1].ant, u8'Цена антибиотика', 20, u8'Цена', 'num')
 			if setting.price[1].ant ~= bool_set_ant then save() end
-			
+			gui.Text(381, 138, 'Охранник', font[3])
+			local bool_set_gua = setting.price[1].tatu
+			setting.price[1].tatu = gui.InputText({481, 140}, 100, setting.price[1].tatu, u8'Цена охраны', 20, u8'Цена', 'num')
+			if setting.price[1].tatu ~= bool_set_gua then save() end
+
 			gui.Text(25, 187, 'Медицинская карта', bold_font[1])
 			new_draw(212, 175)
 			
@@ -5517,6 +5524,7 @@ function hall.settings()
 			'Saul_Goodmaan, Love {FF9500}(QA-инженер стадии Бета)',
 			'Aaron_Grella, Mesa {FF9500}(QA-инженер стадии Бета)',
 			'Virka_Vandalov, Wednesday {FF9500}(QA-инженер стадии Бета)',
+			'Akio_Hayasi, Tucson {FF9500}(QA-тестировщик)',
 			'Richard_Anderson, Phoenix {FF9500}(QA-тестировщик, помощь в ранней стадии разработки)',
 			'Samuel_Kloppo, Red-Rock {FF9500}(Помощь в разработке функциональности)',
 			'Kevin_Hatiko, Saint Rose {FF9500}(Вдохновение на создание скрипта)',
@@ -5589,8 +5597,10 @@ function hall.settings()
 			save()
 		end
 		if setting.stat_on_screen.func then
-			new_draw(160, 395)
-			for ps = 0, 9 do
+
+			new_draw(160, 395)	--new_draw(160, 431)
+
+			for ps = 0, 11 do
 				gui.DrawLine({16, 195 + (ps * 36)}, {602, 195 + (ps * 36)}, cl.line)
 			end
 			
@@ -5656,7 +5666,12 @@ function hall.settings()
 			if gui.Button(u8'Изменить...', {492, 524}, {100, 27}) then
 				ch_pos_on_stat()
 			end
-			
+			--gui.Text(26, 565, 'Приостанавливать онлайн в заданное время', font[3])
+			--imgui.SetCursorPos(imgui.ImVec2(561, 560))
+			--if gui.Switch(u8'##Приостанавливать онлайн', setting.stat_on_screen.stop_timer) then
+			--	setting.stat_on_screen.stop_timer = not setting.stat_on_screen.stop_timer
+			--	save()
+			--end
 			imgui.Dummy(imgui.ImVec2(0, 21))
 		end
 	elseif tab_settings == 20 then --> Музыка
@@ -5823,6 +5838,66 @@ function hall.cmd()
 			
 			return return_bool
 		end
+		local function FolderMove(pos_draw, name_table)
+			local col_stand_imvec4 = imgui.ImVec4(0.00, 0.00, 0.00, 0.00)
+			local return_bool = 0
+			local arg_table = {u8'Переименовать', u8'Удалить'}
+			local icon_table = {fa.PEN_TO_SQUARE, fa.TRASH}
+			imgui.PushFont(font[3])
+			
+			if table_move_cmd == name_table then
+				imgui.SetCursorPos(imgui.ImVec2(pos_draw[1], pos_draw[2]))
+				imgui.BeginChild(u8'Окно выбора действия с папкой' .. name_table, imgui.ImVec2(160, 56), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse)
+				
+				imgui.SetCursorPos(imgui.ImVec2(0, 0))
+				local p = imgui.GetCursorScreenPos()
+				imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + 160, p.y + 54), imgui.GetColorU32Vec4(cl.bg), 7, 15)
+				local text_and_icon_color = (setting.cl == 'White') and imgui.ImVec4(0.0, 0.0, 0.0, 1.0) or imgui.ImVec4(1.0, 1.0, 1.0, 1.0)
+				for m = 1, #arg_table do
+					local col_stand_imvec4_2 = imgui.ImVec4(0.00, 0.00, 0.00, 0.00)
+					imgui.SetCursorPos(imgui.ImVec2(0, 1 + (m - 1) * 27))
+					if imgui.InvisibleButton('##FolderMoveSelect ' .. name_table .. m, imgui.ImVec2(160, 27)) then
+						table_move_cmd = ''
+						return_bool = m
+					end
+					if imgui.IsItemActive() then
+						col_stand_imvec4_2 = cl.def
+					elseif imgui.IsItemHovered() then
+						col_stand_imvec4_2 = cl.bg2
+					end
+					imgui.SetCursorPos(imgui.ImVec2(1, 1 + (m - 1) * 27))
+					local p = imgui.GetCursorScreenPos()
+					local flag = {0, 0}
+					if m == 1 then
+						flag = {4, 3}
+					elseif m == #arg_table then
+						flag = {4, 12}
+					end
+					imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + 158, p.y + 27), imgui.GetColorU32Vec4(col_stand_imvec4_2), flag[1], flag[2])
+					imgui.PushStyleColor(imgui.Col.Text, text_and_icon_color)
+					imgui.SetCursorPos(imgui.ImVec2(25, 6 + ((m - 1) * 27)))
+					imgui.Text(arg_table[m])
+					imgui.PushFont(fa_font[2])
+					imgui.SetCursorPos(imgui.ImVec2(7, 6 + ((m - 1) * 27)))
+					imgui.Text(icon_table[m])
+					imgui.PopFont()
+					imgui.PopStyleColor()
+				end
+				imgui.SetCursorPos(imgui.ImVec2(0, 0))
+				local p = imgui.GetCursorScreenPos()
+				imgui.GetWindowDrawList():AddRect(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + 160, p.y + 55), imgui.GetColorU32Vec4(cl.def), 7, 15)
+				imgui.EndChild()
+				
+				if imgui.IsMouseReleased(0) and not imgui.IsItemHovered() then
+					table_move_cmd = ''
+				end
+			end
+			
+			imgui.PopFont()
+			
+			return return_bool
+		end
+
 		local function folder_list_defoult(TEXT, FA, NUM, POS) --> Отрисовка стандартных папок
 			POS = ((POS - 1) * 30) + ps_y
 			local return_break = false
@@ -5836,6 +5911,11 @@ function hall.cmd()
 					an[12][3] = false
 					an[12][2] = 0
 				end
+
+				if imgui.IsItemClicked(1) and NUM > 7 then
+					table_move_cmd = 'FOLDER_MOVE ' .. NUM
+				end
+
 				if imgui.IsItemActive() and int_cmd.folder ~= NUM and table_move_cmd == ''  then
 					gui.Draw({25, 15 + POS}, {172, 24}, color_ItemActive, 5, 15)
 				elseif imgui.IsItemHovered() and int_cmd.folder ~= NUM and table_move_cmd == ''  then
@@ -5877,17 +5957,7 @@ function hall.cmd()
 			else
 				imgui.SetCursorPos(imgui.ImVec2(29 + FA.SDVIG[1], 18 + FA.SDVIG[2] + POS))
 				if imgui.InvisibleButton('##DEL_FOLDER' .. NUM, imgui.ImVec2(19, 19)) then
-					if #cmd[1] ~= 0 then
-						for j = 1, #cmd[1] do
-							if cmd[1][j].folder == NUM then
-								cmd[1][j].folder = 1
-							elseif cmd[1][j].folder > NUM then
-								cmd[1][j].folder = cmd[1][j].folder - 1
-							end
-						end
-					end
-					table.remove(cmd[2], NUM)
-					return_break = true
+					imgui.OpenPopup(u8'Удалить папку?' .. NUM)
 				end
 				if imgui.IsItemActive() then
 					gui.FaText(31 + FA.SDVIG[1], 19 + FA.SDVIG[2] + POS, fa.CIRCLE_MINUS, fa_font[3], imgui.ImVec4(1.00, 0.09, 0.19, 1.00))
@@ -5895,6 +5965,52 @@ function hall.cmd()
 					gui.FaText(31 + FA.SDVIG[1], 19 + FA.SDVIG[2] + POS, fa.CIRCLE_MINUS, fa_font[3], imgui.ImVec4(1.00, 0.23, 0.19, 1.00))
 				end
 			end
+
+			if NUM > 7 then
+				local folder_action = FolderMove({25, 15 + POS + 26}, 'FOLDER_MOVE ' .. NUM)
+				if folder_action == 1 then
+					edit_all_cmd = true
+				elseif folder_action == 2 then
+					imgui.OpenPopup(u8'Удалить папку?' .. NUM)
+				end
+			end
+
+			if imgui.BeginPopupModal(u8'Удалить папку?' .. NUM, nil, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+				if setting.cl == 'White' then
+					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.00, 0.00, 0.00, 1.00))
+				else
+					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
+				end
+				gui.Text(25, 5, 'Удалить папку\nи все команды внутри неё?', font[3])
+				imgui.PopStyleColor(1)
+				if gui.Button(u8'Удалить', {24, 43}, {90, 27}) then
+					if #cmd[1] > 0 then
+						for j = #cmd[1], 1, -1 do
+							if cmd[1][j].folder == NUM then
+								if #cmd[1][j].key[2] ~= 0 then
+									rkeys.unRegisterHotKey(cmd[1][j].key[2])
+								end
+								if cmd[1][j].cmd ~= '' then
+									sampUnregisterChatCommand(cmd[1][j].cmd)
+								end
+								table.remove(cmd[1], j)
+							elseif cmd[1][j].folder > NUM then
+								cmd[1][j].folder = cmd[1][j].folder - 1
+							end
+						end
+					end
+					table.remove(cmd[2], NUM)
+					save_cmd()
+					add_cmd_in_all_cmd()
+					return_break = true
+					imgui.CloseCurrentPopup()
+				end
+				if gui.Button(u8'Отмена', {141, 43}, {90, 27}) then
+					imgui.CloseCurrentPopup()
+				end
+				imgui.EndPopup()
+			end
+
 			if return_break then
 				imgui.PopStyleColor(1)
 				imgui.PopFont()
@@ -6427,7 +6543,7 @@ function hall.cmd()
 		end
 		
 		if not presence_of_a_team then
-			edit_all_cmd = false
+			--edit_all_cmd = false --976
 			if setting.cl == 'White' then
 				imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.40, 0.40, 0.40, 1.00))
 			else
@@ -6493,9 +6609,43 @@ function hall.cmd()
 		
 		gui.DrawBox({16, 145}, {808, 37}, cl.tab, cl.line, 7, 15)
 		gui.Text(26, 155, 'Задержка проигрывания отыгровки', font[3])
+		local color_plus_bg, color_plus_text = cl.bg, cl.text
+		if bl_cmd.delay >= 20.0 then
+			color_plus_bg = imgui.ImVec4(0.40, 0.40, 0.40, 0.50)
+			color_plus_text = (setting.cl == 'White' and imgui.ImVec4(0.50, 0.50, 0.50, 1.00)) or imgui.ImVec4(0.7, 0.7, 0.7, 1.00)
+		else
+			imgui.SetCursorPos(imgui.ImVec2(795, 152))
+			if imgui.InvisibleButton(u8'##Прибавить к задержке', imgui.ImVec2(20, 20)) then
+				bl_cmd.delay = round(bl_cmd.delay + 0.1, 1)
+			end
+			if imgui.IsItemActive() then
+				color_plus_bg = cl.def
+				color_plus_text = imgui.ImVec4(0.95, 0.95, 0.95, 1.00)
+			end
+		end
+		gui.DrawCircle({804, 162}, 9.5, color_plus_bg)
+		gui.FaText(799, 155, fa.PLUS, fa_font[2], color_plus_text)
+		local color_minus_bg, color_minus_text = cl.bg, cl.text
+		if bl_cmd.delay <= 0.5 then
+			color_minus_bg = imgui.ImVec4(0.40, 0.40, 0.40, 0.50)
+			color_minus_text = (setting.cl == 'White' and imgui.ImVec4(0.50, 0.50, 0.50, 1.00)) or imgui.ImVec4(0.7, 0.7, 0.7, 1.00)
+		else
+			imgui.SetCursorPos(imgui.ImVec2(545, 152))
+			if imgui.InvisibleButton(u8'##Убавить от задержки', imgui.ImVec2(20, 20)) then
+				bl_cmd.delay = round(bl_cmd.delay - 0.1, 1)
+			end
+			if imgui.IsItemActive() then
+				color_minus_bg = cl.def
+				color_minus_text = imgui.ImVec4(0.95, 0.95, 0.95, 1.00)
+			end
+		end
+		gui.DrawCircle({555, 162}, 9.5, color_minus_bg)
+		gui.FaText(550, 155, fa.MINUS, fa_font[2], color_minus_text)
 		local bool_delay = imgui.new.float(bl_cmd.delay)
-		bl_cmd.delay = gui.SliderBar('##Прозрачность текста', bool_delay, 0.5, 20, 180, {643, 152})
-		bl_cmd.delay = round(bl_cmd.delay, 0.1)
+		local new_main_delay = gui.SliderBar('##Прозрачность текста', bool_delay, 0.5, 20, 140, {643, 152})
+		if new_main_delay ~= bl_cmd.delay then
+			bl_cmd.delay = round(new_main_delay, 1)
+		end
 		gui.Text(575, 155, tostring(bl_cmd.delay) .. ' сек.', font[3])
 		
 		local pixel_y_arg = #bl_cmd.arg * 72
@@ -6662,7 +6812,18 @@ function hall.cmd()
 			local if_disp = 0
 			local bool_y = 0
 			local num_el_if = 0
+			local collapsed_level = 0
 			for i = 1, #bl_cmd.act do
+				if collapsed_level > 0 then
+					if bl_cmd.act[i][1] == 'IF' then
+						collapsed_level = collapsed_level + 1
+					elseif bl_cmd.act[i][1] == 'END' then
+						collapsed_level = collapsed_level - 1
+					end
+					if collapsed_level > 0 then
+						goto continue_loop_render
+					end
+				end
 				if if_disp > 168 then
 					if_disp = 168
 				end
@@ -7029,18 +7190,41 @@ function hall.cmd()
 					end
 				elseif bl_cmd.act[i][1] == 'IF' then
 					local param_plus = 0
-					if bl_cmd.act[i][2] ~= 1 then
+					if bl_cmd.act[i][2] ~= 1 and not bl_cmd.act[i][6] then
 						param_plus = 36
 					end
 					if not optimization then
 						gui.DrawBox({16 + if_disp, 288 + pxl}, {808 - if_disp, 31 + param_plus}, cl.tab, cl.line, 7, 15)
 						gui.Draw({21 + if_disp, 293 + pxl}, {21, 21}, imgui.ImVec4(0.56, 0.56, 0.58, 1.00), 3, 15)
-						gui.FaText(23 + 2 + if_disp, 295 + pxl, fa.ARROWS_CROSS, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
+						--gui.FaText(23 + 2 + if_disp, 295 + pxl, fa.ARROWS_CROSS, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
+						imgui.SetCursorPos(imgui.ImVec2(16 + if_disp, 288 + pxl))
+						if imgui.InvisibleButton('##TOGGLE_COLLAPSE' .. i, imgui.ImVec2(21, 31)) then
+							bl_cmd.act[i][6] = not bl_cmd.act[i][6]
+						end
+						local collapse_icon = bl_cmd.act[i][6] and fa.SQUARE_PLUS or fa.SQUARE_MINUS
+						gui.FaText(18 + if_disp, 290 + pxl, collapse_icon, fa_font[4], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Если', font[3])
-						if bl_cmd.act[i][2] ~= 1 then
+						if bl_cmd.act[i][6] then
+							local hidden_lines = 0
+							local nesting_level = 1
+							for j = i + 1, #bl_cmd.act do
+								if bl_cmd.act[j][1] == 'IF' then
+									nesting_level = nesting_level + 1
+								elseif bl_cmd.act[j][1] == 'END' then
+									nesting_level = nesting_level - 1
+								end
+								if nesting_level == 0 then break end
+								hidden_lines = hidden_lines + 1
+							end
+							local text_to_display = '... (' .. hidden_lines .. ' строк)'
+							local text_size = imgui.CalcTextSize(u8(text_to_display))
+							imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.70))
+							gui.Text(795 - text_size.x - if_disp, 295 + pxl, text_to_display, font[3])
+							imgui.PopStyleColor(1)
+						end
+						if bl_cmd.act[i][2] ~= 1 and not bl_cmd.act[i][6] then
 							gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
 						end
-						
 						if remove_action(pxl, i) then
 							local remove_array = {i}
 							for j = 1, #bl_cmd.act do
@@ -7060,7 +7244,6 @@ function hall.cmd()
 							end
 							break
 						end
-						
 						local param_edit = bl_cmd.act[i][2]
 						bl_cmd.act[i][2] = gui.ListTableMove({265 + if_disp, 295 + pxl}, {u8'Входные данные', u8'В диалоге выбран вариант', u8'Сравнение аргумента', u8'Сравнение переменной'}, bl_cmd.act[i][2], 'Select if' .. i)
 						if param_edit ~= bl_cmd.act[i][2] then
@@ -7070,34 +7253,38 @@ function hall.cmd()
 								bl_cmd.act[i][3] = {'', ''}
 							end
 						end
-						
-						if bl_cmd.act[i][2] == 2 then
-							gui.Text(26 + if_disp, 329 + pxl, 'Имя диалога', font[3])
-							bl_cmd.act[i][3][1] = gui.InputText({127 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя диалога' .. i, 20, u8'Имя диалога', 'esp')
-							gui.Text(300 + if_disp, 329 + pxl, 'Выбранный вариант', font[3])
-							local param_opt = tonumber(bl_cmd.act[i][3][2])
-							param_opt = gui.Counter({460 + if_disp, 329 + pxl}, tostring(param_opt), param_opt, 1, 99, u8'Выбранный вариант' .. i)
-							bl_cmd.act[i][3][2] = tostring(param_opt)
-						elseif bl_cmd.act[i][2] == 3 then
-							gui.Text(26 + if_disp, 329 + pxl, 'Имя аргумента', font[3])
-							bl_cmd.act[i][3][1] = gui.InputText({139 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя аргумента ' .. i, 20, u8'Имя аргумента', 'esp')
-							gui.Text(389 + if_disp, 329 + pxl, 'Значение', font[3])
-							bl_cmd.act[i][3][2] = gui.InputText({467 + if_disp, 331 + pxl}, 336 - if_disp, bl_cmd.act[i][3][2], u8'Значение равенства arg' .. i, 500, u8'Значение')
-							bl_cmd.act[i][5] = gui.ListTableMove({600 + if_disp, 295 + pxl}, {u8'Аргумент равен', u8'Аргумент больше, чем значение', u8'Аргумент больше или равняется значению', u8'Аргумент меньше значения', u8'Аргумент меньше или равняется значению', u8'Аргумент не равен значению'}, bl_cmd.act[i][5], 'Select Equality Values Arg' .. i)
-						elseif bl_cmd.act[i][2] == 4 then
-							gui.Text(26 + if_disp, 329 + pxl, 'Имя переменной', font[3])
-							bl_cmd.act[i][3][1] = gui.InputText({151 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя переменной ' .. i, 20, u8'Имя переменной', 'esp')
-							gui.Text(389 + if_disp, 329 + pxl, 'Значение', font[3])
-							bl_cmd.act[i][3][2] = gui.InputText({467 + if_disp, 331 + pxl}, 336 - if_disp, bl_cmd.act[i][3][2], u8'Значение равенства var' .. i, 500, u8'Значение')
-							bl_cmd.act[i][5] = gui.ListTableMove({600 + if_disp, 295 + pxl}, {u8'Переменная равна', u8'Переменная больше, чем значение', u8'Переменная больше или равняется значению', u8'Переменная меньше значения', u8'Переменная меньше или равняется значению', u8'Переменная не равна значению'}, bl_cmd.act[i][5], 'Select Equality Values Var' .. i)
+						if not bl_cmd.act[i][6] then
+							if bl_cmd.act[i][2] == 2 then
+								gui.Text(26 + if_disp, 329 + pxl, 'Имя диалога', font[3])
+								bl_cmd.act[i][3][1] = gui.InputText({127 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя диалога' .. i, 20, u8'Имя диалога', 'esp')
+								gui.Text(300 + if_disp, 329 + pxl, 'Выбранный вариант', font[3])
+								local param_opt = tonumber(bl_cmd.act[i][3][2])
+								param_opt = gui.Counter({460 + if_disp, 329 + pxl}, tostring(param_opt), param_opt, 1, 99, u8'Выбранный вариант' .. i)
+								bl_cmd.act[i][3][2] = tostring(param_opt)
+							elseif bl_cmd.act[i][2] == 3 then
+								gui.Text(26 + if_disp, 329 + pxl, 'Имя аргумента', font[3])
+								bl_cmd.act[i][3][1] = gui.InputText({139 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя аргумента ' .. i, 20, u8'Имя аргумента', 'esp')
+								gui.Text(389 + if_disp, 329 + pxl, 'Значение', font[3])
+								bl_cmd.act[i][3][2] = gui.InputText({467 + if_disp, 331 + pxl}, 336 - if_disp, bl_cmd.act[i][3][2], u8'Значение равенства arg' .. i, 500, u8'Значение')
+								bl_cmd.act[i][5] = gui.ListTableMove({600 + if_disp, 295 + pxl}, {u8'Аргумент равен', u8'Аргумент больше, чем значение', u8'Аргумент больше или равняется значению', u8'Аргумент меньше значения', u8'Аргумент меньше или равняется значению', u8'Аргумент не равен значению'}, bl_cmd.act[i][5], 'Select Equality Values Arg' .. i)
+							elseif bl_cmd.act[i][2] == 4 then
+								gui.Text(26 + if_disp, 329 + pxl, 'Имя переменной', font[3])
+								bl_cmd.act[i][3][1] = gui.InputText({151 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя переменной ' .. i, 20, u8'Имя переменной', 'esp')
+								gui.Text(389 + if_disp, 329 + pxl, 'Значение', font[3])
+								bl_cmd.act[i][3][2] = gui.InputText({467 + if_disp, 331 + pxl}, 336 - if_disp, bl_cmd.act[i][3][2], u8'Значение равенства var' .. i, 500, u8'Значение')
+								bl_cmd.act[i][5] = gui.ListTableMove({600 + if_disp, 295 + pxl}, {u8'Переменная равна', u8'Переменная больше, чем значение', u8'Переменная больше или равняется значению', u8'Переменная меньше значения', u8'Переменная меньше или равняется значению', u8'Переменная не равна значению'}, bl_cmd.act[i][5], 'Select Equality Values Var' .. i)
+							end
 						end
 					end
-					pxl = pxl + 47 + param_plus
-					if_disp = if_disp + 24
-					num_el_if = num_el_if + 1
-					
-					
-					if not optimization then
+					if bl_cmd.act[i][6] then 
+						collapsed_level = 1
+						pxl = pxl + 47
+					else
+						pxl = pxl + 47 + param_plus
+						if_disp = if_disp + 24
+						num_el_if = num_el_if + 1
+					end
+					if not optimization and not bl_cmd.act[i][6] then
 						add_action_other(272 + pxl, i)
 					end
 				elseif bl_cmd.act[i][1] == 'ELSE' then
@@ -7192,9 +7379,11 @@ function hall.cmd()
 						gui.FaText(23 + 1 + if_disp, 295 + pxl, fa.CLOCK_ROTATE_LEFT, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Изменить задержку проигрывания отыгровки', font[3])
 						local bool_new_delay = imgui.new.float(bl_cmd.act[i][2])
-						bl_cmd.act[i][2] = gui.SliderBar('##Изменить задержку отыгровки ' .. i, bool_new_delay, 0.5, 20, 180, {618, 292 + pxl})
-						delay_act_def = bl_cmd.act[i][2]
-						bl_cmd.act[i][2] = round(bl_cmd.act[i][2], 0.1)
+						local new_delay_value = gui.SliderBar('##Изменить задержку отыгровки ' .. i, bool_new_delay, 0.5, 20, 180, {618, 292 + pxl})
+						if new_delay_value ~= bl_cmd.act[i][2] then
+							bl_cmd.act[i][2] = round(new_delay_value, 1)
+							delay_act_def = bl_cmd.act[i][2]
+						end
 						gui.Text(560, 295 + pxl, tostring(bl_cmd.act[i][2]) .. ' сек.', font[3])
 						
 						if remove_action(pxl, i) then
@@ -7208,6 +7397,7 @@ function hall.cmd()
 						add_action_other(272 + pxl, i)
 					end
 				end
+				::continue_loop_render::
 			end
 		end
 		
@@ -8753,6 +8943,8 @@ function hall.reminder()
 	
 	imgui.EndChild()
 end
+
+
 function hall.stat()
 	local color_ItemActive = imgui.ImVec4(0.20, 0.20, 0.20, 1.00)
 	local color_ItemHovered = imgui.ImVec4(0.24, 0.24, 0.24, 1.00)
@@ -8874,6 +9066,7 @@ function hall.stat()
 	imgui.PopFont()
 	
 	imgui.Dummy(imgui.ImVec2(0, 23))
+
 	imgui.EndChild()
 end
 
@@ -10418,7 +10611,8 @@ function new_action_popup()
 				1, --> Условие
 				{'', ''}, --> Входные данные,
 				bl_cmd.id_element,
-				1
+				1,
+				false --> Свернутый блок
 			})
 			table.insert(bl_cmd.act, number_i_cmd + 2, {
 				'ELSE',
@@ -10532,6 +10726,7 @@ function tags_in_cmd()
 			{'{priceant}', 'Выведет цену на антибиотик'},
 			{'{pricelec}', 'Выведет цену на лечение'},
 			{'{priceosm}', 'Выведет цену на мед. осмотр'},
+			{'{priceguard}', 'Выведет цену на лечение охранника'},
 			{'{priceauto1}', 'Выведет цену на авто на 1 месяц'},
 			{'{priceauto2}', 'Выведет цену на авто на 2 месяца'},
 			{'{priceauto3}', 'Выведет цену на авто на 3 месяца'},
@@ -11268,9 +11463,10 @@ win.main = imgui.OnFrame(
 							first_start = 7
 							setting.first_start = false
 							for i = 1, #cmd_defoult.all do
-								table.insert(cmd[1], cmd_defoult.all[i])
-								sampRegisterChatCommand(cmd_defoult.all[i].cmd, function(arg) 
-								cmd_start(arg, tostring(cmd_defoult.all[i].UID) .. cmd_defoult.all[i].cmd) end)
+								local new_cmd = deep_copy(cmd_defoult.all[i])
+								table.insert(cmd[1], new_cmd)
+								sampRegisterChatCommand(new_cmd.cmd, function(arg) 
+								cmd_start(arg, tostring(new_cmd.UID) .. new_cmd.cmd) end)
 							end
 							if setting.org <= 4 then --> Для Больниц
 								for i = 1, #cmd_defoult.hospital do
@@ -11474,22 +11670,44 @@ win.main = imgui.OnFrame(
 							an[7][1] = an[7][1] - (anim * 1)
 						end
 					end
-					
-					imgui.SetCursorPos(imgui.ImVec2(705, 5))
-					if imgui.InvisibleButton(u8'##Выбор команд', imgui.ImVec2(60, 32)) then
-						edit_all_cmd = not edit_all_cmd
-						table_select_cmd = {}
-						an[12][2] = 0
-						an[12][3] = false
-					end
-					if imgui.IsItemActive() or imgui.IsItemHovered() then
-						if an[7][2] < 0.45 then
-							an[7][2] = an[7][2] + (anim * 1)
-						end
+
+					local folder_has_commands = false
+					if int_cmd.folder == 1 and #cmd[1] > 0 then
+						folder_has_commands = true
 					else
-						if an[7][2] > 0 then
-							an[7][2] = an[7][2] - (anim * 1)
+						for i = 1, #cmd[1] do
+							if cmd[1][i].folder == int_cmd.folder then
+								folder_has_commands = true
+								break
+							end
 						end
+					end
+
+					if folder_has_commands then
+						imgui.SetCursorPos(imgui.ImVec2(705, 5))
+						if imgui.InvisibleButton(u8'##Выбор команд', imgui.ImVec2(60, 32)) then
+							edit_all_cmd = not edit_all_cmd
+							table_select_cmd = {}
+							an[12][2] = 0
+							an[12][3] = false
+						end
+						if imgui.IsItemActive() or imgui.IsItemHovered() then
+							if an[7][2] < 0.45 then
+								an[7][2] = an[7][2] + (anim * 1)
+							end
+						else
+							if an[7][2] > 0 then
+								an[7][2] = an[7][2] - (anim * 1)
+							end
+						end
+						if setting.cl == 'White' then
+							imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[7][2], 0.50 - an[7][2], 0.50 - an[7][2], 1.00))
+						else
+							imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 + an[7][2], 0.50 + an[7][2], 0.50 + an[7][2], 1.00))
+						end
+						gui.FaText(727, 6, fa.LIST_CHECK, fa_font[4])
+						gui.Text(711, 22, 'Выбрать')
+						imgui.PopStyleColor(1)
 					end
 					
 					if setting.cl == 'White' then
@@ -11500,14 +11718,7 @@ win.main = imgui.OnFrame(
 					gui.FaText(797, 6, fa.PLUS, fa_font[4])
 					gui.Text(777, 22, 'Добавить')
 					imgui.PopStyleColor(1)
-					if setting.cl == 'White' then
-						imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[7][2], 0.50 - an[7][2], 0.50 - an[7][2], 1.00))
-					else
-						imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 + an[7][2], 0.50 + an[7][2], 0.50 + an[7][2], 1.00))
-					end
-					gui.FaText(727, 6, fa.LIST_CHECK, fa_font[4])
-					gui.Text(711, 22, 'Выбрать')
-					imgui.PopStyleColor(1)
+					
 				else
 					imgui.SetCursorPos(imgui.ImVec2(780, 5))
 					if imgui.InvisibleButton(u8'##Удалить выбранные команды', imgui.ImVec2(57, 32)) then
@@ -11621,22 +11832,30 @@ win.main = imgui.OnFrame(
 						end
 						
 						if bool_true_cmd == 0 or cmd_memory == bl_cmd.cmd then
-							cmd[1][type_cmd] = bl_cmd
-							edit_tab_cmd = false
-							edit_all_cmd = false
-							an[13] = 0
-							if cmd_memory ~= '' then
+							local final_cmd_data = deep_copy(bl_cmd)
+
+							if type_cmd == #cmd[1] + 1 then
+								table.insert(cmd[1], final_cmd_data)
+							else
+								cmd[1][type_cmd] = final_cmd_data
+							end
+
+							if cmd_memory ~= '' and cmd_memory ~= final_cmd_data.cmd then
 								for y = 1, #all_cmd do
 									if all_cmd[y] == cmd_memory then
 										table.remove(all_cmd, y)
 										sampUnregisterChatCommand(cmd_memory)
-										save_cmd()
 										break
 									end
 								end
 							end
-							table.insert(all_cmd, bl_cmd.cmd)
-							sampRegisterChatCommand(bl_cmd.cmd, function(arg) cmd_start(arg, tostring(bl_cmd.UID) .. bl_cmd.cmd) end)
+
+							table.insert(all_cmd, final_cmd_data.cmd)
+							sampRegisterChatCommand(final_cmd_data.cmd, function(arg) cmd_start(arg, tostring(final_cmd_data.UID) .. final_cmd_data.cmd) end)
+							
+							edit_tab_cmd = false
+							edit_all_cmd = false
+							an[13] = 0
 							save_cmd()
 						else
 							imgui.OpenPopup(u8'Ошибка сохранения команды')
@@ -12276,7 +12495,7 @@ win.main = imgui.OnFrame(
 						hour = tonumber(os.date('%H')),
 						repeats = {false, false, false, false, false, false, false},
 						sound = false,
-						execution = false
+						last_triggered_day = nil
 					}
 					new_rem = bool_reminder_new
 					last_child_y = {tonumber(os.date('%H')) * 60, tonumber(os.date('%M')) * 60}
@@ -12390,7 +12609,7 @@ win.main = imgui.OnFrame(
 						an[21][1] = an[21][1] - (anim * 1)
 					end
 				end
-				
+
 				imgui.SetCursorPos(imgui.ImVec2(700, 5))
 				if imgui.InvisibleButton(u8'##Перейти в настройки статистики', imgui.ImVec2(65, 32)) then
 					tab = 'settings'
@@ -12411,7 +12630,25 @@ win.main = imgui.OnFrame(
 						an[21][2] = an[21][2] - (anim * 1)
 					end
 				end
-				
+
+				imgui.SetCursorPos(imgui.ImVec2(623, 5))
+				if imgui.InvisibleButton("##Остановить отыгровку", imgui.ImVec2(65, 32)) then
+					track_time = not track_time
+				end
+				if imgui.IsItemActive() then
+					if an[21][3] < 0.45 then
+						an[21][3] = an[21][3] + (anim * 1)
+					end
+				elseif imgui.IsItemHovered() then
+					if an[21][3] < 0.45 then
+						an[21][3] = an[21][3] + (anim * 1)
+					end
+				else
+					if an[21][3] > 0 then
+						an[21][3] = an[21][3] - (anim * 1)
+					end
+				end
+
 				if setting.cl == 'White' then
 					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[21][1], 0.50 - an[21][1], 0.50 - an[21][1], 1.00))
 				else
@@ -12420,6 +12657,7 @@ win.main = imgui.OnFrame(
 				gui.FaText(795, 6, fa.ROTATE_RIGHT, fa_font[4])
 				gui.Text(777, 22, 'Сбросить')
 				imgui.PopStyleColor(1)
+				
 				if setting.cl == 'White' then
 					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[21][2], 0.50 - an[21][2], 0.50 - an[21][2], 1.00))
 				else
@@ -12427,6 +12665,20 @@ win.main = imgui.OnFrame(
 				end
 				gui.FaText(723, 6, fa.GEAR, fa_font[4])
 				gui.Text(700, 22, 'Настройки')
+				imgui.PopStyleColor(1)
+
+				if setting.cl == 'White' then
+					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[21][3], 0.50 - an[21][3], 0.50 - an[21][3], 1.00))
+				else
+					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 + an[21][3], 0.50 + an[21][3], 0.50 + an[21][3], 1.00))
+				end
+				if track_time then
+					gui.FaText(650, 6, fa.PAUSE, fa_font[4])
+					gui.Text(623, 22, 'Остановить')
+				else
+					gui.FaText(650, 6, fa.PLAY, fa_font[4])
+					gui.Text(630, 22, 'Включить')
+				end
 				imgui.PopStyleColor(1)
 			elseif not new_scene and tab == 'rp_zona' then
 				imgui.SetCursorPos(imgui.ImVec2(772, 5))
@@ -12631,41 +12883,6 @@ win.main = imgui.OnFrame(
 	end
 )
 
---[[win.fast_TCP = imgui.OnFrame(
-	function()
-		return carcer ~= nil and carcers == true
-	end,
-	function(main)
-		imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
-		imgui.SetNextWindowSize(imgui.ImVec2(500, 300))
-
-		imgui.Begin('Умный карцер', nil,
-			imgui.WindowFlags.NoCollapse +
-			imgui.WindowFlags.NoResize +
-			imgui.WindowFlags.NoTitleBar +
-			imgui.WindowFlags.NoScrollbar +
-			imgui.WindowFlags.NoScrollWithMouse)
-		gui.Draw({4, 4}, {492, 292}, cl.main, 12, 15)
-		gui.DrawLine({4, 38}, {496, 38}, cl.line)
-		imgui.SetCursorPos(imgui.ImVec2(11, 11))
-		if imgui.InvisibleButton(u8'##Закрыть', imgui.ImVec2(20, 20)) then
-			carcers = false
-		end
-		if imgui.IsItemHovered() then
-			gui.DrawCircle({21, 21}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
-		else
-			gui.DrawCircle({21, 21}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00))
-		end
-		imgui.SetCursorPos(imgui.ImVec2(20, 50))
-		imgui.PushFont(font[3])
-		imgui.TextWrapped(u8"Выбран игрок: " .. tostring(carcer or "Неизвестно"))
-		imgui.PopFont()
-		imgui.EndChild()
-
-		imgui.End()
-	end
-)
-]]
 
 --[[
 local inputField = imgui.new.char[256]()
@@ -12753,10 +12970,10 @@ win.mini_player = imgui.OnFrame(
 	function(mini_player)
 		mini_player.HideCursor = true
         imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy - 60), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-        imgui.SetNextWindowSize(imgui.ImVec2(318, 88))
+        imgui.SetNextWindowSize(imgui.ImVec2(318, 110))
         imgui.Begin('Music player', windows.mini_player,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoFocusOnAppearing + imgui.WindowFlags.NoBringToFrontOnFocus + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoMove)
-		gui.Draw({4, 4}, {310, 80}, imgui.ImVec4(0.02, 0.02, 0.02, 1.00), 12, 15)
-		
+		gui.Draw({4, 4}, {310, 105}, imgui.ImVec4(0.02, 0.02, 0.02, 1.00), 12, 15)
+
 		draw_gradient_image_music(0.9, 26, 26, 36, 36, 15)
 		imgui.SetCursorPos(imgui.ImVec2(18, 18))
 		local p_cursor_screen = imgui.GetCursorScreenPos()
@@ -12766,12 +12983,12 @@ win.mini_player = imgui.OnFrame(
 		else
 			imgui.Image(image_no_label, imgui.ImVec2(52, 52))
 		end
-		
+
 		if play.tab ~= 'RADIO' and play.tab ~= 'RECORD' then
 			gui.Draw({85, 65}, {215, 4}, imgui.ImVec4(0.21, 0.21, 0.21, 1.00), 20, 15)
 			gui.Draw({85, 65}, {(215 / play.len_time) * play.pos_time, 4}, cl.def, 20, 15)
 		end
-		
+
 		local name_record = {'Record Dance', 'Megamix', 'Party 24/7', 'Phonk', 'Гоп FM', 'Руки Вверх', 'Dupstep', 'Big Hits', 'Organic', 'Russian Hits'}
 		local name_radio = {'Европа Плюс', 'DFM', 'Шансон', 'Радио Дача', 'Дорожное', 'Маяк', 'Наше', 'LoFi Hip-Hop', 'Максимум', '90s Eurodance'}
 		imgui.PushFont(font[3])
@@ -12779,32 +12996,60 @@ win.mini_player = imgui.OnFrame(
 			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(85, 27, name_record[play.i], font[3])
 			imgui.PopStyleColor(1)
-			
+
 			imgui.SetCursorPos(imgui.ImVec2(85, 44))
 			imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8('Record'))
-			
+
 		elseif play.tab == 'RADIO' then
 			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(85, 27, name_radio[play.i], font[3])
 			imgui.PopStyleColor(1)
-			
+
 			imgui.SetCursorPos(imgui.ImVec2(85, 44))
 			imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8('Radio'))
 		else
 			if play.status ~= 'NULL' then
 				local track_name, newline_count_2 = wrapText(play.info.name, 30, 30)
 				local track_artist, newline_count_2 = wrapText(play.info.artist, 28, 28)
-				
+
 				imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 				gui.Text(85, 19, track_name, font[3])
 				imgui.PopStyleColor(1)
-				
+
 				imgui.SetCursorPos(imgui.ImVec2(85, 37))
 				imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8(track_artist))
 			end
 		end
 		imgui.PopFont()
-		
+        local button_start_x = 134
+        imgui.SetCursorPos(imgui.ImVec2(button_start_x, 75))
+        if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' and play.i > 1 then
+            if imgui.InvisibleButton(u8'##PreviousTrackMini', imgui.ImVec2(20, 20)) then
+                back_track()
+            end
+            gui.FaText(button_start_x + 2, 77, fa.BACKWARD_STEP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+        else
+            gui.FaText(button_start_x + 2, 77, fa.BACKWARD_STEP, fa_font[2], imgui.ImVec4(0.30, 0.30, 0.30, 1.00))
+        end
+        imgui.SetCursorPos(imgui.ImVec2(button_start_x + 30, 75))
+        if imgui.InvisibleButton(u8'##PlayPauseMini', imgui.ImVec2(20, 20)) then
+            set_song_status('PLAY_OR_PAUSE')
+        end
+        if play.status == 'PLAY' then
+            gui.FaText(button_start_x + 32, 77, fa.PAUSE, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+        else
+            gui.FaText(button_start_x + 32, 77, fa.PLAY, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+        end
+        imgui.SetCursorPos(imgui.ImVec2(button_start_x + 60, 75))
+        if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' then
+            if imgui.InvisibleButton(u8'##NextTrackMini', imgui.ImVec2(20, 20)) then
+                next_track(true)
+            end
+            gui.FaText(button_start_x + 62, 77, fa.FORWARD_STEP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+        else
+            gui.FaText(button_start_x + 62, 77, fa.FORWARD_STEP, fa_font[2], imgui.ImVec4(0.30, 0.30, 0.30, 1.00))
+        end
+
         imgui.End()
 	end
 )
@@ -13159,7 +13404,9 @@ win.stat = imgui.OnFrame(
 			local time_format = os.date('%H:%M:%S')
 			imgui.PushFont(bold_font[3])
 			local calc_time = imgui.CalcTextSize(time_format)
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(149 - (calc_time.x / 2), 16 + pos_pl_stat, time_format, bold_font[3])
+			imgui.PopStyleColor(1)
 			imgui.PopFont()
 			pos_pl_stat = 38
 		end
@@ -13167,32 +13414,46 @@ win.stat = imgui.OnFrame(
 			local time_format = format_custom_date()
 			imgui.PushFont(bold_font[1])
 			local calc_date = imgui.CalcTextSize(u8(time_format))
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(149 - (calc_date.x / 2), 16 + pos_pl_stat, time_format, bold_font[1])
+			imgui.PopStyleColor(1)
 			imgui.PopFont()
 			pos_pl_stat = pos_pl_stat + 26
 		end
 		if setting.stat_on_screen.day then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'Чистый за день: ' .. format_time(setting.stat.cl[1]), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.afk then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'АФК за день: ' .. format_time(setting.stat.afk[1]), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.all then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'Всего за день: ' .. format_time(setting.stat.cl[1] + setting.stat.afk[1]), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.ses_day then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'Чистый за сессию: ' .. format_time(stat_ses.cl), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.ses_afk then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'АФК за сессию: ' .. format_time(stat_ses.afk), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.ses_all then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'Всего за сессию: ' .. format_time(stat_ses.all), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		
@@ -13460,24 +13721,10 @@ function change_design(design_bool, bool_theme)
 		theme()
 	end
 end
---[[
+-- dell
 --> Для ТСР
-sampRegisterChatCommand("carcer", function(param)
-	if setting.org ~= 10 then
-		sampAddChatMessage("")
-		return
-	end
 
-	local num = tonumber(param)
-	if num and num >= 0 and num <= 1000 then
-		carcer = num
-		carcers = true
-		sampAddChatMessage("")
-	else
-		sampAddChatMessage("")
-	end
-end)
-]]
+
 --> Акценты
 sampRegisterChatCommand('r', function(text_accents_r) 
 	if setting.teg_r ~= '' and setting.teg_r ~= ' ' and text_accents_r ~= '' and not setting.accent.func then
@@ -13633,8 +13880,10 @@ function add_cmd_in_all_cmd()
 	end
 end
 
-function round(num, step) --> Число, шаг округления
-  return math.ceil(num / step) * step
+function round(num, decimals)
+	if decimals == nil then decimals = 0 end
+	local mult = 10^(decimals)
+	return math.floor(num * mult + 0.5) / mult
 end
 
 function floor(number)
@@ -13870,7 +14119,7 @@ function on_hot_key(id_pr_key)
 			end
 		end
 		if pressed_key == tostring(table.concat(setting.win_key[2], ' ')) and not edit_key then
-			windows.main[0] = not windows.main[0]
+			open_main()
 		end
 		
 		if pressed_key == tostring(table.concat(setting.act_key[1], ' ')) and not edit_key and thread:status() ~= 'dead'
@@ -14461,6 +14710,8 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					extracted_str[i][2] = setting.price[1].lec:gsub('%D', '')
 				elseif val == '{priceosm}' then
 					extracted_str[i][2] = setting.price[1].osm:gsub('%D', '')
+				elseif val == '{priceguard}' then
+					extracted_str[i][2] = setting.price[1].tatu:gsub('%D', '')
 				elseif val =='{priceauto1}' then
 					extracted_str[i][2] = setting.price[2].auto[1]
 				elseif val == '{priceauto2}' then
@@ -14604,7 +14855,7 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 	end
 	
 	local function arg_and_var_and_tag_conv(text) --> Преобразовать аргументы, переменные и теги в тексте		
-		if #CMD.var ~= 0 then --> Заменяем переменные в тексте 
+		if #CMD.var ~= 0 then
 			for i_var = 1, #CMD.var do
 				local var_format = '{' .. CMD.var[i_var].name .. '}'
 				if text:find(var_format) then
@@ -14613,7 +14864,7 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 				end
 			end
 		end
-		if #CMD.arg ~= 0 then --> Заменяем аргументы в тексте 
+		if #CMD.arg ~= 0 then
 			for i_arg = 1, #CMD.arg do
 				local arg_format = '{' .. CMD.arg[i_arg].name .. '}'
 				if text:find(arg_format) then
@@ -15051,7 +15302,7 @@ function activate_function_members()
 end
 
 function EXPORTS.sendRequest()
-	if not sampIsDialogActive() then
+	if not sampIsDialogActive() and found_our then
 		members_wait.members = true
 		sampSendChat('/members')
 		
@@ -15138,7 +15389,6 @@ function asyncHttpRequest(method, url, args, resolve, reject)
 end
 
 chat_arizona = {}
-
 --> Hook
 function hook.onServerMessage(color_mes, mes)
 	local mes_col = (bit.tohex(bit.rshift(color_mes, 8), 6))
@@ -15197,7 +15447,19 @@ function hook.onServerMessage(color_mes, mes)
 	if mes:find('[Сбор средств](.+)организац') and setting.put_mes[5] then
 		return false
 	end
-
+	if run_sob and setting.color_nick then
+        if mes:find(my.nick .. '%[' .. my.id .. '%]') or mes:find(sob_info.nick .. '%[' .. sob_info.id .. '%]') then
+            local log_message = mes
+            if setting.cl ~= 'Black' then
+                log_message = log_message:gsub('%{B7AFAF%}', '%{464d4f%}'):gsub('%{FFFFFF%}', '%{464d4f%}')
+            end
+            local message_buffer = imgui.new.char[120](log_message)
+            table.insert(sob_info.history, ffi.string(message_buffer))
+            if #sob_info.history > 30 then
+                table.remove(sob_info.history, 1)
+            end
+        end
+    end
 	if setting.color_nick then
 		if mes:find('говорит:') and mes_col == 'ffffff' and setting.replace_ic then
 			local playerId = mes:match('%d+')
@@ -15455,23 +15717,6 @@ function hook.onServerMessage(color_mes, mes)
 			local soc_new_char = mes:gsub(icran, '')
 			bool_t = imgui.new.char[110](soc_new_char)
 			table.insert(dep_history, ffi.string(bool_t))
-		end
-	end
-	
-	if run_sob and setting.sob.chat then
-		if mes:find(my.nick .. '%[' .. my.id .. '%]') or mes:find(sob_info.nick .. '%[' .. sob_info.id .. '%]') then
-			if setting.cl ~= 'Black' then
-				mes = mes:gsub('%{B7AFAF%}', '%{464d4f%}'):gsub('%{FFFFFF%}', '%{464d4f%}')
-			end
-			
-			local bool_t = imgui.new.char[120](mes)
-			table.insert(sob_info.history, ffi.string(bool_t))
-			if ffi.string(bool_t) ~= mes then
-				local icran = ffi.string(bool_t):gsub('%[', '%%['):gsub('%]', '%%]'):gsub('%.', '%%.'):gsub('%-', '%%-'):gsub('%+', '%%+'):gsub('%?', '%%?'):gsub('%$', '%%$'):gsub('%*', '%%*'):gsub('%(', '%%('):gsub('%)', '%%)')
-				local soc_new_char = mes:gsub(icran, '')
-				bool_t = imgui.new.char[120](soc_new_char)
-				table.insert(sob_info.history, ffi.string(bool_t))
-			end
 		end
 	end
 	
@@ -16196,13 +16441,11 @@ function time()
 		if weekday == 0 then
 			weekday = 7
 		end
-
 		return weekday
 	end
 	
 	local function parse_date(date_str)
 		local day, month, year = date_str:match('(%d%d)%.(%d%d)%.(%d%d)')
-		
 		return os.time({ day = tonumber(day), month = tonumber(month), year = 2000 + tonumber(year), hour = 0, min = 0, sec = 0 })
 	end
 	
@@ -16211,14 +16454,23 @@ function time()
 			tbl[i] = tbl[i - 1]
 		end
 		tbl[1] = 0
-		
 		return tbl
 	end
-	
+
+    local function is_recurring(reminder)
+        if not reminder or not reminder.repeats then return false end
+        for _, repeats_today in ipairs(reminder.repeats) do
+            if repeats_today then
+                return true
+            end
+        end
+        return false
+    end
+
 	while true do
 		wait(1000)
-		local today_date = parse_date(os.date('%d.%m.%y'))
-		local yesterday_date = parse_date(setting.stat.today)
+		local today_date_parsed = parse_date(os.date('%d.%m.%y'))
+		local yesterday_date_parsed = parse_date(setting.stat.today)
 		time_save = time_save + 1
 		if time_save > 40 then
 			time_save = 0
@@ -16302,28 +16554,23 @@ function time()
 		end
 		
 		if sampGetGamestate() == 3 then
-			if #setting.reminder ~= 0 then
-				local current_date = os.date('%d.%m.%Y.%H.%M')
-				local h_min_date = os.date('%H.%M')
-				local current_day = os.date('*t').wday
-				local today_week = (current_day - 2) % 7 + 1
-				for i = 1, #setting.reminder do
-					local date_reminder = string.format('%02d.%02d.%d.%02d.%02d', 
-						setting.reminder[i].day, 
-						setting.reminder[i].mon, 
-						setting.reminder[i].year,
-						setting.reminder[i].hour, 
-						setting.reminder[i].min
-					)
-					local h_min_reminder = string.format('%s.%s.', 
-						setting.reminder[i].hour, 
-						setting.reminder[i].min
-					)
-					if date_reminder == current_date and not setting.reminder[i].execution then
-						setting.reminder[i].execution = true
-						text_reminder = setting.reminder[i].text
+			if #setting.reminder > 0 then
+				local current_date_full = os.date('%d.%m.%Y.%H.%M')
+				local h_min_date = os.date('%H:%M')
+				local current_day_of_year = os.date('%j')
+				local current_weekday = os.date('*t').wday
+				local today_week = (current_weekday == 1 and 7 or current_weekday - 1)
+
+				for i = #setting.reminder, 1, -1 do
+					local reminder = setting.reminder[i]
+					local date_reminder_full = string.format('%02d.%02d.%d.%02d.%02d', reminder.day, reminder.mon, reminder.year, reminder.hour, reminder.min)
+					
+					local one_time = not is_recurring(reminder)
+
+					if one_time and date_reminder_full == current_date_full then
+						text_reminder = reminder.text
 						windows.reminder[0] = true
-						if setting.reminder[i].sound then
+						if reminder.sound then
 							lua_thread.create(function()
 								local stop_signal = 0
 								repeat wait(200) 
@@ -16332,46 +16579,61 @@ function time()
 								until stop_signal > 17
 							end)
 						end
-					elseif date_reminder ~= current_date and h_min_reminder == h_min_date and setting.reminder[i].repeats[today_week] then
-						text_reminder = setting.reminder[i].text
-						windows.reminder[0] = true
-						if setting.reminder[i].sound then
-							lua_thread.create(function()
-								local stop_signal = 0
-								repeat wait(200) 
-									addOneOffSound(0, 0, 0, 1057)
-									stop_signal = stop_signal + 1
-								until stop_signal > 17
-							end)
+						table.remove(setting.reminder, i)
+						save()
+					elseif not one_time then
+						local h_min_reminder = string.format('%02d:%02d', reminder.hour, reminder.min)
+						if h_min_date == h_min_reminder and reminder.repeats[today_week] then
+							if reminder.last_triggered_day ~= current_day_of_year then
+								reminder.last_triggered_day = current_day_of_year
+								text_reminder = reminder.text
+								windows.reminder[0] = true
+								if reminder.sound then
+									lua_thread.create(function()
+										local stop_signal = 0
+										repeat wait(200) 
+											addOneOffSound(0, 0, 0, 1057)
+											stop_signal = stop_signal + 1
+										until stop_signal > 17
+									end)
+								end
+								save()
+							end
 						end
 					end
 				end
 			end
 		end
 		
-		if yesterday_date < today_date then
+		if yesterday_date_parsed < today_date_parsed then
 			setting.stat.cl = shift_table(setting.stat.cl)
 			setting.stat.afk = shift_table(setting.stat.afk)
 			setting.stat.day = shift_table(setting.stat.day)
 			setting.stat.date_week = shift_table(setting.stat.date_week)
 			setting.stat.date_week[1] = os.date('%d.%m.%y')
 			setting.stat.today = os.date('%d.%m.%y')
+			for i = 1, #setting.reminder do
+				setting.reminder[i].last_triggered_day = nil
+			end
+			save()
 		end
 		
-		if isGamePaused() or isPauseMenuActive() then
-			setting.stat.afk[1] = setting.stat.afk[1] + 1
-			setting.stat.day[1] = setting.stat.day[1] + 1
-			setting.stat.all = setting.stat.all + 1
-			stat_ses.afk = stat_ses.afk + 1
-			stat_ses.all = stat_ses.all + 1
-		else
-			setting.stat.cl[1] = setting.stat.cl[1] + 1
-			setting.stat.day[1] = setting.stat.day[1] + 1
-			setting.stat.all = setting.stat.all + 1
-			stat_ses.cl = stat_ses.cl + 1
-			stat_ses.all = stat_ses.all + 1
+		if track_time then
+			if isGamePaused() or isPauseMenuActive() then
+				setting.stat.afk[1] = setting.stat.afk[1] + 1
+				setting.stat.day[1] = setting.stat.day[1] + 1
+				setting.stat.all = setting.stat.all + 1
+				stat_ses.afk = stat_ses.afk + 1
+				stat_ses.all = stat_ses.all + 1
+			else
+				setting.stat.cl[1] = setting.stat.cl[1] + 1
+				setting.stat.day[1] = setting.stat.day[1] + 1
+				setting.stat.all = setting.stat.all + 1
+				stat_ses.cl = stat_ses.cl + 1
+				stat_ses.all = stat_ses.all + 1
+			end
 		end
-		
+
 		if time_dialog_nickname < 6 then
 			time_dialog_nickname = time_dialog_nickname + 1
 		elseif time_dialog_nickname >= 6 and time_dialog_nickname <= 10 then
@@ -16383,6 +16645,7 @@ function time()
 		end
 	end
 end
+
 
 function close_connect()
 	raknetEmulPacketReceiveBitStream(PACKET_DISCONNECTION_NOTIFICATION, raknetNewBitStream())
@@ -19006,7 +19269,7 @@ local cmd_defoult_json_for_hospital = {
     ],
     [
       "SEND",
-      "/healactor {id} {pricelec}"
+      "/healactor {id} {priceguard}"
     ]
   ],
   "desc": "Вылечить охранника игрока",
@@ -24736,7 +24999,6 @@ local inputTextCallback = ffi.cast("ImGuiInputTextCallback", function(data)
     return 0
 end)
 
-
 function SmiEdit()
     if not dialogData then return end
         local startIdx, endIdx = string.find(dialogText, "{33AA33}([^\n]+)")
@@ -24753,6 +25015,7 @@ function SmiEdit()
 
     end
 ]]
+
 local weatherNames = {	--> Названия погоды
     ["Чистое небо"] = {0, 1, 2, 3, 4, 5, 6, 7},
     ["Гроза с молниями"] = {8},
@@ -24781,6 +25044,7 @@ local weatherNames = {	--> Названия погоды
     ["Черно-белое контрастное небо"] = {44},
     ["Пурпурное мистическое небо"] = {45},
 }
+
 function processCommand(param, mode)	--> Изменение времени/погоды
     local num = tonumber(param)
     if mode == "time" then
@@ -24826,12 +25090,14 @@ function processCommand(param, mode)	--> Изменение времени/погоды
         end
     end
 end
+
 function hook.onSetWeather(weather)
     if bweather then
         return false
     end
     return true
 end
+
 function updateTime()
     if setting.time then
         local time = tonumber(setting.time)
