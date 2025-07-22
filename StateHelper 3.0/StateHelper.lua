@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.2.6')
+script_version('3.2.7')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -207,6 +207,14 @@ function open_main()
 	if inst_suc_font[1] and inst_suc_font[2] then
 		windows.main[0] = not windows.main[0]
 		if windows.main[0] then
+            if sampIsLocalPlayerSpawned() then
+                local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
+                my = {id = myid, nick = sampGetPlayerNickname(myid)}
+            else
+                sampAddChatMessage('[SH]{FFFFFF} Дождитесь спавна персонажа перед использованием.', 0xFF5345)
+                windows.main[0] = false
+                return
+            end
 			sx, sy = getScreenResolution()
 			fix_bug_input_bool = true
 			if setting.anim_win then
@@ -271,6 +279,7 @@ bool_go_stat_set = false
 track_time = true
 lspawncar = false
 carcers = false
+is_mini_player_pos = false
 close_win = {main = false, fast = false}
 imgui.Scroller = {
 	id_bool_scroll = {}
@@ -679,9 +688,10 @@ dev_mode = false
 windir = os.getenv('windir')
 status_sc = 0
 UID_SH_SUPPORT = {}
-
+signcheck = false
 --> Главные настройки
 setting = {
+	mini_player_pos = { x = sx / 2, y = sy - 60 },
 	first_start = true,
 	cl = 'Black',
 	color_def = {0.00, 0.48, 1.00},
@@ -800,6 +810,7 @@ setting = {
 		auto_warn = true,
 		chat = true,
 		close_doc = true,
+		use_original_color = false,
 		rp_q = {
 			{name = u8'Попросить документы', rp = {u8'Для трудоустройства необходимо предоставить следующий пакет документов:', u8'Паспорт, медицинскую карту и лицензии.', u8'/n Отыгрывая, с использованием команд /me, /do, /todo'}},
 			{name = u8'Рассказать о себе', rp = {u8'Хорошо, расскажите немного о себе.'}},
@@ -1275,7 +1286,7 @@ end
 
 function main()
 	repeat wait(300) until isSampAvailable()
-	
+	reset_state()
 	thread = lua_thread.create(function() return end)
 	pos_new_memb = lua_thread.create(function() return end)
 	
@@ -1451,6 +1462,7 @@ function main()
 	end
 	
 	while true do wait(0)
+		connetion()
 	    updateTime()
 		local current_time = os.clock()
 		anim = current_time - anim_clock
@@ -1538,10 +1550,12 @@ function main()
 			end
 		end
 		
-		if play.status ~= 'NULL' and setting.mini_player then
-			windows.player[0] = true
-		else
-			windows.player[0] = false
+		if not is_mini_player_pos then
+			if play.status ~= 'NULL' and setting.mini_player then
+				windows.player[0] = true
+			else
+				windows.player[0] = false
+			end
 		end
 		
 		if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' and play.status ~= 'NULL' and get_status_potok_song() == 1 then
@@ -4159,21 +4173,22 @@ function hall.settings()
 					setting.godeath.two_text = not setting.godeath.two_text
 					save()
 				end
-				
-				new_draw(354, 35)
-				
-				gui.Text(26, 363, 'Цвет текста вызова', font[3])
-				accent_col(0, {1.00, 0.33, 0.31}, {1.00, 0.23, 0.31})
-				accent_col(1, {0.75, 0.35, 0.87}, {0.75, 0.25, 0.87})
-				accent_col(2, {0.26, 0.45, 0.94}, {0.26, 0.35, 0.94})
-				accent_col(3, {0.20, 0.74, 0.29}, {0.20, 0.64, 0.29})
-				accent_col(4, {0.50, 0.50, 0.52}, {0.40, 0.40, 0.42})
+
+				if setting.godeath.two_text then
+					new_draw(354, 35)
+					gui.Text(26, 363, 'Цвет текста вызова', font[3])
+					accent_col(0, {1.00, 0.33, 0.31}, {1.00, 0.23, 0.31})
+					accent_col(1, {0.75, 0.35, 0.87}, {0.75, 0.25, 0.87})
+					accent_col(2, {0.26, 0.45, 0.94}, {0.26, 0.35, 0.94})
+					accent_col(3, {0.20, 0.74, 0.29}, {0.20, 0.64, 0.29})
+					accent_col(4, {0.50, 0.50, 0.52}, {0.40, 0.40, 0.42})
+				end
 				
 				imgui.Dummy(imgui.ImVec2(0, 18))
 			end
 		else
 			new_draw(16, 53)
-			
+
 			gui.Text(26, 26, 'Упростить систему выездов на пожары', font[3])
 			imgui.SetCursorPos(imgui.ImVec2(561, 21))
 			if gui.Switch(u8'##Упростить вызовы на пожары', setting.godeath.func) then
@@ -8015,10 +8030,9 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 		gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}, false)
 	end
 
-
 		gui.Text(297, 67, 'Настройки меню собеседования', bold_font[1])
 		gui.DrawBox({16, 92}, {808, 417}, cl.tab, cl.line, 7, 15)
-		for i = 1, 10 do
+		for i = 1, 11 do
 			gui.DrawLine({16, 91 + (i * 38)}, {824, 91 + (i * 38)}, cl.line)
 		end
 		gui.Text(26, 102, 'Минимальный уровень игрока для вступления в организацию', font[3])
@@ -8107,8 +8121,9 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 		end
 		
 		gui.Text(349, 523, 'Другие параметры', bold_font[1])
-		gui.DrawBox({16, 548}, {808, 75}, cl.tab, cl.line, 7, 15)
+		gui.DrawBox({16, 548}, {808, 75 + 38}, cl.tab, cl.line, 7, 15)
 		gui.DrawLine({16, 585}, {824, 585}, cl.line)
+		gui.DrawLine({16, 623}, {824, 623}, cl.line)
 		gui.Text(26, 558, 'Отображать локальный чат', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(783, 554))
 		if gui.Switch(u8'##chat игрока функция', setting.sob.chat) then
@@ -8121,17 +8136,23 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 			setting.sob.close_doc = not setting.sob.close_doc
 			save()
 		end
+		gui.Text(26, 634, 'Красить текст в цвет сообщения', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(783, 630))
+		if gui.Switch(u8'##sob color', setting.sob.use_original_color) then
+			setting.sob.use_original_color = not setting.sob.use_original_color
+			save()
+		end
 		
-		gui.Text(379, 637, 'Отыгровки', bold_font[1])
-		gui.DrawBox({16, 662}, {808, 75}, cl.tab, cl.line, 7, 15)
-		gui.DrawLine({16, 699}, {824, 699}, cl.line)
-		gui.Text(26, 672, 'Отыгровки вопросов', font[3])
-		gui.Text(26, 710, 'Отыгровки при определении годности', font[3])
-		if gui.Button(u8'Настроить...##1', {693, 667}, {115, 27}) then
+		gui.Text(379, 675, 'Отыгровки', bold_font[1])
+		gui.DrawBox({16, 700}, {808, 75}, cl.tab, cl.line, 7, 15)
+		gui.DrawLine({16, 737}, {824, 737}, cl.line)
+		gui.Text(26, 710, 'Отыгровки вопросов', font[3])
+		gui.Text(26, 748, 'Отыгровки при определении годности', font[3])
+		if gui.Button(u8'Настроить...##1', {693, 705}, {115, 27}) then
 			edit_rp_q_sob = true
 			an[19] = {0, 0}
 		end
-		if gui.Button(u8'Настроить...##2', {693, 705}, {115, 27}) then
+		if gui.Button(u8'Настроить...##2', {693, 743}, {115, 27}) then
 			edit_rp_fit_sob = true
 			an[19] = {0, 0}
 		end
@@ -9675,17 +9696,24 @@ function hall.music()
 		
 		imgui.EndChild()
 	elseif tab_music == 6 then
-		gui.Draw({160, 16}, {664, 37}, cl.tab, 7, 15)
+		gui.Draw({160, 16}, {664, 75}, cl.tab, 7, 15)
+		gui.DrawLine({160, 53}, {824, 53}, cl.line)
+
 		gui.Text(170, 26, 'Отображать мини-плеер на экране', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(783, 21))
 		if gui.Switch(u8'##Отображать мини-плеер на экране', setting.mini_player) then
 			setting.mini_player = not setting.mini_player
 			save()
 		end
-		imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 1.00))
-		gui.Text(170, 60, 'Некоторые сервисы и функции могут быть недоступны в Вашей стране или регионе.', font[2])
-		imgui.PopStyleColor(1)
+
+		gui.Text(170, 64, 'Изменить местоположение окна', font[3])
+		if gui.Button(u8'Изменить...', {713, 60}, {100, 27}) then
+			mini_player_position()
+		end
 		
+		imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 1.00))
+		gui.Text(170, 98, 'Некоторые сервисы и функции могут быть недоступны в Вашей стране или регионе.', font[2])
+		imgui.PopStyleColor(1)
 	end
 	
 	if play.status ~= 'NULL' then
@@ -12963,95 +12991,153 @@ win.reminder = imgui.OnFrame(
 	end
 )
 	
-
-
 win.mini_player = imgui.OnFrame(
-	function() return windows.player[0] and not scene_active end,
-	function(mini_player)
-		mini_player.HideCursor = true
-        imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy - 60), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+    function() return windows.player[0] and not scene_active end,
+    function(mini_player)
+        mini_player.HideCursor = true
+        if not setting.mini_player_pos then
+            setting.mini_player_pos = { x = sx / 2, y = sy - 60 }
+        end
+        imgui.SetNextWindowPos(imgui.ImVec2(setting.mini_player_pos.x, setting.mini_player_pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
         imgui.SetNextWindowSize(imgui.ImVec2(318, 110))
-        imgui.Begin('Music player', windows.mini_player,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoFocusOnAppearing + imgui.WindowFlags.NoBringToFrontOnFocus + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoMove)
-		gui.Draw({4, 4}, {310, 105}, imgui.ImVec4(0.02, 0.02, 0.02, 1.00), 12, 15)
+        local flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoFocusOnAppearing + imgui.WindowFlags.NoBringToFrontOnFocus + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoMove
 
-		draw_gradient_image_music(0.9, 26, 26, 36, 36, 15)
-		imgui.SetCursorPos(imgui.ImVec2(18, 18))
-		local p_cursor_screen = imgui.GetCursorScreenPos()
-		local s_image = imgui.ImVec2(52, 52)
-		if play.status_image == play.i and play.i ~= 0 then
-			imgui.GetWindowDrawList():AddImageRounded(play.image_label, p_cursor_screen, imgui.ImVec2(p_cursor_screen.x + s_image.x, p_cursor_screen.y + s_image.y), imgui.ImVec2(0, 0), imgui.ImVec2(1, 1), imgui.GetColorU32Vec4(imgui.ImVec4(1.00, 1.00, 1.00 ,1.00)), 12)
-		else
-			imgui.Image(image_no_label, imgui.ImVec2(52, 52))
-		end
+        if is_mini_player_pos then
+            flags = flags + imgui.WindowFlags.NoMouseInputs
+        end
 
-		if play.tab ~= 'RADIO' and play.tab ~= 'RECORD' then
-			gui.Draw({85, 65}, {215, 4}, imgui.ImVec4(0.21, 0.21, 0.21, 1.00), 20, 15)
-			gui.Draw({85, 65}, {(215 / play.len_time) * play.pos_time, 4}, cl.def, 20, 15)
-		end
+        imgui.Begin('Music player', windows.player, flags)
+        gui.Draw({4, 4}, {310, 105}, imgui.ImVec4(0.02, 0.02, 0.02, 1.00), 12, 15)
 
-		local name_record = {'Record Dance', 'Megamix', 'Party 24/7', 'Phonk', 'Гоп FM', 'Руки Вверх', 'Dupstep', 'Big Hits', 'Organic', 'Russian Hits'}
-		local name_radio = {'Европа Плюс', 'DFM', 'Шансон', 'Радио Дача', 'Дорожное', 'Маяк', 'Наше', 'LoFi Hip-Hop', 'Максимум', '90s Eurodance'}
-		imgui.PushFont(font[3])
-		if play.tab == 'RECORD' then
-			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
-			gui.Text(85, 27, name_record[play.i], font[3])
-			imgui.PopStyleColor(1)
+        draw_gradient_image_music(0.9, 26, 26, 36, 36, 15)
+        imgui.SetCursorPos(imgui.ImVec2(18, 18))
+        local p_cursor_screen = imgui.GetCursorScreenPos()
+        local s_image = imgui.ImVec2(52, 52)
+        if play.status_image == play.i and play.i ~= 0 then
+            imgui.GetWindowDrawList():AddImageRounded(play.image_label, p_cursor_screen, imgui.ImVec2(p_cursor_screen.x + s_image.x, p_cursor_screen.y + s_image.y), imgui.ImVec2(0, 0), imgui.ImVec2(1, 1), imgui.GetColorU32Vec4(imgui.ImVec4(1.00, 1.00, 1.00 ,1.00)), 12)
+        else
+            imgui.Image(image_no_label, imgui.ImVec2(52, 52))
+        end
 
-			imgui.SetCursorPos(imgui.ImVec2(85, 44))
-			imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8('Record'))
+        if play.tab ~= 'RADIO' and play.tab ~= 'RECORD' then
+            gui.Draw({85, 65}, {215, 4}, imgui.ImVec4(0.21, 0.21, 0.21, 1.00), 20, 15)
+            gui.Draw({85, 65}, {(215 / play.len_time) * play.pos_time, 4}, cl.def, 20, 15)
+        end
 
-		elseif play.tab == 'RADIO' then
-			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
-			gui.Text(85, 27, name_radio[play.i], font[3])
-			imgui.PopStyleColor(1)
+        local name_record = {'Record Dance', 'Megamix', 'Party 24/7', 'Phonk', 'Гоп FM', 'Руки Вверх', 'Dupstep', 'Big Hits', 'Organic', 'Russian Hits'}
+        local name_radio = {'Европа Плюс', 'DFM', 'Шансон', 'Радио Дача', 'Дорожное', 'Маяк', 'Наше', 'LoFi Hip-Hop', 'Максимум', '90s Eurodance'}
+        imgui.PushFont(font[3])
+        if play.tab == 'RECORD' then
+            imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
+            gui.Text(85, 27, name_record[play.i], font[3])
+            imgui.PopStyleColor(1)
+            imgui.SetCursorPos(imgui.ImVec2(85, 44))
+            imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8('Record'))
 
-			imgui.SetCursorPos(imgui.ImVec2(85, 44))
-			imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8('Radio'))
-		else
-			if play.status ~= 'NULL' then
-				local track_name, newline_count_2 = wrapText(play.info.name, 30, 30)
-				local track_artist, newline_count_2 = wrapText(play.info.artist, 28, 28)
-
-				imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
-				gui.Text(85, 19, track_name, font[3])
-				imgui.PopStyleColor(1)
-
-				imgui.SetCursorPos(imgui.ImVec2(85, 37))
-				imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8(track_artist))
-			end
-		end
-		imgui.PopFont()
-        local button_start_x = 134
-        imgui.SetCursorPos(imgui.ImVec2(button_start_x, 75))
-        if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' and play.i > 1 then
-            if imgui.InvisibleButton(u8'##PreviousTrackMini', imgui.ImVec2(20, 20)) then
-                back_track()
+        elseif play.tab == 'RADIO' then
+            imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
+            gui.Text(85, 27, name_radio[play.i], font[3])
+            imgui.PopStyleColor(1)
+            imgui.SetCursorPos(imgui.ImVec2(85, 44))
+            imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8('Radio'))
+        else
+            if play.status ~= 'NULL' then
+                local track_name, _ = wrapText(play.info.name, 30, 30)
+                local track_artist, _ = wrapText(play.info.artist, 28, 28)
+                imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
+                gui.Text(85, 19, track_name, font[3])
+                imgui.PopStyleColor(1)
+                imgui.SetCursorPos(imgui.ImVec2(85, 37))
+                imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8(track_artist))
             end
-            gui.FaText(button_start_x + 2, 77, fa.BACKWARD_STEP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
-        else
-            gui.FaText(button_start_x + 2, 77, fa.BACKWARD_STEP, fa_font[2], imgui.ImVec4(0.30, 0.30, 0.30, 1.00))
         end
-        imgui.SetCursorPos(imgui.ImVec2(button_start_x + 30, 75))
-        if imgui.InvisibleButton(u8'##PlayPauseMini', imgui.ImVec2(20, 20)) then
-            set_song_status('PLAY_OR_PAUSE')
-        end
-        if play.status == 'PLAY' then
-            gui.FaText(button_start_x + 32, 77, fa.PAUSE, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
-        else
-            gui.FaText(button_start_x + 32, 77, fa.PLAY, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
-        end
-        imgui.SetCursorPos(imgui.ImVec2(button_start_x + 60, 75))
-        if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' then
-            if imgui.InvisibleButton(u8'##NextTrackMini', imgui.ImVec2(20, 20)) then
-                next_track(true)
+        imgui.PopFont()
+        do
+            local y_pos_button = 75
+            local y_pos_icon = 77
+            local button_size = imgui.ImVec2(20, 20)
+            local icon_offset_x = 2
+            local gap_between_buttons = 10
+            local slider_width = 80
+            local slider_height = 6
+            local knob_radius = 6
+            local total_width = (button_size.x * 5) + (gap_between_buttons * 4) + slider_width
+            local start_x = (318 / 2) - (total_width / 2)
+            local current_x = start_x
+            imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+            if imgui.InvisibleButton('##StopTrackMini', button_size) then
+                set_song_status('STOP')
             end
-            gui.FaText(button_start_x + 62, 77, fa.FORWARD_STEP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
-        else
-            gui.FaText(button_start_x + 62, 77, fa.FORWARD_STEP, fa_font[2], imgui.ImVec4(0.30, 0.30, 0.30, 1.00))
-        end
+            gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.STOP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+            current_x = current_x + button_size.x + gap_between_buttons
+            imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+            if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' and play.i > 1 then
+                if imgui.InvisibleButton('##PreviousTrackMini', button_size) then
+                    back_track()
+                end
+                gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.BACKWARD_STEP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+            else
+                gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.BACKWARD_STEP, fa_font[2], imgui.ImVec4(0.30, 0.30, 0.30, 1.00))
+            end
+            current_x = current_x + button_size.x + gap_between_buttons
+            imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+            if imgui.InvisibleButton('##PlayPauseMini', button_size) then
+                set_song_status('PLAY_OR_PAUSE')
+            end
+            local play_icon = (play.status == 'PLAY') and fa.PAUSE or fa.PLAY
+            gui.FaText(current_x + icon_offset_x, y_pos_icon, play_icon, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+            current_x = current_x + button_size.x + gap_between_buttons
+            imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+            if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' then
+                if imgui.InvisibleButton('##NextTrackMini', button_size) then
+                    next_track(true)
+                end
+                gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.FORWARD_STEP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+            else
+                gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.FORWARD_STEP, fa_font[2], imgui.ImVec4(0.30, 0.30, 0.30, 1.00))
+            end
+            current_x = current_x + button_size.x + gap_between_buttons
+            local vol_icon
+            if play.volume >= 0.7 then
+                vol_icon = fa.VOLUME_HIGH
+            elseif play.volume >= 0.4 then
+                vol_icon = fa.VOLUME
+            elseif play.volume >= 0.03 then
+                vol_icon = fa.VOLUME_LOW
+            else
+                vol_icon = fa.VOLUME_SLASH
+            end
+            imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+			if imgui.InvisibleButton('##MuteButton', button_size) then
+                if play.volume > 0 then
+                    play.last_volume_before_mute = play.volume
+                    play.volume = 0
+                else
+                    play.volume = (play.last_volume_before_mute and play.last_volume_before_mute > 0) and play.last_volume_before_mute or 0.5
+                end
+                volume_song(play.volume)
+            end
+            gui.FaText(current_x + icon_offset_x, y_pos_icon, vol_icon, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+            current_x = current_x + button_size.x
+            
+            gui.Draw({200, 81}, {slider_width, slider_height}, imgui.ImVec4(0.21, 0.21, 0.21, 1.00), 20, 15)
+            gui.Draw({200, 81}, {slider_width * play.volume, slider_height}, cl.def, 20, 15)
+            gui.DrawCircle({200 + slider_width * play.volume, 81 + slider_height / 2}, knob_radius, imgui.ImVec4(1, 1, 1, 1))
 
+            imgui.SetCursorPos(imgui.ImVec2(200 - knob_radius, 81 - knob_radius))
+            imgui.InvisibleButton('##volume_slider', imgui.ImVec2(slider_width + (knob_radius * 2), slider_height + (knob_radius * 2)))
+            
+            if imgui.IsItemActive() or (imgui.IsItemHovered() and imgui.IsMouseDown(0)) then
+                local mouse_x = imgui.GetMousePos().x - (imgui.GetWindowPos().x + 200)
+                local new_volume = math.max(0, math.min(1, mouse_x / slider_width))
+                if play.volume ~= new_volume then
+                    play.volume = new_volume
+                    volume_song(play.volume)
+                end
+            end
+        end
         imgui.End()
-	end
+    end
 )
 
 win.fast = imgui.OnFrame(
@@ -15447,19 +15533,23 @@ function hook.onServerMessage(color_mes, mes)
 	if mes:find('[Сбор средств](.+)организац') and setting.put_mes[5] then
 		return false
 	end
-	if run_sob and setting.color_nick then
-        if mes:find(my.nick .. '%[' .. my.id .. '%]') or mes:find(sob_info.nick .. '%[' .. sob_info.id .. '%]') then
-            local log_message = mes
-            if setting.cl ~= 'Black' then
-                log_message = log_message:gsub('%{B7AFAF%}', '%{464d4f%}'):gsub('%{FFFFFF%}', '%{464d4f%}')
-            end
-            local message_buffer = imgui.new.char[120](log_message)
-            table.insert(sob_info.history, ffi.string(message_buffer))
-            if #sob_info.history > 30 then
-                table.remove(sob_info.history, 1)
-            end
-        end
-    end
+	if run_sob then
+		if mes:find(my.nick .. '%[' .. my.id .. '%]') or mes:find(sob_info.nick .. '%[' .. sob_info.id .. '%]') then
+			local log_message = mes
+			if setting.sob.use_original_color then
+				log_message = '{' .. mes_col .. '}' .. mes
+			else
+				if setting.cl ~= 'Black' then
+					log_message = log_message:gsub('%{B7AFAF%}', '%{464d4f%}'):gsub('%{FFFFFF%}', '%{464d4f%}')
+				end
+			end
+			local message_buffer = imgui.new.char[120](log_message)
+			table.insert(sob_info.history, ffi.string(message_buffer))
+			if #sob_info.history > 30 then
+				table.remove(sob_info.history, 1)
+			end
+		end
+	end
 	if setting.color_nick then
 		if mes:find('говорит:') and mes_col == 'ffffff' and setting.replace_ic then
 			local playerId = mes:match('%d+')
@@ -15769,6 +15859,7 @@ function closeDialog(a, b)
         sampSendDialogResponse(a, b)
     end)
 end
+
 function hook.onShowDialog(id, style, title, but_1, but_2, text)
     if id == 1214 then
         if lspawncar then
@@ -15782,7 +15873,6 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
             return false
         end
     end
-	
 	--[[
 	if id == 557 and setting.org == 11 then
         dialogData = {
@@ -16118,11 +16208,10 @@ function split_text_message(input, max_length)
 	
 	return true, result
 end
-
 function hook.onSendDialogResponse(id, button_id, list_id, input)
-	if id == dialog_fire.id and button_id == 1 and setting.godeath.func then
-		reply_from_choice_fires_dialog(list_id)
-	end
+    if id == dialog_fire.id and button_id == 1 and setting.godeath.func then
+        reply_from_choice_fires_dialog(list_id)
+    end
 end
 
 function hook.onSendChat(message)
@@ -16476,7 +16565,7 @@ function time()
 			time_save = 0
 			save()
 		end
-		
+
 		if search_for_new_version > 0 then
 			search_for_new_version = search_for_new_version - 1
 		end
@@ -16544,6 +16633,7 @@ function time()
 						if not close_serv then
 							close_connect()
 							close_serv = true
+							track_time = false
 							sampAddChatMessage('[SH]{FFFFFF} Вы были отключены от сервера за превышение нормы АФК!', 0xFF5345)
 						end
 					else
@@ -16646,10 +16736,63 @@ function time()
 	end
 end
 
+function mini_player_position()
+	lua_thread.create(function()
+		is_mini_player_pos = true
+		local backup_pos = {
+			x = setting.mini_player_pos and setting.mini_player_pos.x or sx / 2,
+			y = setting.mini_player_pos and setting.mini_player_pos.y or sy - 60
+		}
+		local original_player_state = windows.player[0]
+		windows.player[0] = true
+		windows.main[0] = false
+		sampSetCursorMode(4)
+		sampAddChatMessage('[SH]{FFFFFF} Нажмите {FF6060}ЛКМ{FFFFFF}, чтобы применить или {FF6060}ESC{FFFFFF} для отмены.', 0xFF5345)
+		while true do
+			wait(0)
+			local cX, cY = getCursorPos()
+			if not setting.mini_player_pos then
+				setting.mini_player_pos = {}
+			end
+			setting.mini_player_pos.x = cX
+			setting.mini_player_pos.y = cY
+
+			if isKeyJustPressed(VK_LBUTTON) then
+				save()
+				sampAddChatMessage('[SH]{FFFFFF} Позиция мини-плеера сохранена.', 0xFF5345)
+				break
+			elseif isKeyJustPressed(VK_ESCAPE) then
+				setting.mini_player_pos = backup_pos
+				sampAddChatMessage('[SH]{FFFFFF} Изменение позиции отменено.', 0xFF5345)
+				break
+			end
+		end
+		sampSetCursorMode(0)
+		windows.main[0] = true
+		windows.player[0] = original_player_state
+		if play.status == 'NULL' then
+			windows.player[0] = false
+		end
+		is_mini_player_pos = false
+	end)
+end
+
+function connetion()
+    if sampGetGamestate() == 1 or sampGetGamestate() == 2 or sampGetGamestate() == 4 or sampGetGamestate() == 5 then
+        if track_time then
+            track_time = false
+			sampAddChatMessage(string.format('[SH]{FFFFFF} Отсчёт времени остановлен до момента подключения к серверу.'), 0xFF5345)
+        end
+    elseif sampGetGamestate() == 3 and sampIsLocalPlayerSpawned() and not track_time then
+        track_time = true
+    end
+end
 
 function close_connect()
 	raknetEmulPacketReceiveBitStream(PACKET_DISCONNECTION_NOTIFICATION, raknetNewBitStream())
 	raknetDeleteBitStream(raknetNewBitStream())
+	track_time = false
+	sampAddChatMessage(string.format('[SH]{FFFFFF} Вы отключены от сервера. Отсчёт времени остановлен.'), 0xFF5345)
 end
 
 function removeDecimalPart(value)
@@ -24614,6 +24757,18 @@ local medcard_phoenix = [[
       "END",
       19
     ],
+	[
+      "SEND",
+      "На какой срок желаете оформить? Стоимость зависит от срока."
+    ],
+	[
+      "SEND",
+      "На 7 дней - {price7}. На 14 дней - {price14}"
+    ],
+	[
+      "SEND",
+      "На 30 дней - {price30}. На 60 дней - {price60}"
+    ],
     [
       "DIALOG",
       "day",
@@ -24953,6 +25108,26 @@ local function get_last_lines(log, n)
 	end
 
 	return last_lines
+end
+
+function reset_state()
+    scene_active = false
+    scene_edit_pos = false
+    new_scene = false
+    off_scene = false
+    change_pos_onstat = false
+    is_mini_player_pos = false
+    camhack_active = false
+    if isPlayerControlLocked() then
+        lockPlayerControl(false)
+    end
+    displayRadar(true)
+    displayHud(true)
+    restoreCameraJumpcut()
+    setCameraBehindPlayer()
+    sampSetCursorMode(0)
+    imgui.ShowCursor = true
+    setVirtualKeyDown(0x79, false)
 end
 
 function onScriptTerminate(script, game_quit)
