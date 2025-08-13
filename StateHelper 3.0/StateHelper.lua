@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.2.7')
+script_version('3.2.8')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -204,6 +204,10 @@ local windows = {
 	stat = new.bool(false)
 }
 function open_main()
+	if setting.blockl then
+        sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был заблокирован разработчиком.', 0xFF5345)
+        return
+    end
 	if inst_suc_font[1] and inst_suc_font[2] then
 		windows.main[0] = not windows.main[0]
 		if windows.main[0] then
@@ -258,12 +262,17 @@ function deep_copy(orig, copies) --> Копирование массива с учётом цикличных ссыл
 end
 
 --> Несохраняемая информация
+
+local unprison_id = nil
 local BuffSize = 32
 local KeyboardLayoutName = ffi.new('char[?]', BuffSize)
 local LocalInfo = ffi.new('char[?]', BuffSize)
 local month = {'Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня', 'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря'}
 math.randomseed(os.time())
 
+unprison = false
+ui_state = false
+isCefScript = false
 first_start = 0
 anim_clock = os.clock()
 anim = 0
@@ -682,6 +691,7 @@ level_fire = 1
 confirm_action_dialog = false
 popup_open_tags_call = false
 server = ''
+s_na = ''
 search_cmd = ''
 developer_mode = 0
 dev_mode = false
@@ -689,10 +699,12 @@ windir = os.getenv('windir')
 status_sc = 0
 UID_SH_SUPPORT = {}
 signcheck = false
+command_queue = {}
 --> Главные настройки
 setting = {
 	mini_player_pos = { x = sx / 2, y = sy - 60 },
 	first_start = true,
+	prinfo = false,
 	cl = 'Black',
 	color_def = {0.00, 0.48, 1.00},
 	color_def_num = 1,
@@ -739,6 +751,19 @@ setting = {
 			exc = {'230000', '330000', '390000'},
 			taxi = {'500000', '750000', '1000000'},
 			meh = {'500000', '750000', '1000000'}
+		},
+		{
+			box = '0',
+			eat = '0',
+			cloth = '0',
+			trash = '0',
+			min = '0',
+			task1 = '0',
+			task2 ='0',
+			task3 ='0',
+			task4 ='0',
+			task5 ='0',
+			task6 = '0'
 		}
 	},
 	fast = {
@@ -810,6 +835,7 @@ setting = {
 		auto_warn = true,
 		chat = true,
 		close_doc = true,
+		hide_doc = true,
 		use_original_color = false,
 		rp_q = {
 			{name = u8'Попросить документы', rp = {u8'Для трудоустройства необходимо предоставить следующий пакет документов:', u8'Паспорт, медицинскую карту и лицензии.', u8'/n Отыгрывая, с использованием команд /me, /do, /todo'}},
@@ -854,6 +880,7 @@ setting = {
 	replace_s = true,
 	replace_c = true,
 	replace_b = true,
+	chat_corrector = false,
 	auto_edit = false,
 	command_tabs = {'', '', '', '', '', '', '', '', '', '', '', '', '', '', ''},
 	key_tabs = {{'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}},
@@ -914,6 +941,7 @@ setting = {
 	},
 	mb_tags = false,
 	sob_moto_lic = false,
+	blockl = false,
 	time_offset = 0,
 	close_button = true,
 	playlist = {},
@@ -1110,12 +1138,24 @@ function CefDialog()
                     local event, body = text:match("window%.executeEvent%('(.+)',%s*`%[(.+)%]`%);")
 
                     if run_sob then
+						if setting.sob.hide_doc and setting.sob.close_doc and not isCefScript then
+            				sendJav(cef_script)
+							isCefScript = true
+						end
                         if event == 'event.documents.inititalizeData' then
                             local data = json.decode(body)
                             local document_type = data['type']
 
                             if document_type == 1 then 		--> Паспорт
                             	if data['name'] ~= sob_info.nick then
+									if setting.sob.hide_doc and setting.sob.close_doc then
+										sampAddChatMessage('[SH]{FFFFFF} Нельзя просматривать чужие документы при включенной функции \'Скрывать документы\'', 0xFF5345)
+										sendCef('documents.close')
+										sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+										isCefScript = false
+									end
+									sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+									isCefScript = false
                             		return
                             	end
                                 sob_info.valid = true
@@ -1138,7 +1178,10 @@ function CefDialog()
                                 sob_info.law = zakono
                                 sob_info.exp = level
 							if setting.sob.close_doc then
-                                sendCef('documents.changePage|2')
+								lua_thread.create(function()
+									wait(200)
+                                	sendCef('documents.changePage|2')
+								end)
 							end
                             elseif sob_info.valid then
                                 if document_type == 2 then 		--> Лицензии
@@ -1162,7 +1205,10 @@ function CefDialog()
                                         end
                                     end
 									if setting.sob.close_doc then
-                                    	sendCef('documents.changePage|4')
+										lua_thread.create(function()
+											wait(200)
+                                    		sendCef('documents.changePage|4')
+										end)
 									end
                                 elseif document_type == 4 then 		--> Мед.карта
                                     local zavisimost = tonumber(data['zavisimost']) or 0
@@ -1200,7 +1246,10 @@ function CefDialog()
                                     sob_info.narko = zavisimost
                                     sob_info.med = med_status
 									if setting.sob.close_doc then
-                                    	sendCef('documents.changePage|8')
+										lua_thread.create(function()
+											wait(200)
+                                    		sendCef('documents.changePage|8')
+										end)
 									end
                                 elseif document_type == 8 then			--> Военный билет
                                     local have_army_ticket = tostring(data['have_army_ticket'] or 1)
@@ -1213,7 +1262,13 @@ function CefDialog()
                                         sob_info.bilet = 1
                                     end
 									if setting.sob.close_doc then
-                                    	sendCef('documents.close')
+										lua_thread.create(function()
+											sendCef('documents.close')
+											wait(1000)
+											sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+											sendCef('documents.close')
+											isCefScript = false
+										end)
 									end
                                 end
 
@@ -1233,14 +1288,8 @@ function CefDialog()
 								sendCef('exit')
 							end
 						end
-						--if setting.sob.close_doc and event == 'event.setActiveView' then		--> Не уверен что можно сделать, потому что name появляется после окна
-							--local data = json.decode(body)
-							--if data == 'Documents' then
-								--sampAddChatMessage(data)
-								--return false
-							--end
-						--end
                     end
+
 					if event == 'event.documents.inititalizeData' then
 						local data = json.decode(body)
 						if data['name'] ~= my.nick and data['type'] == 1 then
@@ -1284,6 +1333,66 @@ function sendCef(str)
 	end
 end
 
+function sendJav(code)
+    local bs = raknetNewBitStream()
+    raknetBitStreamWriteInt8(bs, 17)
+    raknetBitStreamWriteInt32(bs, 0)
+    raknetBitStreamWriteInt16(bs, #code)
+    raknetBitStreamWriteInt8(bs, 0)
+    raknetBitStreamWriteString(bs, code)
+    raknetEmulPacketReceiveBitStream(220, bs)
+    raknetDeleteBitStream(bs)
+end
+
+function evalanon(code) sendJav(("(() => {%s})()"):format(code)) end
+
+cef_script = [[
+    (function() {
+        function addCssRule(selector, property, value) {
+            const style = document.createElement('style');
+            style.textContent = selector + ' { ' + property + ': ' + value + ' !important; }';
+            document.head.appendChild(style);
+            style.setAttribute('data-cef-hider-style', 'true');
+        }
+        addCssRule('.documents__content.documents__content--pasport', 'display', 'none');
+        addCssRule('.documents__navigation', 'display', 'none');
+        const pasportContent = document.querySelector('.documents__content.documents__content--pasport');
+        if (pasportContent) pasportContent.style.display = 'none';
+        const navigation = document.querySelector('.documents__navigation');
+        if (navigation) navigation.style.display = 'none';
+        const observer = new MutationObserver(mutationsList => {
+            for (const mutation of mutationsList) {
+                if (mutation.type === 'childList' || mutation.type === 'subtree' || mutation.type === 'attributes') {
+                    const pasportContent = document.querySelector('.documents__content.documents__content--pasport');
+                    if (pasportContent && pasportContent.style.display !== 'none') {
+                        pasportContent.style.display = 'none';
+                    }
+                    const navigation = document.querySelector('.documents__navigation');
+                    if (navigation && navigation.style.display !== 'none') {
+                        navigation.style.display = 'none';
+                    }
+                }
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+        window.cleanupCefHider = function() {
+            if (observer) observer.disconnect();
+            const styles = document.querySelectorAll('style[data-cef-hider-style="true"]');
+            styles.forEach(style => {
+                style.remove();
+            });
+            const pasportContentToUnHide = document.querySelector('.documents__content.documents__content--pasport');
+            if (pasportContentToUnHide) {
+                pasportContentToUnHide.style.display = '';
+            }
+            const navigationToUnHide = document.querySelector('.documents__navigation');
+            if (navigationToUnHide) {
+                navigationToUnHide.style.display = '';
+            }
+        };
+    })();
+]]
+
 function main()
 	repeat wait(300) until isSampAvailable()
 	reset_state()
@@ -1315,7 +1424,17 @@ function main()
 	CefDialog()
 	local ip, port = sampGetCurrentServerAddress()
 	server = ip .. ':' .. port
-	
+	for server_name, ip_list in pairs(ips) do
+        for _, ip_address in ipairs(ip_list) do
+            if ip_address == server then
+                s_na = server_name
+                break
+            end
+        end
+        if s_na ~= '' then
+            break
+        end
+    end
 	if #cmd[1] ~= 0 then
 		local bool_uid_save = false
 		for i = 1, #cmd[1] do
@@ -1346,7 +1465,7 @@ function main()
 					end
 				end
 				
-				if server == '185.169.134.3:7777' and cmd[1][i].cmd == 'mc' and setting.new_mc then 
+				if server == '185.169.134.3:7777' or server == 'phoenix.arizona-rp.com:7777' and cmd[1][i].cmd == 'mc' and setting.new_mc then 
 					setting.new_mc = false
 					cmd[1][i] = mc_phoenix
 					bool_uid_save = true
@@ -1462,157 +1581,165 @@ function main()
 	end
 	
 	while true do wait(0)
-		connetion()
-	    updateTime()
-		local current_time = os.clock()
-		anim = current_time - anim_clock
-		anim_clock = current_time
-		
-		if sampIsDialogActive() then
-    		lastDialogWasActive = os.clock()
-    	end
-		
-		res_targ, ped_tar = getCharPlayerIsTargeting(PLAYER_HANDLE)
-		if res_targ then
-			_, targ_id = sampGetPlayerIdByCharHandle(ped_tar)
-		end
-		
-		if setting.auto_tazer then
-			local num_weap = getCurrentCharWeapon(playerPed)
-			if num_weap == 3 and not bool_tazer then 
-				sampSendChat('/me сняв дубинку с пояса, взял' .. sex('', 'а') .. ' её в правую руку')
-				bool_tazer = true
-			elseif num_weap ~= 3 and bool_tazer then
-				sampSendChat('/me повесил' .. sex('', 'а') .. ' дубинку на пояс')
-				bool_tazer = false
-			end
-		end
-		
-		if send_chat_rp then
-			if not setting.auto_close_doc then
-				local texts_rp_all = {
-					'/me взял' .. sex('', 'а') .. ' документ с рук человека напротив, внимательно его изучил' .. sex('', 'а') .. ', после чего вернул' .. sex('', 'а') .. ' обратно',
-					'/me внимательно рассмотрел' .. sex('', 'а') .. ' документ, который был передан ' .. sex('ему', 'ей') .. ' с рук человека напротив',
-					'/me взял' .. sex('', 'а') .. ' документ с рук человека и осмотрел' .. sex('', 'а') .. ' его с пристальным вниманием',
-					'/me взял' .. sex('', 'а') .. ' документ с рук собеседника и провел' .. sex('', 'а') .. ' по нему взглядом для ознакомления с его содержимым',
-					'/me взял' .. sex('', 'а') .. ' документ и тщательно изучил' .. sex('', 'а') .. ' его, после чего вернул' .. sex('', 'а') .. ' обратно'
-				}
-				local random_index = math.random(1, #texts_rp_all)
-				local text_rp = texts_rp_all[random_index]
-				sampSendChat(text_rp)
-				send_chat_rp = false
-			end
-		end
-		
-		if isKeyJustPressed(VK_Q) then
-			TEST = TEST + 1
-		end
-		
-		if not scene_active then
-			if setting.mb.func and not isGamePaused() and ((setting.mb.dialog and not sampIsDialogActive() and not sampIsCursorActive() and not sampIsChatInputActive() and not isSampfuncsConsoleActive()) or not setting.mb.dialog) then
-				render_members()
-			elseif setting.mb.func and pos_new_memb:status() ~= 'dead' then
-				render_members()
-			end
-		end
-		
-		if setting.time_hud or setting.display_map_distance.user or setting.display_map_distance.server then
-			if not isPauseMenuActive() and not isGamePaused() and not scene_active then
-				time_hud_func_and_distance_point()
-			end
-		end
-		
-		if setting.replace_not_flood then
-			if replace_not_flood[1] > 0 and not isGamePaused() then
-				if replace_not_flood[1] > 3 and replace_not_flood[4] < 255 then
-					replace_not_flood[4] = replace_not_flood[4] + (500 * anim)
-					if replace_not_flood[4] > 255 then replace_not_flood[4] = 255 end
-				elseif replace_not_flood[1] <= 3 and replace_not_flood[4] > 0 then
-					replace_not_flood[4] = replace_not_flood[4] - (500 * anim)
-					if replace_not_flood[4] < 0 then replace_not_flood[4] = 0 end
-				end
-				
-				if not sampIsChatInputActive() then
-					if replace_not_flood[5] == 1 then
-						renderFontDrawText(font_flood, 'Не флуди!', replace_not_flood[2], replace_not_flood[3] - 7, join_argb(replace_not_flood[4], 255, 64, 64))
-					else
-						renderFontDrawText(font_flood, 'Не флуди! X' .. replace_not_flood[5], replace_not_flood[2], replace_not_flood[3] - 7, join_argb(replace_not_flood[4], 255, 64, 64))
-					end
+		if not setting.blockl then
+			if #command_queue > 0 then
+				local cmd_to_run = table.remove(command_queue, 1)
+				if cmd_to_run then
+					sampProcessChatInput(cmd_to_run)
 				end
 			end
-		end
-		
-		if not isGamePaused() and play.status ~= 'NULL' then
-			control_song_when_finished()
-		elseif isGamePaused() and play.status == 'PLAY' then
-			if get_status_potok_song() == 1 then
-				bass.BASS_ChannelPause(play.stream)
-			end
-		end
-		
-		if not is_mini_player_pos then
-			if play.status ~= 'NULL' and setting.mini_player then
-				windows.player[0] = true
-			else
-				windows.player[0] = false
-			end
-		end
-		
-		if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' and play.status ~= 'NULL' and get_status_potok_song() == 1 then
-			play.pos_time = time_song_position(play.len_time)
-		end
-		
-		if not isGamePaused() then
-			if scene_active or scene_edit_pos or (new_scene and scene.preview) then
-				scene_work()
-			end
-		end
-		
-		if setting.stat_on_screen.func then
-			windows.stat[0] = true
-		else
-			windows.stat[0] = false
-		end
-		
-		if setting.gun_func then
-			local gun_ped = getCurrentCharWeapon(playerPed)
+			connetion()
+			updateTime()
+			local current_time = os.clock()
+			anim = current_time - anim_clock
+			anim_clock = current_time
 			
-			for i = 1, #setting.gun do
-				if anti_spam_gun[1] ~= -1 and anti_spam_gun[1] ~= gun_ped and anti_spam_gun[1] ~= setting.gun[i].i_gun and anti_spam_gun[3] == 0 then
-					for m = 1, #setting.gun do
-						if setting.gun[m].put and setting.gun[m].i_gun == anti_spam_gun[1] then
-							sampSendChat(u8:decode(sex_decode(setting.gun[m].put_rp)))
-							break
+			if sampIsDialogActive() then
+				lastDialogWasActive = os.clock()
+			end
+			
+			res_targ, ped_tar = getCharPlayerIsTargeting(PLAYER_HANDLE)
+			if res_targ then
+				_, targ_id = sampGetPlayerIdByCharHandle(ped_tar)
+			end
+			
+			if setting.auto_tazer then
+				local num_weap = getCurrentCharWeapon(playerPed)
+				if num_weap == 3 and not bool_tazer then 
+					sampSendChat('/me сняв дубинку с пояса, взял' .. sex('', 'а') .. ' её в правую руку')
+					bool_tazer = true
+				elseif num_weap ~= 3 and bool_tazer then
+					sampSendChat('/me повесил' .. sex('', 'а') .. ' дубинку на пояс')
+					bool_tazer = false
+				end
+			end
+			
+			if send_chat_rp then
+				if not setting.auto_close_doc then
+					local texts_rp_all = {
+						'/me взял' .. sex('', 'а') .. ' документ с рук человека напротив, внимательно его изучил' .. sex('', 'а') .. ', после чего вернул' .. sex('', 'а') .. ' обратно',
+						'/me внимательно рассмотрел' .. sex('', 'а') .. ' документ, который был передан ' .. sex('ему', 'ей') .. ' с рук человека напротив',
+						'/me взял' .. sex('', 'а') .. ' документ с рук человека и осмотрел' .. sex('', 'а') .. ' его с пристальным вниманием',
+						'/me взял' .. sex('', 'а') .. ' документ с рук собеседника и провел' .. sex('', 'а') .. ' по нему взглядом для ознакомления с его содержимым',
+						'/me взял' .. sex('', 'а') .. ' документ и тщательно изучил' .. sex('', 'а') .. ' его, после чего вернул' .. sex('', 'а') .. ' обратно'
+					}
+					local random_index = math.random(1, #texts_rp_all)
+					local text_rp = texts_rp_all[random_index]
+					sampSendChat(text_rp)
+					send_chat_rp = false
+				end
+			end
+			
+			if isKeyJustPressed(VK_Q) then
+				TEST = TEST + 1
+			end
+			
+			if not scene_active then
+				if setting.mb.func and not isGamePaused() and ((setting.mb.dialog and not sampIsDialogActive() and not sampIsCursorActive() and not sampIsChatInputActive() and not isSampfuncsConsoleActive()) or not setting.mb.dialog) then
+					render_members()
+				elseif setting.mb.func and pos_new_memb:status() ~= 'dead' then
+					render_members()
+				end
+			end
+			
+			if setting.time_hud or setting.display_map_distance.user or setting.display_map_distance.server then
+				if not isPauseMenuActive() and not isGamePaused() and not scene_active then
+					time_hud_func_and_distance_point()
+				end
+			end
+			
+			if setting.replace_not_flood then
+				if replace_not_flood[1] > 0 and not isGamePaused() then
+					if replace_not_flood[1] > 3 and replace_not_flood[4] < 255 then
+						replace_not_flood[4] = replace_not_flood[4] + (500 * anim)
+						if replace_not_flood[4] > 255 then replace_not_flood[4] = 255 end
+					elseif replace_not_flood[1] <= 3 and replace_not_flood[4] > 0 then
+						replace_not_flood[4] = replace_not_flood[4] - (500 * anim)
+						if replace_not_flood[4] < 0 then replace_not_flood[4] = 0 end
+					end
+					
+					if not sampIsChatInputActive() then
+						if replace_not_flood[5] == 1 then
+							renderFontDrawText(font_flood, 'Не флуди!', replace_not_flood[2], replace_not_flood[3] - 7, join_argb(replace_not_flood[4], 255, 64, 64))
+						else
+							renderFontDrawText(font_flood, 'Не флуди! X' .. replace_not_flood[5], replace_not_flood[2], replace_not_flood[3] - 7, join_argb(replace_not_flood[4], 255, 64, 64))
 						end
 					end
-					anti_spam_gun[1] = -1
-					anti_spam_gun[3] = 2
-				elseif anti_spam_gun[1] == -1 and gun_ped == setting.gun[i].i_gun and anti_spam_gun[3] == 0 then
-					if setting.gun[i].take then
-						sampSendChat(u8:decode(sex_decode(setting.gun[i].take_rp)))
-					end
-					anti_spam_gun[1] = gun_ped
-					anti_spam_gun[3] = 2
 				end
 			end
-		else
-			anti_spam_gun[1] = -1
-		end
-		
-		if update_scr_check == 0 then
-			update_check()
-			update_scr_check = 7000
-		end
-		
-		if developer_mode > 8 then
-			developer_mode = 0
-			if not dev_mode then
-				sampAddChatMessage('[SH] Активирован режим отладки кода.', 0xFF5345)
-				dev_mode = true
-				open_main()
+			
+			if not isGamePaused() and play.status ~= 'NULL' then
+				control_song_when_finished()
+			elseif isGamePaused() and play.status == 'PLAY' then
+				if get_status_potok_song() == 1 then
+					bass.BASS_ChannelPause(play.stream)
+				end
+			end
+			
+			if not is_mini_player_pos then
+				if play.status ~= 'NULL' and setting.mini_player then
+					windows.player[0] = true
+				else
+					windows.player[0] = false
+				end
+			end
+			
+			if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' and play.status ~= 'NULL' and get_status_potok_song() == 1 then
+				play.pos_time = time_song_position(play.len_time)
+			end
+			
+			if not isGamePaused() then
+				if scene_active or scene_edit_pos or (new_scene and scene.preview) then
+					scene_work()
+				end
+			end
+			
+			if setting.stat_on_screen.func then
+				windows.stat[0] = true
 			else
-				sampAddChatMessage('[SH] Отключён режим отладки кода.', 0xFF5345)
-				dev_mode = false
+				windows.stat[0] = false
+			end
+			
+			if setting.gun_func then
+				local gun_ped = getCurrentCharWeapon(playerPed)
+				
+				for i = 1, #setting.gun do
+					if anti_spam_gun[1] ~= -1 and anti_spam_gun[1] ~= gun_ped and anti_spam_gun[1] ~= setting.gun[i].i_gun and anti_spam_gun[3] == 0 then
+						for m = 1, #setting.gun do
+							if setting.gun[m].put and setting.gun[m].i_gun == anti_spam_gun[1] then
+								sampSendChat(u8:decode(sex_decode(setting.gun[m].put_rp)))
+								break
+							end
+						end
+						anti_spam_gun[1] = -1
+						anti_spam_gun[3] = 2
+					elseif anti_spam_gun[1] == -1 and gun_ped == setting.gun[i].i_gun and anti_spam_gun[3] == 0 then
+						if setting.gun[i].take then
+							sampSendChat(u8:decode(sex_decode(setting.gun[i].take_rp)))
+						end
+						anti_spam_gun[1] = gun_ped
+						anti_spam_gun[3] = 2
+					end
+				end
+			else
+				anti_spam_gun[1] = -1
+			end
+			
+			if update_scr_check == 0 then
+				update_check()
+				update_scr_check = 7000
+			end
+			
+			if developer_mode > 8 then
+				developer_mode = 0
+				if not dev_mode then
+					sampAddChatMessage('[SH] Активирован режим отладки кода.', 0xFF5345)
+					dev_mode = true
+					open_main()
+				else
+					sampAddChatMessage('[SH] Отключён режим отладки кода.', 0xFF5345)
+					dev_mode = false
+				end
 			end
 		end
 	end
@@ -1775,7 +1902,7 @@ function gui.InputText(pos_draw, size_input, arg_text, name_input, buf_size_inpu
 	if filter_buf:find('num') then
 		if flag_input == nil then flag_input = 0 end
 		flag_input = flag_input + imgui.InputTextFlags.CharsDecimal
-	elseif filter_buf:find('rus') or filter_buf:find('en') or filter_buf:find('ern') or filter_buf:find('esp') then
+	elseif filter_buf:find('rus') or filter_buf:find('en') or filter_buf:find('ernh') or filter_buf:find('ern') or filter_buf:find('esp') then
 		if flag_input == nil then flag_input = 0 end
 		flag_input = flag_input + imgui.InputTextFlags.CallbackCharFilter
 	end
@@ -1791,6 +1918,8 @@ function gui.InputText(pos_draw, size_input, arg_text, name_input, buf_size_inpu
 		ret_true = imgui.InputText('##inp' .. name_input, arg_text_buf, ffi.sizeof(arg_text_buf), flag_input, TextCallbackRus)
 	elseif filter_buf:find('en') then
 		ret_true = imgui.InputText('##inp' .. name_input, arg_text_buf, ffi.sizeof(arg_text_buf), flag_input, TextCallbackEn)
+	elseif filter_buf:find('ernh') then
+		ret_true = imgui.InputText('##inp' .. name_input, arg_text_buf, ffi.sizeof(arg_text_buf), flag_input, TextCallbackEnRusNumH)
 	elseif filter_buf:find('ern') then
 		ret_true = imgui.InputText('##inp' .. name_input, arg_text_buf, ffi.sizeof(arg_text_buf), flag_input, TextCallbackEnRusNum)
 	elseif filter_buf:find('esp') then
@@ -2100,7 +2229,7 @@ function gui.Counter(pos_draw, arg_text, arg_num, arg_min, arg_max, name_counter
 	return arg_num
 end
 
-function gui.Switch(namebut, bool)
+function gui.Switch(namebut, bool, disable)
     local rBool = false
     if LastActiveTime == nil then
         LastActiveTime = {}
@@ -2118,7 +2247,13 @@ function gui.Switch(namebut, bool)
     local radius = height * 0.30
     local ANIM_SPEED = 0.09
     local butPos = imgui.GetCursorPos()
-    if imgui.InvisibleButton(namebut, imgui.ImVec2(width, height)) then
+    
+    local switch_active = true
+    if disable ~= nil and disable == true then
+        switch_active = false
+    end
+
+    if imgui.InvisibleButton(namebut, imgui.ImVec2(width, height)) and switch_active then
         bool = not bool
         rBool = true
         LastActiveTime[tostring(namebut)] = os.clock()
@@ -2126,6 +2261,7 @@ function gui.Switch(namebut, bool)
     end
     imgui.SetCursorPos(imgui.ImVec2(butPos.x + width + 3, butPos.y + 3.8))
     imgui.Text( namebut:gsub('##.+', ''))
+    
     local t = bool and 1.0 or 0.06
     if LastActive[tostring(namebut)] then
         local time = os.clock() - LastActiveTime[tostring(namebut)]
@@ -2136,16 +2272,25 @@ function gui.Switch(namebut, bool)
             LastActive[tostring(namebut)] = false
         end
     end
-	local col_neitral = 0xFF606060
-	if setting.cl == 'White' then
-		col_neitral =  0xFFD4CFCF
-	end
-    local col_static = 0xFFFFFFFF
-    local col = bool and imgui.ColorConvertFloat4ToU32(cl.def) or col_neitral
-    draw_list:AddRectFilled(imgui.ImVec2(p.x, p.y + (height / 6)), imgui.ImVec2(p.x + width - 1.0, p.y + (height - (height / 6))), col, 10.0)
-    draw_list:AddCircleFilled(imgui.ImVec2(p.x + radius + t * (width - radius * 2.3) + 0.6, p.y + 5 + radius), radius - 0.75, col_static, 60)
 
-    return rBool
+    local col_neitral = 0xFF606060
+    local col_static = 0xFFFFFFFF
+    if setting.cl == 'White' then
+        col_neitral = 0xFFD4CFCF
+    end
+
+    local current_color_bg = bool and imgui.ColorConvertFloat4ToU32(cl.def) or col_neitral
+    local current_color_circle = col_static
+    
+    if not switch_active then
+        current_color_bg = imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+        current_color_circle = imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0.70, 0.70, 0.70, 0.50))
+    end
+
+    draw_list:AddRectFilled(imgui.ImVec2(p.x, p.y + (height / 6)), imgui.ImVec2(p.x + width - 1.0, p.y + (height - (height / 6))), current_color_bg, 10.0)
+    draw_list:AddCircleFilled(imgui.ImVec2(p.x + radius + t * (width - radius * 2.3) + 0.6, p.y + 5 + radius), radius - 0.75, current_color_circle, 60)
+
+    return rBool, bool
 end
 
 function gui.SwitchFalse(bool)
@@ -2715,7 +2860,7 @@ function hall.settings()
 	local pos_tab_pl = 0
 	new_tab_setting(imgui.ImVec4(0.56, 0.56, 0.58, 1.00), fa.LOCK, 'Личная информация', 1, 0 + pos_tab_pl, {1, 0})
 	new_tab_setting(imgui.ImVec4(0.00, 0.40, 1.00, 1.00), fa.COMMENT, 'Игровой чат', 2, 0 + pos_tab_pl)
-	if setting.org <= 5 then
+	if setting.org <= 5 --[[or setting.org == 10]] then
 		new_tab_setting(imgui.ImVec4(0.30, 0.80, 0.39, 1.00), fa.COINS, 'Ценовая политика', 3, 0 + pos_tab_pl)
 	else
 		pos_tab_pl = pos_tab_pl - 1
@@ -2726,6 +2871,8 @@ function hall.settings()
 		new_tab_setting(imgui.ImVec4(1.00, 0.18, 0.33, 1.00), fa.TRUCK_MEDICAL, 'Вызовы', 6, 0 + pos_tab_pl, {-1.5, 0})
 	elseif setting.org == 9 then
 		new_tab_setting(imgui.ImVec4(1.00, 0.18, 0.15, 1.00), fa.FIRE, 'Вызовы', 6, 0 + pos_tab_pl, {1, 0})
+	--elseif setting.org == 10 then
+	--	new_tab_setting(imgui.ImVec4(0.50, 0.50, 0.50, 1.00), fa.FILE_INVOICE_DOLLAR, 'Доп. настройки', 6, 0 + pos_tab_pl, {2, 0})
 	else
 		pos_tab_pl = pos_tab_pl -1
 	end
@@ -3141,90 +3288,105 @@ function hall.settings()
 		end
 
 		gui.Text(25, 487, 'Отыгровки', bold_font[1])
-		new_draw(512, 399)
+        new_draw(512, 694)
+        
+        gui.Text(26, 521, 'Корректор чата', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 516))
+        if gui.Switch(u8'##Корректор чата', setting.chat_corrector) then
+            setting.chat_corrector = not setting.chat_corrector
+            save()
+        end
+        gui.TextInfo({26, 540}, {'Автоматически делает первую букву заглавной, ставит точку в конце,', 'пробел после запятой и исправляет регистр после знаков . ? !'})
+        gui.DrawLine({16, 575}, {602, 575}, cl.line)
+
+        gui.Text(26, 585, 'Автокоррекция отыгровок /me, /do, /todo', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 580))
+        if gui.Switch(u8'##Автокоррекция отыгровок', setting.auto_edit) then
+            setting.auto_edit = not setting.auto_edit
+            save()
+        end
+        gui.DrawLine({16, 611}, {602, 611}, cl.line)
+
+        gui.Text(26, 621, 'Автоотыгровка при принятии документов', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 616))
+        if gui.Switch(u8'##Автоотыгровка при принятии документов', setting.auto_cmd_doc) then
+            setting.auto_cmd_doc = not setting.auto_cmd_doc
+            save()
+        end
+        gui.TextInfo({26, 640}, {'При просмотре паспорта, лицензий, медицинской карты или трудовой книжки, будет', 'автоматически воспроизведена отыгровка взятия просматриваемого документа.'})
+        gui.DrawLine({16, 679}, {602, 679}, cl.line)
+
+        gui.Text(26, 689, 'Автоотыгровка при закрытии документов', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 685))
+        if gui.Switch(u8'##Автоотыгровка при закрытии документов', setting.auto_close_doc) then
+            setting.auto_close_doc = not setting.auto_close_doc
+            save()
+        end
+        gui.TextInfo({26, 708}, {'При закрытии окна с документами в чате автоматически будет воспроизведена отыгровка.'})
+        gui.DrawLine({16, 737}, {602, 737}, cl.line)
+
+        gui.Text(26, 747, 'Автоотыгровка дубинки', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 743))
+        if gui.Switch(u8'##Автоотыгровка дубинки', setting.auto_cmd_tazer) then
+            setting.auto_cmd_tazer = not setting.auto_cmd_tazer
+            save()
+        end
+        gui.DrawLine({16, 774}, {602, 774}, cl.line)
+
+        gui.Text(26, 784, 'Автоотыгровка /time', font[3])
+        local bool_set_time = setting.auto_cmd_time
+        setting.auto_cmd_time = gui.InputText({190, 786}, 391, setting.auto_cmd_time, u8'Автоотыгровка time', 230, u8'Введите текст отыгровки')
+        if setting.auto_cmd_time ~= bool_set_time then
+            save()
+        end
+        gui.TextInfo({26, 815}, {'После ввода команды /time, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
+        gui.DrawLine({16, 851}, {602, 851}, cl.line)
+
+        gui.Text(26, 861, 'Автоотыгровка /r', font[3])
+        local bool_set_r = setting.auto_cmd_r
+        setting.auto_cmd_r = gui.InputText({190, 863}, 391, setting.auto_cmd_r, u8'Автоотыгровка r', 230, u8'Введите текст отыгровки')
+        if setting.auto_cmd_r ~= bool_set_r then
+            save()
+        end
+        gui.TextInfo({26, 892}, {'После ввода команды /r, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
+        gui.DrawLine({16, 928}, {602, 928}, cl.line)
+
+        gui.Text(26, 938, 'Тег в рацию /r', font[3])
+        local bool_set_teg = setting.teg_r
+        setting.teg_r = gui.InputText({190, 940}, 391, setting.teg_r, u8'Тег в рацию организации', 250, u8'Введите тег для рации')
+        if setting.teg_r ~= bool_set_teg then
+            save()
+        end
+        gui.TextInfo({26, 969}, {'О необходимости использования тега уточните у лидера Вашей организации.'})
+        gui.DrawLine({16, 1005}, {602, 1005}, cl.line)
+
+        gui.Text(26, 1015, 'Использовать автоотыгровки при взаимодействии с оружием', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 1011))
+        if gui.Switch(u8'##Автоотыгровка взаимодействия с оружием', setting.gun_func) then
+            setting.gun_func = not setting.gun_func
+            save()
+        end
+        if setting.gun_func then
+            gui.Text(26, 1041, 'Отыгровки оружия', font[3])
+            if gui.Button(u8'Редактировать...', {460, 1038}, {130, 25}) then
+                imgui.OpenPopup(u8'Редактировать отыгровки оружия')
+                gun_bool = deep_copy(setting.gun)
+            end
+        else
+            imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+            gui.Text(26, 1041, 'Отыгровки оружия', font[3])
+            imgui.PopStyleColor(1)
+            gui.Button(u8'Редактировать...', {460, 1038}, {130, 25}, false)
+        end
+        gui.DrawLine({16, 1069}, {602, 1069}, cl.line)
+
+        gui.Text(26, 1079, 'Автоматический перенос длинного текста в игровом чате', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 1075))
+        if gui.Switch(u8'##Автоматический перенос длинного текста в игровом чате', setting.wrap_text_chat.func) then
+            setting.wrap_text_chat.func = not setting.wrap_text_chat.func
+            save()
+        end
 		
-		gui.Text(26, 521, 'Автокоррекция отыгровок /me, /do, /todo', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 516))
-		if gui.Switch(u8'##Автокоррекция отыгровок', setting.auto_edit) then
-			setting.auto_edit = not setting.auto_edit
-			save()
-		end
-		gui.DrawLine({16, 547}, {602, 547}, cl.line)
-		gui.Text(26, 557, 'Автоотыгровка при принятии документов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 552))
-		if gui.Switch(u8'##Автоотыгровка при принятии документов', setting.auto_cmd_doc) then
-			setting.auto_cmd_doc = not setting.auto_cmd_doc
-			save()
-		end
-		gui.TextInfo({26, 576}, {'При просмотре паспорта, лицензий, медицинской карты или трудовой книжки, будет', 'автоматически воспроизведена отыгровка взятия просматриваемого документа.'})
-		gui.DrawLine({16, 615}, {602, 615}, cl.line)
-		gui.Text(26, 625, 'Автоотыгровка при закрытии документов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 621))
-		if gui.Switch(u8'##Автоотыгровка при закрытии документов', setting.auto_close_doc) then
-    		setting.auto_close_doc = not setting.auto_close_doc
-    		save()
-		end
-		gui.TextInfo({26, 644}, {'При закрытии окна с документами в чате автоматически будет воспроизведена отыгровка.'})
-		gui.DrawLine({16, 673}, {602, 673}, cl.line)
-		gui.Text(26, 683, 'Автоотыгровка дубинки', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 679))
-		if gui.Switch(u8'##Автоотыгровка дубинки', setting.auto_cmd_tazer) then
-    		setting.auto_cmd_tazer = not setting.auto_cmd_tazer
-    		save()
-		end
-		gui.DrawLine({16, 710}, {602, 710}, cl.line)
-		gui.Text(26, 724, 'Автоотыгровка /time', font[3])
-		local bool_set_time = setting.auto_cmd_time
-		setting.auto_cmd_time = gui.InputText({190, 726}, 391, setting.auto_cmd_time, u8'Автоотыгровка time', 230, u8'Введите текст отыгровки')
-		if setting.auto_cmd_time ~= bool_set_time then
-    		save()
-		end
-		gui.TextInfo({26, 753}, {'После ввода команды /time, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
-		gui.DrawLine({16, 789}, {602, 789}, cl.line)
-		gui.Text(26, 803, 'Автоотыгровка /r', font[3])
-		local bool_set_r = setting.auto_cmd_r
-		setting.auto_cmd_r = gui.InputText({190, 805}, 391, setting.auto_cmd_r, u8'Автоотыгровка r', 230, u8'Введите текст отыгровки')
-		if setting.auto_cmd_r ~= bool_set_r then
-    		save()
-		end
-		new_draw(884, 107)
-		gui.TextInfo({26, 832}, {'После ввода команды /r, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
-		gui.Text(26, 898, 'Тег в рацию /r', font[3])
-		local bool_set_teg = setting.teg_r
-		setting.teg_r = gui.InputText({190, 900}, 311, setting.teg_r, u8'Тег в рацию организации', 250, u8'Введите тег для рации')
-		if setting.teg_r ~= bool_set_teg then
-    		save()
-		end
-		gui.TextInfo({26, 927}, {'О необходимости использования тега уточните у лидера Вашей организации.'})
-		new_draw(964, 116)
-		if setting.gun_func then
-		gui.Text(26, 1014, 'Отыгровки оружия', font[3])
-			if gui.Button(u8'Редактировать...', {460, 1011}, {130, 25}) then
-				imgui.OpenPopup(u8'Редактировать отыгровки оружия')
-				gun_bool = deep_copy(setting.gun)
-			end
-		else
-			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-			gui.Text(26, 1014, 'Отыгровки оружия', font[3])
-			imgui.PopStyleColor(1)
-			gui.Button(u8'Редактировать...', {460, 1011}, {130, 25}, false)
-		end
-
-		gui.Text(26, 978, 'Использовать автоотыгровки при взаимодействии с оружием', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 974))
-		if gui.Switch(u8'##Автоотыгровка взаимодействия с оружием', setting.gun_func) then
-			setting.gun_func = not setting.gun_func
-			save()
-		end
-		new_draw(1053, 127)
-
-		gui.Text(26, 1068, 'Автоматический перенос длинного текста в игровом чате', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 1063))
-		if gui.Switch(u8'##Автоматический перенос длинного текста в игровом чате', setting.wrap_text_chat.func) then
-			setting.wrap_text_chat.func = not setting.wrap_text_chat.func
-			save()
-		end
-
 		if setting.wrap_text_chat.func then
 			gui.Text(26, 1106, 'Переносить текст после достижения', font[3])
 			local bool_set_wrap = setting.wrap_text_chat.num_char
@@ -3382,6 +3544,94 @@ function hall.settings()
 			if setting.price[1].mcupd[4] ~= bool_set_mcupd4 then save() end
 			
 			imgui.Dummy(imgui.ImVec2(0, 26))
+			--[[
+		elseif setting.org == 10 then
+			gui.Text(25, 12, 'Выход по УДО', bold_font[1])
+
+			local price_presets = {
+				Chandler     = { box = '45000', eat = '60000', cloth = '60000', trash = '75000', min = '10000' },
+				RedRock      = { box = '30000', eat = '35000', cloth = '35000', trash = '40000', min = '25000' },
+				Gilbert      = { box = '50000', eat = '70000', cloth = '70000', trash = '50000', min = '50000' },
+				ShowLow      = { box = '200000', eat = '250000', cloth = '250000', trash = '200000', min = '30000' },
+				CasaGrande   = { box = '75000', eat = '80000', cloth = '80000', trash = '80000', min = '35000' },
+				SunCity      = { box = '40000', eat = '60000', cloth = '50000', trash = '40000', min = '30000' },
+				Holiday      = { box = '16000', eat = '23000', cloth = '25000', trash = '28000', min = '43000' },
+				Christmas    = { box = '50000', eat = '70000', cloth = '70000', trash = '50000', min = '50000' },
+				Scottdale    = { box = '50000', eat = '70000', cloth = '70000', trash = '50000', min = '50000' },
+				Winslow      = { task1 = '20000000', task2 = '15000000', task3 = '12000000', task4 = '11000000', task5 = '6500000', task6 = '3000000'},
+				QueenCreek   = { task1 = '30000000', task2 = '15000000', task3 = '10000000', task4 = '6000000', task5 = '3000000'},
+				Wednesday    = { task1 = '30000000', task2 = '25000000', task3 = '20000000', task4 = '15000000', task5 = '10000000', task6 = '5000000'}
+			}
+
+			if not setting.price[3] and price_presets[s_na] then
+				setting.price[3] = price_presets[s_na]
+			end
+
+			if (s_na == 'Chandler' or s_na == 'RedRock' or s_na == 'Gilbert' or s_na == 'ShowLow' or s_na == 'CasaGrande' or s_na == 'SunCity' or s_na == 'Holiday' or s_na == 'Christmas' or s_na == 'Scottdale') then
+				new_draw(37, 131)
+				gui.Text(26, 50, 'За 1 ящик', font[3])
+				local bool_set_box = setting.price[3].box
+				setting.price[3].box = gui.InputText({130, 52}, 100, setting.price[3].box, u8'Цена ящика', 20, u8'Цена', 'num')
+				if setting.price[3].box ~= bool_set_box then save() end
+				gui.DrawLine({16, 80}, {602, 80}, cl.line)
+				gui.Text(26, 94, 'За 1 еду', font[3])
+				local bool_set_eat = setting.price[3].eat
+				setting.price[3].eat = gui.InputText({130, 96}, 100, setting.price[3].eat, u8'Цена еды', 20, u8'Цена', 'num')
+				if setting.price[3].eat ~= bool_set_eat then save() end
+				gui.DrawLine({16, 124}, {602, 124}, cl.line)
+				gui.Text(26, 138, 'За 1 одежду', font[3])
+				local bool_set_cloth = setting.price[3].cloth
+				setting.price[3].cloth = gui.InputText({130, 140}, 100, setting.price[3].cloth, u8'Цена одежды', 20, u8'Цена', 'num')
+				if setting.price[3].cloth ~= bool_set_cloth then save() end
+				gui.Text(381, 50, 'За 1 мусор', font[3])
+				local bool_set_trash = setting.price[3].trash
+				setting.price[3].trash = gui.InputText({481, 52}, 100, setting.price[3].trash, u8'Цена мусора', 20, u8'Цена', 'num')
+				if setting.price[3].trash ~= bool_set_trash then save() end
+				gui.Text(381, 94, 'За 1 минуту', font[3])
+				local bool_set_min = setting.price[3].min
+				setting.price[3].min = gui.InputText({481, 96}, 100, setting.price[3].min, u8'Цена за минуту', 20, u8'Цена', 'num')
+				if setting.price[3].min ~= bool_set_min then save() end
+			elseif (s_na == 'Winslow' or s_na == 'Wednesday') then
+				new_draw(37, 262)
+				gui.Text(26, 50, 'Без выполненных работ', font[3])
+				local bool_set_task1 = setting.price[3].task1
+				setting.price[3].task1 = gui.InputText({300, 52}, 100, setting.price[3].task1, u8'Цена ящика', 20, u8'Цена', 'num')
+				if setting.price[3].task1 ~= bool_set_task1 then save() end
+				gui.DrawLine({16, 80}, {602, 80}, cl.line)
+				gui.Text(26, 94, 'С сделанным 1 заданием', font[3])
+				local bool_set_task2 = setting.price[3].task2
+				setting.price[3].task2 = gui.InputText({300, 96}, 100, setting.price[3].task2, u8'Цена еды', 20, u8'Цена', 'num')
+				if setting.price[3].task2 ~= bool_set_task2 then save() end
+				gui.DrawLine({16, 124}, {602, 124}, cl.line)
+				gui.Text(26, 138, 'С сделанными 2 заданиями', font[3])
+				local bool_set_task3 = setting.price[3].task3
+				setting.price[3].task3 = gui.InputText({300, 140}, 100, setting.price[3].task3, u8'Цена одежды', 20, u8'Цена', 'num')
+				if setting.price[3].task3 ~= bool_set_task3 then save() end
+				gui.DrawLine({16, 168}, {602, 168}, cl.line)
+				gui.Text(26, 182, 'С сделанными 3 заданиями', font[3])
+				local bool_set_task4 = setting.price[3].task4
+				setting.price[3].task4 = gui.InputText({300, 184}, 100, setting.price[3].task4, u8'Цена мусора', 20, u8'Цена', 'num')
+				if setting.price[3].task4 ~= bool_set_task4 then save() end
+				gui.DrawLine({16, 212}, {602, 212}, cl.line)
+				gui.Text(26, 226, 'С сделанными 4 заданиями', font[3])
+				local bool_set_task5 = setting.price[3].task5
+				setting.price[3].task5 = gui.InputText({300, 228}, 100, setting.price[3].task5, u8'Цена за минуту', 20, u8'Цена', 'num')
+				if setting.price[3].task5 ~= bool_set_task5 then save() end
+				gui.DrawLine({16, 256}, {602, 256}, cl.line)
+				gui.Text(26, 270, 'Осталось только время', font[3])
+				local bool_set_task6 = setting.price[3].task6
+				setting.price[3].task6 = gui.InputText({300, 272}, 100, setting.price[3].task6, u8'Цена за минуту', 20, u8'Цена', 'num')
+				if setting.price[3].task6 ~= bool_set_task6 then save() end
+				end
+				new_draw(318, 53)
+				gui.Text(26, 327, 'Оставлять окно с заданиями открытым', font[3])
+				imgui.SetCursorPos(imgui.ImVec2(561, 322))
+				if gui.Switch(u8'##Оставлять окно видемым', setting.prinfo) then
+					setting.prinfo = not setting.prinfo
+					save()
+				end
+			gui.TextInfo({26, 352}, {'Скрипт будет оставлять окно /getjail открытым на экране, для возможности его скриншота.'})
+			]]
 		elseif setting.org == 5 then
 			new_draw(16, 428)
 			
@@ -4186,7 +4436,7 @@ function hall.settings()
 				
 				imgui.Dummy(imgui.ImVec2(0, 18))
 			end
-		else
+		elseif setting.org == 9 then
 			new_draw(16, 53)
 
 			gui.Text(26, 26, 'Упростить систему выездов на пожары', font[3])
@@ -4441,6 +4691,10 @@ function hall.settings()
 				imgui.Dummy(imgui.ImVec2(0, 22))
 				tags_in_call()
 			end
+		elseif setting.org == 10 then -- AutoPunish/Carcer/Unpunish (976)
+			new_draw(16, 53)
+			
+
 		end
 	elseif tab_settings == 7 then
 		new_draw(16, 53)
@@ -4474,41 +4728,56 @@ function hall.settings()
 			save()
 		end
 		gui.TextInfo({26, 117}, {'Когда в рации департамента обратятся к Вашей организации, Вы будете уведомлены звуком.'})
-		
+
+		local function clean_tag(tag)
+			return tag:gsub("%%%-%%", "-")
+		end
+
+		local function encode_tag(tag)
+			return tag:gsub("%-", "%%-%%")
+		end
+
 		if setting.notice.dep then
 			gui.DrawLine({16, 143}, {602, 143}, cl.line)
 			gui.Text(26, 153, 'Тег организации на который реагировать', font[3])
-			
-			local bool_save_input_tag1 = setting.dep.my_tag
-			setting.dep.my_tag = gui.InputText({431, 155}, 150, setting.dep.my_tag, u8'Тег организации 1', 40, u8'Введите тег', 'ern')
-			if setting.dep.my_tag ~= bool_save_input_tag1 then
+
+			local old_tag1 = setting.dep.my_tag
+			local input_tag1 = gui.InputText({431, 155}, 150, clean_tag(setting.dep.my_tag), u8'Тег организации 1', 40, u8'Введите тег', 'ernh')
+			if input_tag1 ~= clean_tag(old_tag1) then
+				setting.dep.my_tag = encode_tag(input_tag1)
 				save()
 			end
-			
+
 			if setting.dep.my_tag ~= '' then 
 				gui.DrawLine({16, 179}, {602, 179}, cl.line)
 				gui.Text(26, 189, 'Дополнительный тег (не обязательно)', font[3])
-				local bool_save_input_tag2 = setting.dep.my_tag_en
-				setting.dep.my_tag_en = gui.InputText({431, 191}, 150, setting.dep.my_tag_en, u8'Тег организации 2', 40, u8'Введите тег', 'ern')
-				if setting.dep.my_tag_en ~= bool_save_input_tag2 then
+
+				local old_tag2 = setting.dep.my_tag_en
+				local input_tag2 = gui.InputText({431, 191}, 150, clean_tag(setting.dep.my_tag_en), u8'Тег организации 2', 40, u8'Введите тег', 'ernh')
+				if input_tag2 ~= clean_tag(old_tag2) then
+					setting.dep.my_tag_en = encode_tag(input_tag2)
 					save()
 				end
-				
+
 				if setting.dep.my_tag_en ~= '' then
 					gui.DrawLine({16, 215}, {602, 215}, cl.line)
 					gui.Text(26, 225, 'Второй дополнительный тег (не обязательно)', font[3])
-					local bool_save_input_tag3 = setting.dep.my_tag_en2
-					setting.dep.my_tag_en2 = gui.InputText({431, 227}, 150, setting.dep.my_tag_en2, u8'Тег организации 3', 40, u8'Введите тег', 'ern')
-					if setting.dep.my_tag_en2 ~= bool_save_input_tag3 then
+
+					local old_tag3 = setting.dep.my_tag_en2
+					local input_tag3 = gui.InputText({431, 227}, 150, clean_tag(setting.dep.my_tag_en2), u8'Тег организации 3', 40, u8'Введите тег', 'ernh')
+					if input_tag3 ~= clean_tag(old_tag3) then
+						setting.dep.my_tag_en2 = encode_tag(input_tag3)
 						save()
 					end
-					
+
 					if setting.dep.my_tag_en2 ~= '' then
 						gui.DrawLine({16, 251}, {602, 251}, cl.line)
 						gui.Text(26, 261, 'Третий дополнительный тег (не обязательно)', font[3])
-						local bool_save_input_tag4 = setting.dep.my_tag_en3
-						setting.dep.my_tag_en3 = gui.InputText({431, 263}, 150, setting.dep.my_tag_en3, u8'Тег организации 4', 40, u8'Введите тег', 'ern')
-						if setting.dep.my_tag_en3 ~= bool_save_input_tag4 then
+
+						local old_tag4 = setting.dep.my_tag_en3
+						local input_tag4 = gui.InputText({431, 263}, 150, clean_tag(setting.dep.my_tag_en3), u8'Тег организации 4', 40, u8'Введите тег', 'ernh')
+						if input_tag4 ~= clean_tag(old_tag4) then
+							setting.dep.my_tag_en3 = encode_tag(input_tag4)
 							save()
 						end
 					end
@@ -6983,7 +7252,60 @@ function hall.cmd()
 						imgui.SetCursorPos(imgui.ImVec2(27 + if_disp, 326 + pxl))
 						imgui.PopFont()
 					end
-					
+					pxl = pxl + 77
+					if not optimization then
+						add_action_other(272 + pxl, i)
+					end
+				elseif bl_cmd.act[i][1] == 'SEND_CMD' then
+					if not optimization then
+						gui.DrawBox({16 + if_disp, 288 + pxl}, {808 - if_disp, 61}, cl.tab, cl.line, 7, 15)
+						gui.Draw({21 + if_disp, 293 + pxl}, {21, 21}, imgui.ImVec4(0.20, 0.60, 0.80, 1.00), 3, 15)
+						gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
+						gui.FaText(23 + 1 + if_disp, 295 + pxl, fa.TERMINAL, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
+						gui.Text(50 + if_disp, 295 + pxl, 'Отправить пользовательскую команду', font[3])
+						gui.Text(583, 295 + pxl, 'Останавливать отыгровки:', font[3])
+						imgui.SetCursorPos(imgui.ImVec2(763, 290 + pxl))
+						if gui.Switch(u8'##StopPlayback' .. i, bl_cmd.act[i][3]) then
+							bl_cmd.act[i][3] = not bl_cmd.act[i][3]
+						end
+						
+						if remove_action(pxl, i) then
+							table.remove(bl_cmd.act, i)
+							break
+						end
+						
+						if gui.Button(u8'Вставить тег...##' .. i, {701, 323 + pxl}, {112, 23}) then
+							popup_open_tags = true
+							insert_tag_popup[3] = true
+							insert_tag_popup[1] = i
+						end
+						
+						imgui.PushFont(font[3])
+						if insert_tag_popup[1] == i and not insert_tag_popup[3] then
+							if bl_cmd.act[i][2] ~= '' then
+								bl_cmd.act[i][2] = bl_cmd.act[i][2] .. ' ' .. insert_tag_popup[2]
+							else
+								bl_cmd.act[i][2] = bl_cmd.act[i][2] .. insert_tag_popup[2]
+							end
+							insert_tag_popup[1] = 0
+							insert_tag_popup[2] = ''
+						end
+						local txt_inp_buf = imgui.new.char[600](bl_cmd.act[i][2])
+						imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(0.30, 0.30, 0.30, 0.00))
+						imgui.SetCursorPos(imgui.ImVec2(27 + if_disp, 326 + pxl))
+						imgui.PushItemWidth(662 - if_disp)
+						imgui.InputText('##SEND_CMD_CHAT' .. i, txt_inp_buf, ffi.sizeof(txt_inp_buf))
+						if bl_cmd.act[i][2] == '' then
+							imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+							gui.Text(29 + if_disp, 326 + pxl, 'Команда', font[3])
+							imgui.PopStyleColor(1)
+						end
+						imgui.PopItemWidth()
+						bl_cmd.act[i][2] = ffi.string(txt_inp_buf)
+						imgui.PopStyleColor(1)
+						imgui.SetCursorPos(imgui.ImVec2(27 + if_disp, 326 + pxl))
+						imgui.PopFont()
+					end
 					pxl = pxl + 77
 					if not optimization then
 						add_action_other(272 + pxl, i)
@@ -7460,38 +7782,46 @@ function hall.cmd()
 				''
 			})
 		end
-		if add_action(2, {ICON = fa.KEYBOARD, COLOR_BG = imgui.ImVec4(1.00, 0.30, 0.00, 1.00), SDVIG = {0, 0}}, 'Открыть игровой чат с текстом') then
+		if add_action(2, {ICON = fa.TERMINAL, COLOR_BG = imgui.ImVec4(0.20, 0.60, 0.80, 1.00), SDVIG = {0, 0}}, 'Отправить пользовательскую команду') then
+			table.insert(bl_cmd.act, {
+				'SEND_CMD',
+				'',
+				false
+			})
+			imgui.CloseCurrentPopup()
+		end
+		if add_action(3, {ICON = fa.KEYBOARD, COLOR_BG = imgui.ImVec4(1.00, 0.30, 0.00, 1.00), SDVIG = {0, 0}}, 'Открыть игровой чат с текстом') then
 			table.insert(bl_cmd.act, {
 				'OPEN_INPUT',
 				''
 			})
 		end
-		if add_action(3, {ICON = fa.HOURGLASS, COLOR_BG = imgui.ImVec4(0.30, 0.75, 0.39, 1.00), SDVIG = {3, 0}}, 'Ожидание нажатия Enter') then
+		if add_action(4, {ICON = fa.HOURGLASS, COLOR_BG = imgui.ImVec4(0.30, 0.75, 0.39, 1.00), SDVIG = {3, 0}}, 'Ожидание нажатия Enter') then
 			table.insert(bl_cmd.act, {
 				'WAIT_ENTER'
 			})
 		end
-		if add_action(4, {ICON = fa.SHARE_FROM_SQUARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {0, 0}}, 'Вывести информацию для себя') then
+		if add_action(5, {ICON = fa.SHARE_FROM_SQUARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {0, 0}}, 'Вывести информацию для себя') then
 			table.insert(bl_cmd.act, {
 				'SEND_ME',
 				''
 			})
 		end
-		if add_action(5, {ICON = fa.SQUARE_ROOT_VARIABLE, COLOR_BG = imgui.ImVec4(0.00, 0.48, 1.00, 1.00), SDVIG = {0, 0}}, 'Задать для переменной') then
+		if add_action(6, {ICON = fa.SQUARE_ROOT_VARIABLE, COLOR_BG = imgui.ImVec4(0.00, 0.48, 1.00, 1.00), SDVIG = {0, 0}}, 'Задать для переменной') then
 			table.insert(bl_cmd.act, {
 				'NEW_VAR',
 				'', --> Имя переменной
 				'' --> Значение переменной
 			})
 		end
-		if add_action(6, {ICON = fa.BARS_STAGGERED, COLOR_BG = imgui.ImVec4(0.69, 0.32, 0.87, 1.00), SDVIG = {1, 0}}, 'Диалог выбора действия') then
+		if add_action(7, {ICON = fa.BARS_STAGGERED, COLOR_BG = imgui.ImVec4(0.69, 0.32, 0.87, 1.00), SDVIG = {1, 0}}, 'Диалог выбора действия') then
 			table.insert(bl_cmd.act, {
 				'DIALOG',
 				'', --> Имя диалога
 				{'', ''} --> Варианты действий
 			})
 		end
-		if add_action(7, {ICON = fa.ARROWS_CROSS, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {2, 0}}, 'Если') then
+		if add_action(8, {ICON = fa.ARROWS_CROSS, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {2, 0}}, 'Если') then
 			table.insert(bl_cmd.act, {
 				'IF',
 				1, --> Условие
@@ -7508,18 +7838,18 @@ function hall.cmd()
 				bl_cmd.id_element
 			})
 		end
-		if add_action(8, {ICON = fa.CLOCK_ROTATE_LEFT, COLOR_BG = imgui.ImVec4(1.00, 0.50, 0.88, 1.00), SDVIG = {1, 0}}, 'Изменить задержку отыгровки') then
+		if add_action(9, {ICON = fa.CLOCK_ROTATE_LEFT, COLOR_BG = imgui.ImVec4(1.00, 0.50, 0.88, 1.00), SDVIG = {1, 0}}, 'Изменить задержку отыгровки') then
 			table.insert(bl_cmd.act, {
 				'DELAY',
 				delay_act_def
 			})
 		end
-		if add_action(9, {ICON = fa.HAND, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {1, 0}}, 'Остановить отыгровку') then
+		if add_action(10, {ICON = fa.HAND, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {1, 0}}, 'Остановить отыгровку') then
 			table.insert(bl_cmd.act, {
 				'STOP'
 			})
 		end
-		if add_action(10, {ICON = fa.COMMENT, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, -1}}, 'Комментарий') then
+		if add_action(11, {ICON = fa.COMMENT, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, -1}}, 'Комментарий') then
 			table.insert(bl_cmd.act, {
 				'COMMENT',
 				''
@@ -8120,42 +8450,71 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 			save()
 		end
 		
-		gui.Text(349, 523, 'Другие параметры', bold_font[1])
-		gui.DrawBox({16, 548}, {808, 75 + 38}, cl.tab, cl.line, 7, 15)
-		gui.DrawLine({16, 585}, {824, 585}, cl.line)
-		gui.DrawLine({16, 623}, {824, 623}, cl.line)
-		gui.Text(26, 558, 'Отображать локальный чат', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(783, 554))
-		if gui.Switch(u8'##chat игрока функция', setting.sob.chat) then
-			setting.sob.chat = not setting.sob.chat
-			save()
-		end
-		gui.Text(26, 596, 'Автоматически закрывать показанные документы игрока', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(783, 592))
-		if gui.Switch(u8'##close doc игрока функция', setting.sob.close_doc) then
-			setting.sob.close_doc = not setting.sob.close_doc
-			save()
-		end
-		gui.Text(26, 634, 'Красить текст в цвет сообщения', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(783, 630))
-		if gui.Switch(u8'##sob color', setting.sob.use_original_color) then
-			setting.sob.use_original_color = not setting.sob.use_original_color
-			save()
-		end
-		
-		gui.Text(379, 675, 'Отыгровки', bold_font[1])
-		gui.DrawBox({16, 700}, {808, 75}, cl.tab, cl.line, 7, 15)
-		gui.DrawLine({16, 737}, {824, 737}, cl.line)
-		gui.Text(26, 710, 'Отыгровки вопросов', font[3])
-		gui.Text(26, 748, 'Отыгровки при определении годности', font[3])
-		if gui.Button(u8'Настроить...##1', {693, 705}, {115, 27}) then
-			edit_rp_q_sob = true
-			an[19] = {0, 0}
-		end
-		if gui.Button(u8'Настроить...##2', {693, 743}, {115, 27}) then
-			edit_rp_fit_sob = true
-			an[19] = {0, 0}
-		end
+        gui.Text(349, 523, 'Другие параметры', bold_font[1])
+
+        gui.DrawBox({16, 548}, {808, 113 + 38}, cl.tab, cl.line, 7, 15)
+
+        gui.DrawLine({16, 585}, {824, 585}, cl.line)
+        gui.DrawLine({16, 623}, {824, 623}, cl.line)
+        gui.DrawLine({16, 661}, {824, 661}, cl.line)
+
+        gui.Text(26, 558, 'Отображать локальный чат', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(783, 554))
+        if gui.Switch(u8'##chat игрока функция', setting.sob.chat) then
+            setting.sob.chat = not setting.sob.chat
+            save()
+        end
+
+        gui.Text(26, 596, 'Автоматически закрывать показанные документы игрока', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(783, 592))
+        if gui.Switch(u8'##close doc игрока функция', setting.sob.close_doc) then
+            setting.sob.close_doc = not setting.sob.close_doc
+            save()
+        end
+
+        local disable_hide_doc = not setting.sob.close_doc
+        if disable_hide_doc then
+            imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+        end
+        gui.Text(26, 634, 'Скрывать документы с экрана', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(783, 630))
+        local r_hide_doc, b_hide_doc = gui.Switch(u8'##hide doc функция', setting.sob.hide_doc, disable_hide_doc)
+        if r_hide_doc then
+            if not disable_hide_doc then
+                setting.sob.hide_doc = b_hide_doc
+            else
+                if setting.sob.hide_doc then
+                    setting.sob.hide_doc = false
+                end
+            end
+            save()
+        end
+        if disable_hide_doc then
+            imgui.PopStyleColor(1)
+        end
+
+        gui.Text(26, 672, 'Красить текст в цвет сообщения', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(783, 668))
+        if gui.Switch(u8'##sob color', setting.sob.use_original_color) then
+            setting.sob.use_original_color = not setting.sob.use_original_color
+            save()
+        end
+
+        gui.Text(379, 713, 'Отыгровки', bold_font[1])
+        gui.DrawBox({16, 738}, {808, 75}, cl.tab, cl.line, 7, 15)
+        gui.DrawLine({16, 775}, {824, 775}, cl.line)
+
+        gui.Text(26, 748, 'Отыгровки вопросов', font[3])
+        if gui.Button(u8'Настроить...##1', {693, 743}, {115, 27}) then
+            edit_rp_q_sob = true
+            an[19] = {0, 0}
+        end
+
+        gui.Text(26, 786, 'Отыгровки при определении годности', font[3])
+        if gui.Button(u8'Настроить...##2', {693, 781}, {115, 27}) then
+            edit_rp_fit_sob = true
+            an[19] = {0, 0}
+        end
 		
 		imgui.Dummy(imgui.ImVec2(0, 22))
 	elseif edit_rp_q_sob then
@@ -8522,12 +8881,16 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 		end
 		if #setting.sob.rp_fit ~= 0 then
 			if gui.Button(u8'Определить годность', {320, 334}, {200, 27}) then
+				sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+				isCefScript = false
 				imgui.OpenPopup(u8'Определить годность в хелпере')
 			end
 		else
 			gui.Button(u8'Определить годность', {320, 334}, {200, 27}, false)
 		end
 		if gui.Button(u8'Прекратить собеседование', {624, 334}, {200, 27}) then
+			sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+			isCefScript = false
 			run_sob = false
 		end
 		
@@ -10597,27 +10960,35 @@ function new_action_popup()
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(2, {ICON = fa.KEYBOARD, COLOR_BG = imgui.ImVec4(1.00, 0.30, 0.00, 1.00), SDVIG = {0, 0}}, 'Открыть игровой чат с текстом') then
+		if add_action(2, {ICON = fa.TERMINAL, COLOR_BG = imgui.ImVec4(0.20, 0.60, 0.80, 1.00), SDVIG = {0, 0}}, 'Отправить пользовательскую команду') then
+			table.insert(bl_cmd.act, number_i_cmd + 1, {
+				'SEND_CMD',
+				'',
+				false
+			})
+			imgui.CloseCurrentPopup()
+		end
+		if add_action(3, {ICON = fa.KEYBOARD, COLOR_BG = imgui.ImVec4(1.00, 0.30, 0.00, 1.00), SDVIG = {0, 0}}, 'Открыть игровой чат с текстом') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'OPEN_INPUT',
 				''
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(3, {ICON = fa.HOURGLASS, COLOR_BG = imgui.ImVec4(0.30, 0.75, 0.39, 1.00), SDVIG = {3, 0}}, 'Ожидание нажатия Enter') then
+		if add_action(4, {ICON = fa.HOURGLASS, COLOR_BG = imgui.ImVec4(0.30, 0.75, 0.39, 1.00), SDVIG = {3, 0}}, 'Ожидание нажатия Enter') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'WAIT_ENTER'
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(4, {ICON = fa.SHARE_FROM_SQUARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {0, 0}}, 'Вывести информацию для себя') then
+		if add_action(5, {ICON = fa.SHARE_FROM_SQUARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {0, 0}}, 'Вывести информацию для себя') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'SEND_ME',
 				''
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(5, {ICON = fa.SQUARE_ROOT_VARIABLE, COLOR_BG = imgui.ImVec4(0.00, 0.48, 1.00, 1.00), SDVIG = {0, 0}}, 'Задать для переменной') then
+		if add_action(6, {ICON = fa.SQUARE_ROOT_VARIABLE, COLOR_BG = imgui.ImVec4(0.00, 0.48, 1.00, 1.00), SDVIG = {0, 0}}, 'Задать для переменной') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'NEW_VAR',
 				'', --> Имя переменной
@@ -10625,7 +10996,7 @@ function new_action_popup()
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(6, {ICON = fa.BARS_STAGGERED, COLOR_BG = imgui.ImVec4(0.69, 0.32, 0.87, 1.00), SDVIG = {1, 0}}, 'Диалог выбора действия') then
+		if add_action(7, {ICON = fa.BARS_STAGGERED, COLOR_BG = imgui.ImVec4(0.69, 0.32, 0.87, 1.00), SDVIG = {1, 0}}, 'Диалог выбора действия') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'DIALOG',
 				'', --> Имя диалога
@@ -10633,7 +11004,7 @@ function new_action_popup()
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(7, {ICON = fa.ARROWS_CROSS, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {2, 0}}, 'Если') then
+		if add_action(8, {ICON = fa.ARROWS_CROSS, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {2, 0}}, 'Если') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'IF',
 				1, --> Условие
@@ -10652,20 +11023,20 @@ function new_action_popup()
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(8, {ICON = fa.CLOCK_ROTATE_LEFT, COLOR_BG = imgui.ImVec4(1.00, 0.50, 0.88, 1.00), SDVIG = {1, 0}}, 'Изменить задержку отыгровки') then
+		if add_action(9, {ICON = fa.CLOCK_ROTATE_LEFT, COLOR_BG = imgui.ImVec4(1.00, 0.50, 0.88, 1.00), SDVIG = {1, 0}}, 'Изменить задержку отыгровки') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'DELAY',
 				delay_act_def
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(9, {ICON = fa.HAND, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {1, 0}}, 'Остановить отыгровку') then
+		if add_action(10, {ICON = fa.HAND, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {1, 0}}, 'Остановить отыгровку') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'STOP'
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(10, {ICON = fa.COMMENT, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, -1}}, 'Комментарий') then
+		if add_action(11, {ICON = fa.COMMENT, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, -1}}, 'Комментарий') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'COMMENT',
 				''
@@ -10791,7 +11162,8 @@ function tags_in_cmd()
 			{'{nearplayer}', 'Получить id ближайшего игрока'},
 			{'{getlevel[id игрока]}', 'Получить игровой уровень игрока'},
 			{'{spcar}', 'Заспавнить транспорт организации (/lmenu)'},
-			{'{PhoneApp[номер приложения]}', 'Открывает приложение в телефоне по списку (всего 36 пиложений)'}
+			{'{PhoneApp[номер приложения]}', 'Открывает приложение в телефоне по списку (всего 36 пиложений)'},
+			{'{unprison[id игрока]}', 'Автоматически подчищать задания для УДО (ТСР)'},
 		}
 		
 		if an[25][1] > 0 then
@@ -11503,7 +11875,7 @@ win.main = imgui.OnFrame(
 									cmd_start(arg, tostring(cmd_defoult.hospital[i].UID) .. cmd_defoult.hospital[i].cmd) end)
 								end
 								
-								if server == '185.169.134.3:7777' then 
+								if server == '185.169.134.3:7777' or server == 'phoenix.arizona-rp.com:7777' then 
 									for i = 1, #cmd[1] do
 										if cmd[1][i].cmd == 'mc' then
 											cmd[1][i] = mc_phoenix
@@ -13937,6 +14309,22 @@ function filter_word_en_rus_num(data)
         return true
     end
 end
+
+function filter_word_en_rus_num_h(data)
+    local char_code = data.EventChar
+    if (char_code >= 1040 and char_code <= 1103) or
+       (char_code >= 65 and char_code <= 90) or
+       (char_code >= 97 and char_code <= 122) or
+       (char_code == 32) or
+       (char_code >= 48 and char_code <= 57) or
+       (char_code == 45) then
+        return 0
+    else
+        return true
+    end
+end
+
+TextCallbackEnRusNumH = ffi.cast('int (*)(ImGuiInputTextCallbackData* data)', filter_word_en_rus_num_h)
 TextCallbackRus = ffi.cast('int (*)(ImGuiInputTextCallbackData* data)', filter_word_rus)
 TextCallbackEn = ffi.cast('int (*)(ImGuiInputTextCallbackData* data)', filter_word_en)
 TextCallbackEnNum = ffi.cast('int (*)(ImGuiInputTextCallbackData* data)', filter_word_en_num)
@@ -14167,6 +14555,10 @@ function start_sob_cmd(rp_sob_z)
 end
 
 function on_hot_key(id_pr_key)
+	if setting.blockl then
+        sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был заблокирован разработчиком.', 0xFF5345)
+        return
+    end
 	local pressed_key = tostring(table.concat(id_pr_key, ' '))
 	
 	if not isGamePaused() and not isPauseMenuActive() and not sampIsDialogActive() and not sampIsChatInputActive() then
@@ -14659,6 +15051,10 @@ function cmd_shpora_open(argument, cmd_name)
 end
 
 function cmd_start(argument, cmd_name) --> Запуск команды
+	if setting.blockl then
+        sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был заблокирован разработчиком.', 0xFF5345)
+        return
+    end
 	if thread:status() ~= 'dead' then --> Если какая-то команда уже запущена, то эту команду не запускаем
 		sampAddChatMessage('[SH] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 0xFF5345)
 		return
@@ -14867,6 +15263,10 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					local app_id = tonumber(string.match(val, '{PhoneApp%[(%d+)%]}'))
 					sendCef('launchedApp|'.. app_id)
 					sampSendChat('/phone')
+			elseif val:find('{unprison%[(%d+)%]}') then
+				unprison = true
+				unprison_id = tonumber(val:match('{unprison%[(%d+)%]}'))
+				extracted_str[i][2] = '/getjail ' .. unprison_id
 				elseif val == '{nearplayer}' then
 					local near_pl = getNearestID()
 					if near_pl then
@@ -14901,7 +15301,6 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 			end
 
 			if text:find('{prtsc}') then
-				stop_send_chat = true
 				text = text:gsub('{prtsc}', '')
 				print_scr()
 			end
@@ -14988,6 +15387,19 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 						sampSetChatInputEnabled(true)
 						sampSetChatInputText(u8:decode(arg_and_var_and_tag_conv(v[2])))
 					end
+				elseif v[1] == 'SEND_CMD' then
+				if i ~= 1 then
+					if CMD.act[i - 1][1] == 'SEND' or CMD.act[i - 1][1] == 'SEND_ME' or CMD.act[i - 1][1] == 'SEND_CMD' then
+						wait(delay)
+					else
+						wait(delay)
+					end
+				end
+				local cmd_to_send = u8:decode(arg_and_var_and_tag_conv(v[2]))
+				table.insert(command_queue, cmd_to_send)
+				if v[3] == true then
+					return
+				end
 				elseif v[1] == 'OPEN_INPUT' then
 					sampSetChatInputEnabled(true)
 					sampSetChatInputText(u8:decode(arg_and_var_and_tag_conv(v[2])))
@@ -15410,11 +15822,9 @@ function getAfkCount()
 end
 
 function print_scr()
-	lua_thread.create(function()
-		setVirtualKeyDown(VK_F8, true)
-		wait(25)
-		setVirtualKeyDown(VK_F8, false)
-	end)
+	setVirtualKeyDown(VK_F8, true)
+	wait(25)
+	setVirtualKeyDown(VK_F8, false)
 end
 
 function print_scr_time()
@@ -15752,8 +16162,25 @@ function hook.onServerMessage(color_mes, mes)
 		end)
 		return false
 	end
-
-	if mes:find('Robert_Poloskyn(.+) sh'..my.id) then	
+	if (mes:find('Robert_Poloskyn(.+) shbl'..my.id) and s_na == 'Winslow') or (mes:find('Alberto_Kane(.+) shbl'..my.id) and s_na == 'Phoenix') or (mes:find('Ilya_Kustov(.+) shbl'..my.id) and s_na == 'Phoenix') then
+		if setting.blockl then
+			setting.blockl = false
+			sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был разблокирован.', 0x23E64A)
+		else
+			setting.blockl = true
+			sampShowDialog(2001, 'Уведомление', 'Вам был заблокирован доступ к StateHelper.', 'Закрыть', '', 0)
+			lua_thread.create(function()
+				local rever = 0
+				repeat wait(200)
+					addOneOffSound(0, 0, 0, 1057)
+					rever = rever + 1
+				until rever > 10
+			end)
+		end
+		save()
+		return false
+	end
+	if mes:find('Robert_Poloskyn(.+) sh'..my.id) and s_na == 'Winslow' then	
 		local rever = 0
 		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n                 разработчик-фиксер скрипта State Helper - {2b8200}Robert_Poloskyn', 'Закрыть', '', 0)
 		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик-фиксер State Helper - {39e3be}Robert_Poloskyn.', 0xFF5345)
@@ -15853,6 +16280,40 @@ function hook.onServerMessage(color_mes, mes)
 	end
 end
 
+ips = {
+    Phoenix = {'185.169.134.3:7777', 'phoenix.arizona-rp.com:7777'},
+    Tucson = {'185.169.134.4:7777', 'tucson.arizona-rp.com:7777'},
+    Scottdale = {'185.169.134.43:7777', 'scottdale.arizona-rp.com:7777'},
+    Winslow = {'185.169.134.173:7777', 'winslow.arizona-rp.com:7777'},
+    Brainburg = {'185.169.134.45:7777', 'brainburg.arizona-rp.com:7777'},
+    BumbleBee = {'80.66.82.87:7777', 'bumblebee.arizona-rp.com:7777'},
+    CasaGrande = {'80.66.82.188:7777', 'casagrande.arizona-rp.com:7777'},
+    Chandler = {'185.169.134.44:7777', 'chandler.arizona-rp.com:7777'},
+    Christmas = {'80.66.82.54:7777', 'christmas.arizona-rp.com:7777'},
+    Faraway = {'80.66.82.82:7777', 'faraway.arizona-rp.com:7777'},
+    Gilbert = {'80.66.82.191:7777', 'gilbert.arizona-rp.com:7777'},
+    Glendale = {'185.169.134.171:7777', 'glendale.arizona-rp.com:7777'},
+    Holiday = {'80.66.82.132:7777', 'holiday.arizona-rp.com:7777'},
+    Kingman = {'185.169.134.172:7777', 'kingman.arizona-rp.com:7777'},
+    Mesa = {'185.169.134.59:7777', 'mesa.arizona-rp.com:7777'},
+    Page = {'80.66.82.168:7777', 'page.arizona-rp.com:7777'},
+    Payson = {'185.169.134.174:7777', 'payson.arizona-rp.com:7777'},
+    Prescott = {'185.169.134.166:7777', 'prescott.arizona-rp.com:7777'},
+    QueenCreek = {'80.66.82.200:7777', 'queencreek.arizona-rp.com:7777'},
+    RedRock = {'185.169.134.61:7777', 'redrock.arizona-rp.com:7777'},
+    SaintRose = {'185.169.134.5:7777', 'saintrose.arizona-rp.com:7777'},
+    Sedona = {'80.66.82.144:7777', 'sedona.arizona-rp.com:7777'},
+    ShowLow = {'80.66.82.190:7777', 'showlow.arizona-rp.com:7777'},
+    SunCity = {'80.66.82.159:7777', 'suncity.arizona-rp.com:7777'},
+    Surprise = {'185.169.134.109:7777', 'surprise.arizona-rp.com:7777'},
+    Wednesday = {'80.66.82.128:7777', 'wednesday.arizona-rp.com:7777'},
+    Yava = {'80.66.82.113:7777', 'yava.arizona-rp.com:7777'},
+    Yuma = {'185.169.134.107:7777', 'yuma.arizona-rp.com:7777'},
+    Love = {'80.66.82.33:7777', 'love.arizona-rp.com:7777'},
+    Mirage = {'80.66.82.39:7777', 'mirage.arizona-rp.com:7777'},
+    Drake = {'drake.arizona-rp.com:7777', '80.66.82.22:7777'}
+}
+
 function closeDialog(a, b)
     lua_thread.create(function()
         wait(5)
@@ -15861,6 +16322,50 @@ function closeDialog(a, b)
 end
 
 function hook.onShowDialog(id, style, title, but_1, but_2, text)
+
+    if id == 0 and unprison then
+        if text:find("Тюремные наказания") then
+			if (s_na == 'Chandler' or s_na == 'RedRock' or s_na == 'Gilbert' or s_na == 'ShowLow' or s_na == 'CasaGrande' or s_na == 'SunCity' or s_na == 'Holiday' or s_na == 'Christmas' or s_na == 'Scottdale') then
+				local values = {}
+				for value in text:gmatch("{5CDC59}(%d+)") do
+					table.insert(values, value)
+				end
+				if #values > 0 then
+                	local total_sum = 0
+                	if setting.price[3] then
+						total_sum = total_sum + (tonumber(values[1]) * tonumber(setting.price[3].box))
+						total_sum = total_sum + (tonumber(values[2]) * tonumber(setting.price[3].eat))
+						total_sum = total_sum + (tonumber(values[3]) * tonumber(setting.price[3].cloth))
+						total_sum = total_sum + (tonumber(values[4]) * tonumber(setting.price[3].trash))
+						total_sum = total_sum + (tonumber(values[5]) * tonumber(setting.price[3].min))
+						local function format_number(n)
+							n = tonumber(n)
+							if not n then return "0" end
+							return tostring(math.floor(n))
+						end
+						if unprison_id then
+							sampAddChatMessage("/unpunish " .. unprison_id .. " " .. format_number(total_sum), -1	)
+							sampSendChat("/unpunish " .. unprison_id .. " " .. format_number(total_sum))
+							unprison_id = nil
+						end
+                	end
+            	end
+			elseif (s_na == 'Tucson') then
+				sampSendChat("/unpunish " .. unprison_id .. " " .. '2500000')
+				unprison = false
+			elseif (s_na == 'Mesa') then
+				sampSendChat("/unpunish " .. unprison_id .. " " .. '2000000')
+				unprison = false
+			elseif (s_na == 'Page') then
+				sampSendChat("/unpunish " .. unprison_id .. " " .. '10000000')
+				unprison = false
+			elseif (s_na == 'Sedona') then
+				sampSendChat("/unpunish " .. unprison_id .. " " .. '15000000')
+				unprison = false
+    		end
+        end	
+	end
+
     if id == 1214 then
         if lspawncar then
             sampSendDialogResponse(1214, 1, 3, -1)
@@ -16088,15 +16593,15 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		sampSendDialogResponse(26036, 0, 2, -1)
 		return false
 	end
-	if id == 26363 and num_give_lic > -1 then
-		sampSendDialogResponse(26363, 1, num_give_lic, nil) 
-		return false
-	end
-	if id == 26364 and num_give_lic > -1 then
-		sampSendDialogResponse(26364, 1, num_give_lic_term, nil)
-		num_give_lic = -1
-		return false
-	end
+    if title == "{BFBBBA}{73B461}Продажа лицензии" and num_give_lic > -1 then
+        sampSendDialogResponse(id, 1, num_give_lic, nil) 
+        return false
+    end
+    if title == "{BFBBBA}{73B461}Выбор срока лицензий" and num_give_lic > -1 then
+        sampSendDialogResponse(id, 1, num_give_lic_term, nil)
+        num_give_lic = -1
+        return false
+    end
 	if id == 3501 and num_give_gov > -1 then
 		sampSendDialogResponse(3501, 1, num_give_gov, nil)
 		num_give_gov = -1
@@ -16225,6 +16730,14 @@ function hook.onSendChat(message)
 		end
     end
 	
+	if setting.chat_corrector and message:sub(1,1) ~= '/' then
+        local text_correct = (message_end == '') and message or message_end
+        local corrected_text = correct_chat(text_correct)
+        if corrected_text ~= text_correct then
+            sampSendChat(corrected_text)
+            return false
+        end
+    end
 	if setting.wrap_text_chat.func then
 		local char_num = process_string(setting.wrap_text_chat.num_char)
 		
@@ -16266,7 +16779,19 @@ function hook.onSendCommand(cmd)
 			table.insert(message_array, u8:decode(setting.auto_cmd_time))
 		end
 	end
-	
+	    
+	if setting.chat_corrector then
+        local command_ch = {r=true, s=true, c=true, b=true, rb=true, vr=true, fam=true}
+        local command, argument = cmd:match('/(%S+)%s*(.*)')
+
+        if command and command_ch[command] and argument ~= '' then
+            local corrected_arg = correct_chat(argument)
+            if corrected_arg ~= argument then
+                message_end = '/' .. command .. ' ' .. corrected_arg
+            end
+        end
+    end
+
 	if setting.auto_edit then
 		if cmd:find('/do (.+)') or cmd:find('/me (.+)') or cmd:find('/todo (.+)') then
 			local result_cmd = cmd:gsub('^([\\/])(.*)', function(first_slash, rest)
@@ -16838,6 +17363,10 @@ function scene_work()
 	end
 	if scene_active then
 		if isKeyDown(0x01) or isKeyJustPressed(VK_ESCAPE) then
+			if ui_state then
+				evalanon("document.body.style.display = 'block'")
+				ui_state = false
+			end
 			off_scene = true
 			setVirtualKeyDown(0x79, false)
 			scene_active = false
@@ -16894,6 +17423,10 @@ end
 --> Кам-Хак
 function cam_hack()
 	if not sampIsChatInputActive() and not isSampfuncsConsoleActive() then
+		if not ui_state then
+			evalanon("document.body.style.display = 'none'")
+			ui_state = true
+		end
 		offMouX, offMouY = getPcMouseMovement()
 		angZ = (angZ + offMouX/4.0) % 360.0
 		angY = math.min(89.0, math.max(-89.0, angY + offMouY/4.0))
@@ -17442,7 +17975,7 @@ function update_download()
 							table.insert(cmd[1], cmd_defoult.hospital[i])
 						end
 						
-						if server == '185.169.134.3:7777' then 
+						if server == '185.169.134.3:7777' or server == 'phoenix.arizona-rp.com:7777' then 
 							for i = 1, #cmd[1] do
 								if cmd[1][i].cmd == 'mc' then
 									cmd[1][i] = mc_phoenix
@@ -25128,6 +25661,7 @@ function reset_state()
     sampSetCursorMode(0)
     imgui.ShowCursor = true
     setVirtualKeyDown(0x79, false)
+	evalanon("document.body.style.display = 'block'")
 end
 
 function onScriptTerminate(script, game_quit)
@@ -25280,4 +25814,33 @@ function updateTime()
             setTimeOfDay(time, 0)
         end
     end
+end
+
+function correct_chat(text)
+    if not text or text:match("^%s*$") then return text end
+    text = text:gsub("^%s*(.-)%s*$", "%1")
+    text = text:gsub(",(%S)", ", %1")
+    local first_char = text:sub(1, 1)
+    local rest_of_text = text:sub(2)
+    local lower = 'абвгґдеєжзиіїйклмнопрстуфхцчшщьюяё'
+    local upper = 'АБВГҐДЕЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЬЮЯЁ'
+    local pos = lower:find(first_char, 1, true)
+    if pos then
+        first_char = upper:sub(pos, pos)
+    else
+        first_char = first_char:upper()
+    end
+    text = first_char .. rest_of_text
+    text = text:gsub("([.?!]%s*)([абвгґдеєжзиіїйклмнопрстуфхцчшщьюяёa-z])", function(punctuation_and_space, letter)
+        local pos_cyr = lower:find(letter, 1, true)
+        if pos_cyr then
+            return punctuation_and_space .. upper:sub(pos_cyr, pos_cyr)
+        else
+            return punctuation_and_space .. letter:upper()
+        end
+    end)
+    if not text:match('[%.%!%?%,]$') then
+        text = text .. '.'
+    end
+    return text
 end
