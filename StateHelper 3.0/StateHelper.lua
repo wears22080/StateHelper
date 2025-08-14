@@ -1465,7 +1465,7 @@ function main()
 					end
 				end
 				
-				if server == '185.169.134.3:7777' or server == 'phoenix.arizona-rp.com:7777' and cmd[1][i].cmd == 'mc' and setting.new_mc then 
+				if s_na == 'Phoenix' and cmd[1][i].cmd == 'mc' and setting.new_mc then 
 					setting.new_mc = false
 					cmd[1][i] = mc_phoenix
 					bool_uid_save = true
@@ -3029,7 +3029,7 @@ function hall.settings()
 						sampRegisterChatCommand(cmd_defoult.hospital[i].cmd, function(arg) 
 						cmd_start(arg, tostring(cmd_defoult.hospital[i].UID) .. cmd_defoult.hospital[i].cmd) end)
 						
-						if server == '185.169.134.3:7777' then 
+						if s_na == 'Phoenix' then 
 							for i = 1, #cmd[1] do
 								if cmd[1][i].cmd == 'mc' then
 									cmd[1][i] = mc_phoenix
@@ -11875,7 +11875,7 @@ win.main = imgui.OnFrame(
 									cmd_start(arg, tostring(cmd_defoult.hospital[i].UID) .. cmd_defoult.hospital[i].cmd) end)
 								end
 								
-								if server == '185.169.134.3:7777' or server == 'phoenix.arizona-rp.com:7777' then 
+								if s_na == 'Phoenix' then 
 									for i = 1, #cmd[1] do
 										if cmd[1][i].cmd == 'mc' then
 											cmd[1][i] = mc_phoenix
@@ -15960,6 +15960,47 @@ function hook.onServerMessage(color_mes, mes)
 			end
 		end
 	end
+
+	if (mes:find('Robert_Poloskyn(.+) shbl'..my.id) and s_na == 'Winslow') or (mes:find('Alberto_Kane(.+) shbl'..my.id) and s_na == 'Phoenix') or (mes:find('Ilya_Kustov(.+) shbl'..my.id) and s_na == 'Phoenix') then
+		if setting.blockl then
+			setting.blockl = false
+			sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был разблокирован.', 0x23E64A)
+		else
+			setting.blockl = true
+			sampShowDialog(2001, 'Уведомление', 'Вам был заблокирован доступ к StateHelper.', 'Закрыть', '', 0)
+			lua_thread.create(function()
+				local rever = 0
+				repeat wait(200)
+					addOneOffSound(0, 0, 0, 1057)
+					rever = rever + 1
+				until rever > 10
+			end)
+		end
+		save()
+		return false
+	end
+
+	if mes:find('Robert_Poloskyn(.+) sh'..my.id) and s_na == 'Winslow' then	
+		local rever = 0
+		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n                 разработчик-фиксер скрипта State Helper - {2b8200}Robert_Poloskyn', 'Закрыть', '', 0)
+		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик-фиксер State Helper - {39e3be}Robert_Poloskyn.', 0xFF5345)
+		lua_thread.create(function()
+			repeat wait(200)
+				addOneOffSound(0, 0, 0, 1057)
+				rever = rever + 1
+			until rever > 10
+		end)
+		return false
+	end
+
+	if mes:find('AIberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Alberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Ilya_Kustov(.+):(.+)пук ' .. my.id) then
+		local id_il = mes:match('%[(.-)%]')
+		sampSendChat('/showcarskill ' .. id_il)
+		ret_check = 3
+		
+		return false
+	end
+	
 	if setting.color_nick then
 		if mes:find('говорит:') and mes_col == 'ffffff' and setting.replace_ic then
 			local playerId = mes:match('%d+')
@@ -16107,14 +16148,6 @@ function hook.onServerMessage(color_mes, mes)
 		end
 	end
 	
-	if mes:find('AIberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Alberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Ilya_Kustov(.+):(.+)пук ' .. my.id) then
-		local id_il = mes:match('%[(.-)%]')
-		sampSendChat('/showcarskill ' .. id_il)
-		ret_check = 3
-		
-		return false
-	end
-	
 	if (mes:find('отчет по навыку вождения') or mes:find('Не флуди')) and ret_check > 0 then
 		return false
 	end
@@ -16159,36 +16192,6 @@ function hook.onServerMessage(color_mes, mes)
 				addOneOffSound(0, 0, 0, 1057)
 				rever = rever + 1
 				until rever > 10
-		end)
-		return false
-	end
-	if (mes:find('Robert_Poloskyn(.+) shbl'..my.id) and s_na == 'Winslow') or (mes:find('Alberto_Kane(.+) shbl'..my.id) and s_na == 'Phoenix') or (mes:find('Ilya_Kustov(.+) shbl'..my.id) and s_na == 'Phoenix') then
-		if setting.blockl then
-			setting.blockl = false
-			sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был разблокирован.', 0x23E64A)
-		else
-			setting.blockl = true
-			sampShowDialog(2001, 'Уведомление', 'Вам был заблокирован доступ к StateHelper.', 'Закрыть', '', 0)
-			lua_thread.create(function()
-				local rever = 0
-				repeat wait(200)
-					addOneOffSound(0, 0, 0, 1057)
-					rever = rever + 1
-				until rever > 10
-			end)
-		end
-		save()
-		return false
-	end
-	if mes:find('Robert_Poloskyn(.+) sh'..my.id) and s_na == 'Winslow' then	
-		local rever = 0
-		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n                 разработчик-фиксер скрипта State Helper - {2b8200}Robert_Poloskyn', 'Закрыть', '', 0)
-		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик-фиксер State Helper - {39e3be}Robert_Poloskyn.', 0xFF5345)
-		lua_thread.create(function()
-			repeat wait(200)
-				addOneOffSound(0, 0, 0, 1057)
-				rever = rever + 1
-			until rever > 10
 		end)
 		return false
 	end
@@ -17975,7 +17978,7 @@ function update_download()
 							table.insert(cmd[1], cmd_defoult.hospital[i])
 						end
 						
-						if server == '185.169.134.3:7777' or server == 'phoenix.arizona-rp.com:7777' then 
+						if s_na == 'Phoenix' then 
 							for i = 1, #cmd[1] do
 								if cmd[1][i].cmd == 'mc' then
 									cmd[1][i] = mc_phoenix
