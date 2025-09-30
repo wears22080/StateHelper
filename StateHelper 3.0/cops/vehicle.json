@@ -1,4 +1,5 @@
 [
+    {"version": "1"},
     {"model_id": 400, "name": "Landstalker", "server_id": 400},
     {"model_id": 401, "name": "Bravura", "server_id": 401},
     {"model_id": 402, "name": "Buffalo", "server_id": 402},
