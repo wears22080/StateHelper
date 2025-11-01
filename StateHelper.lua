@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.2.1')
+script_version('3.3')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -90,6 +90,8 @@ local json = require('cjson')
 local mem = require 'memory'
 local encoding = require 'encoding' encoding.default = 'CP1251'
 local u8 = encoding.UTF8
+local iconv = require 'iconv'
+local u1251 = iconv.new('CP1251', 'UTF-8')
 local vkeys = require 'vkeys'
 local rkeys = require 'rkeys'
 local effil = require 'effil'
@@ -104,7 +106,6 @@ local shell32 = ffi.load 'Shell32'
 local ole32 = ffi.load 'Ole32'
 ole32.CoInitializeEx(nil, 6)
 local hook = require 'lib.samp.events'
-
 vkeys.key_names[vkeys.VK_RBUTTON] = u8'ПКМ'
 vkeys.key_names[vkeys.VK_LBUTTON] = u8'ЛКМ'
 vkeys.key_names[vkeys.VK_XBUTTON1] = 'XBut1'
@@ -202,12 +203,35 @@ local windows = {
 	shpora = new.bool(false),
 	reminder = new.bool(false),
 	player = new.bool(false),
-	stat = new.bool(false)
+	stat = new.bool(false),
+	smart_su = new.bool(false),
+	smart_ticket = new.bool(false)
 }
+
 function open_main()
+	if setting.blockl then
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был заблокирован разработчиком.', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH]{FFFFFF} Доступ к StateHelper был заблокирован разработчиком.', 3000)
+		end
+		return
+	end
 	if inst_suc_font[1] and inst_suc_font[2] then
 		windows.main[0] = not windows.main[0]
 		if windows.main[0] then
+			if sampIsLocalPlayerSpawned() then
+				local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
+				my = {id = myid, nick = sampGetPlayerNickname(myid)}
+			else
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH]{FFFFFF} Дождитесь спавна персонажа перед использованием.', 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH]{FFFFFF} Дождитесь спавна персонажа перед использованием.', 3000)
+				end
+				windows.main[0] = false
+				return
+			end
 			sx, sy = getScreenResolution()
 			fix_bug_input_bool = true
 			if setting.anim_win then
@@ -251,25 +275,55 @@ function deep_copy(orig, copies) --> Копирование массива с учётом цикличных ссыл
 end
 
 --> Несохраняемая информация
+local smartSuState = {
+	isActive = windows.smart_su,
+	targetId = new.int(0),
+	searchQuery = '',
+	reasons = {},
+	chapterStates = {},
+	selectedArticle = nil,
+	showPenaltySelector = new.bool(false),
+	anim = {
+		win_x = new.float(sx + 400),
+		win_y = new.float(sy / 2),
+		is_opening = false,
+		is_closing = false
+	}
+}
+local smartTicketState = {
+
+}
+local poltarget = nil
+local afk_start_time = 0
+local is_afk = false
+local doc_numb = false
+local unprison_id = nil
 local BuffSize = 32
 local KeyboardLayoutName = ffi.new('char[?]', BuffSize)
 local LocalInfo = ffi.new('char[?]', BuffSize)
 local month = {'Января', 'Февраля', 'Марта', 'Апреля', 'Мая', 'Июня', 'Июля', 'Августа', 'Сентября', 'Октября', 'Ноября', 'Декабря'}
 math.randomseed(os.time())
 
+cssInjected = false
+unprison = false
+ui_state = false
+isCefScript = false
 first_start = 0
 anim_clock = os.clock()
 anim = 0
 an = {[1] = 4, [2] = 0.001, [3] = 0, [4] = 187, [5] = {0, 420, 0, 0, 0}, [6] = {0.00, 1}, [7] = {0.00, 0.00, 0.00}, [8] = {0.00, 0.00, 0.00, 0.00, 0.00, 0.00},
 	[9] = {0, 0, 0, 0}, [10] = {0.00, 0}, [11] = {0, 0}, [12] = {0, 0, false}, [13] = 0, [14] = {0, 0, 0}, [15] = 0, [16] = 0, [17] = {0.00, 0.00, 0.00}, [18] = {0.00, 0.00, 0.00, 0.00, 0.00, 0.00},
-	[19] = {0.00, 0.00}, [20] = {0.00, 0.00, 0.00}, [21] = {0, 0}, [22] = {0, 0, 0, 0, 0}, [23] = 0, [24] = {0, 0, 0, 0, 0}, [25] = {0, 0},
+	[19] = {0.00, 0.00}, [20] = {0.00, 0.00, 0.00}, [21] = {0, 0, 0}, [22] = {0, 0, 0, 0, 0}, [23] = 0, [24] = {0, 0, 0, 0, 0}, [25] = {0, 0},
 	[26] = 0, [27] = 0, [28] = 0, [29] = 0, [30] = {0, 0}}
 stop_anim = {false}
 tab = 'settings'
 name_tab = u8'Главное'
 tab_settings = 1
 bool_go_stat_set = false
+track_time = true
 lspawncar = false
+carcers = false
+is_mini_player_pos = false
 close_win = {main = false, fast = false}
 imgui.Scroller = {
 	id_bool_scroll = {}
@@ -306,7 +360,6 @@ text_godeath = ''
 id_player_go = '0'
 my = {id = 0, nick = 'Nick_Name'}
 error_spawn = false
-kick_afk_buf = 0
 close_serv = false
 cur_cmd = ''
 edit_cmd = false
@@ -347,6 +400,7 @@ bool_sob_rp_scroll = false
 run_sob = false
 sob_info = {}
 text_sob_chat = ''
+support_text = ''
 new_reminder = false
 new_rem = {}
 last_mouse_pos = {0, 0}
@@ -635,6 +689,22 @@ gun_orig = {
 		put = true,
 		take_rp = u8'/me достал{sex[][а]} снайперскую винтовку "McMillian TAC-50"',
 		put_rp = u8'/me убрал{sex[][а]} снайперскую винтовку "McMillian TAC-50" за спину'
+	},
+	[31] = {
+		i_gun = 42,
+		name_gun = 'Огнетушитель',
+		take = true,
+		put = true,
+		take_rp = u8'/me достал{sex[][а]} огнетушитель',
+		put_rp = u8'/me убрал{sex[][а]} огнетушитель за спину'
+	},
+	[32] = {
+		i_gun = 93,
+		name_gun = 'Оглушающий пистолет',
+		take = true,
+		put = true,
+		take_rp = u8'/me достал{sex[][а]} оглушающий пистолет из кобуры',
+		put_rp = u8'/me убрал{sex[][а]} спрятал оглушающий пистолет в кобуру'
 	}
 }
 anti_spam_gun = {-1, false, 0}
@@ -671,28 +741,37 @@ level_fire = 1
 confirm_action_dialog = false
 popup_open_tags_call = false
 server = ''
+s_na = ''
 search_cmd = ''
 developer_mode = 0
 dev_mode = false
 windir = os.getenv('windir')
 status_sc = 0
 UID_SH_SUPPORT = {}
-
+signcheck = false
+command_queue = {}
+localVehicleVersion = '1'
+local tenCodes = {}
+vehicleNames = {}
 --> Главные настройки
 setting = {
+	mini_player_pos = { x = sx / 2, y = sy - 60 },
 	first_start = true,
+	prinfo = false,
 	cl = 'Black',
 	color_def = {0.00, 0.48, 1.00},
 	color_def_num = 1,
 	hi_mes = true,
 	anim_win = true,
+	cef_notif = true,
 	win_key = {'', {}},
+	window_alpha = 1.0,
 	cmd_open_win = '',
 	tab = {'settings', 'cmd', 'shpora', 'dep', 'sob', 'reminder', 'stat', 'music', 'rp_zona', 'actions', 'help'},
 	auto_update = false,
 	name_rus = '',
 	sex = 1,
-	org = 1,
+	org = 5,
 	job_title = u8'Не определено',
 	rank = 10,
 	put_mes = {false, false, false, false, false, false, false, false, false, false, false, false, false, false},
@@ -702,6 +781,9 @@ setting = {
 	auto_cmd_time = '',
 	auto_cmd_r = '',
 	teg_r = '',
+	time = '',
+	weather = '',
+	watherlock = false,
 	price = {
 		{
 			lec = '10000',
@@ -724,6 +806,19 @@ setting = {
 			exc = {'230000', '330000', '390000'},
 			taxi = {'500000', '750000', '1000000'},
 			meh = {'500000', '750000', '1000000'}
+		},
+		{
+			box = '0',
+			eat = '0',
+			cloth = '0',
+			trash = '0',
+			min = '0',
+			task1 = '0',
+			task2 ='0',
+			task3 ='0',
+			task4 ='0',
+			task5 ='0',
+			task6 = '0'
 		}
 	},
 	fast = {
@@ -795,6 +890,8 @@ setting = {
 		auto_warn = true,
 		chat = true,
 		close_doc = true,
+		hide_doc = true,
+		use_original_color = true,
 		rp_q = {
 			{name = u8'Попросить документы', rp = {u8'Для трудоустройства необходимо предоставить следующий пакет документов:', u8'Паспорт, медицинскую карту и лицензии.', u8'/n Отыгрывая, с использованием команд /me, /do, /todo'}},
 			{name = u8'Рассказать о себе', rp = {u8'Хорошо, расскажите немного о себе.'}},
@@ -833,6 +930,12 @@ setting = {
 	scene = {},
 	visible_fast = 100,
 	replace_not_flood = true,
+	color_nick = false,
+	replace_ic = true,
+	replace_s = true,
+	replace_c = true,
+	replace_b = true,
+	chat_corrector = false,
 	auto_edit = false,
 	command_tabs = {'', '', '', '', '', '', '', '', '', '', '', '', '', '', ''},
 	key_tabs = {{'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}},
@@ -849,6 +952,7 @@ setting = {
 		ses_day = false,
 		ses_afk = false,
 		ses_all = false,
+		stop_timer = false,
 		visible = 60
 	},
 	position_stat = {x = sx - 160, y = sy / 2 - 50},
@@ -892,8 +996,35 @@ setting = {
 	},
 	mb_tags = false,
 	sob_moto_lic = false,
+	blockl = false,
 	time_offset = 0,
 	close_button = true,
+	police_settings = {
+		smart_su = true,
+		smart_su_radio_req = false,
+		smart_ticket = true,
+		smart_ticket_trade = false,
+		siren = true,
+		siren_key = {'C', {67}},
+		siren_on_rp = u8'/me протянул{sex[][а]} руку к панели и включил{sex[][а]} сирену',
+		siren_off_rp = u8'/me нажал{sex[][а]} кнопку на панели и отключил{sex[][а]} сирену',
+		ten_code = true,
+		auto_z = false,
+		auto_inves = false,
+		cmd_patrol = 'patrol',
+		wanted_list = {
+			func = false, 
+			dialog = false, 
+			invers = false, 
+			interior = false, 
+			size = 12, 
+			flag = 5, 
+			dist = 21, 
+			vis = 70, 
+			color = {title = 0xFFFF8585, default = 0xFFFFFFFF, work = 0xFFFF8C00},
+			pos = {x = sx - 30, y = sy / 3}
+		}
+	},
 	playlist = {},
 	new_mc = true,
 	wrap_text_chat = {
@@ -945,10 +1076,65 @@ end
 
 function save_cmd()
 	if not setting.first_start then
-		local f = io.open(dir .. '/State Helper/Отыгровки.json', 'w')
-		f:write(encodeJson(cmd))
-		f:flush()
-		f:close()
+		local base_dir = dir .. '/State Helper/Отыгровки/'
+		if not doesDirectoryExist(base_dir) then
+			createDirectory(base_dir)
+		end
+
+		local f_cat = io.open(base_dir .. 'categories.json', 'w')
+		if f_cat then
+			f_cat:write(encodeJson(cmd[2]))
+			f_cat:flush()
+			f_cat:close()
+		end
+		
+		local existing_files = {}
+		for folder_data in lfs.dir(base_dir) do
+			if folder_data ~= "." and folder_data ~= ".." and folder_data ~= "categories.json" then
+				local folder_path = base_dir .. folder_data
+				if doesDirectoryExist(folder_path) then
+					for file in lfs.dir(folder_path) do
+						if file:match('%.json$') then
+							existing_files[folder_path .. '/' .. file] = true
+						end
+					end
+				end
+			end
+		end
+
+		local current_files = {}
+		for _, command_obj in ipairs(cmd[1]) do
+			local file_name = command_obj.cmd
+			if not file_name or file_name == '' then
+				file_name = tostring(command_obj.UID)
+			end
+
+			if file_name then
+				local folder_index = command_obj.folder
+				if folder_index and cmd[2][folder_index] then
+					local folder_name = cmd[2][folder_index][1]
+					local folder_path = base_dir .. folder_name .. '/'
+					if not doesDirectoryExist(folder_path) then
+						createDirectory(folder_path)
+					end
+
+					local file_path = folder_path .. file_name .. '.json'
+					current_files[file_path] = true
+					local f_cmd = io.open(file_path, 'w')
+					if f_cmd then
+						f_cmd:write(encodeJson(command_obj))
+						f_cmd:flush()
+						f_cmd:close()
+					end
+				end
+			end
+		end
+		
+		for file_path, _ in pairs(existing_files) do
+			if not current_files[file_path] then
+				os.remove(file_path)
+			end
+		end
 	end
 end
 	
@@ -1075,89 +1261,116 @@ imgui.OnInitialize(function()
 end)
 
 function CefDialog()
-    local document_opened = false
+	local document_opened = false
 	addEventHandler('onReceivePacket', function(id, bs)
-        if id == 220 then
-            raknetBitStreamIgnoreBits(bs, 8)
-            if raknetBitStreamReadInt8(bs) == 17 then
-                raknetBitStreamIgnoreBits(bs, 32)
-                local length = raknetBitStreamReadInt16(bs)
-                local encoded = raknetBitStreamReadInt8(bs)
-                if length > 0 then
-                    local text = (encoded ~= 0) and raknetBitStreamDecodeString(bs, length + encoded) or raknetBitStreamReadString(bs, length)
-                    local event, body = text:match("window%.executeEvent%('(.+)',%s*`%[(.+)%]`%);")
+		if id == 220 then
+			raknetBitStreamIgnoreBits(bs, 8)
+			if raknetBitStreamReadInt8(bs) == 17 then
+				raknetBitStreamIgnoreBits(bs, 32)
+				local length = raknetBitStreamReadInt16(bs)
+				local encoded = raknetBitStreamReadInt8(bs)
+				if length > 0 then
+					local text = (encoded ~= 0) and raknetBitStreamDecodeString(bs, length + encoded) or raknetBitStreamReadString(bs, length)
+					local event, body = text:match("window%.executeEvent%('(.+)',%s*`%[(.+)%]`%);")
 
-                    if run_sob then
-                        if event == 'event.documents.inititalizeData' then
-                            local data = json.decode(body)
-                            local document_type = data['type']
+					if run_sob then
+						if setting.sob.hide_doc and setting.sob.close_doc and not isCefScript then
+							sendJav(cef_script)
+							isCefScript = true
+						end
+						if event == 'event.documents.inititalizeData' then
+							local data = json.decode(body)
+							local document_type = data['type']
 
-                            if document_type == 1 then 		--> Паспорт
-                               if data['name'] ~= sob_info.nick then
-                                	return
-                                end
-                                sob_info.valid = true
-                                local sex = data['sex']
-                                local birthday = data['birthday']
-                                local zakono = tonumber(tostring(data['zakono']):match("%d+")) or -2
-                                local level = tonumber(tostring(data['level']):match("%d+")) or -2
-                                local agenda = tostring(data['agenda'] or "Нет")
+							if document_type == 1 then 		--> Паспорт
+								if data['name'] ~= sob_info.nick then
+									if setting.sob.hide_doc and setting.sob.close_doc then
+										if not setting.cef_notif then
+											sampAddChatMessage('[SH]{FFFFFF} Нельзя просматривать чужие документы при включенной функции \'Скрывать документы\'', 0xFF5345)
+										else
+											cefnotig('{FF5345}[SH]{FFFFFF} Нельзя просматривать чужие документы при включенной функции \'Скрывать документы\'', 4000)
+										end
+										sendCef('documents.close')
+										sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+										isCefScript = false
+									end
+									sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+									isCefScript = false
+									return
+								end
+								sob_info.valid = true
+								local sex = data['sex']
+								local birthday = data['birthday']
+								local zakono = tonumber(tostring(data['zakono']):match("%d+")) or -2
+								local level = tonumber(tostring(data['level']):match("%d+")) or -2
+								local agenda = tostring(data['agenda'] or "Нет")
+								local charity_info = data['charity']
+								if agenda:find("Имеется", 1, true) then
+									sob_info.ticket = 1
+								else
+									sob_info.ticket = 2
+								end
+								if charity_info ~= 'Нет' then
+									sob_info.warn = 0
+								else
+									sob_info.warn = 1
+								end
+								sob_info.law = zakono
+								sob_info.exp = level
+							if setting.sob.close_doc then
+								lua_thread.create(function()
+									wait(200)
+									sendCef('documents.changePage|2')
+								end)
+							end
+							elseif sob_info.valid then
+								if document_type == 2 then 		--> Лицензии
+									local licenses = data['info']
 
-                                if agenda:find("Имеется", 1, true) then
-                                    sob_info.ticket = 1
-                                else
-                                    sob_info.ticket = 2
-                                end
-                                sob_info.law = zakono
-                                sob_info.exp = level
+									sob_info.car = 2
+									sob_info.moto = 2
+									sob_info.gun = 2
 
-                                sendCef('documents.changePage|2')
-                            elseif sob_info.valid then
-                                if document_type == 2 then 		--> Лицензии
-                                    local licenses = data['info']
+									for _, v in pairs(licenses) do
+										local license = v['license']
+										local date_text = v['date_text'] or ""
+										local is_active = (date_text:find("Действует", 1, true) or date_text:find("Бессрочная", 1, true)) and 1 or 2
 
-                                    sob_info.car = 2
-                                    sob_info.moto = 2
-                                    sob_info.gun = 2
-
-                                    for _, v in pairs(licenses) do
-                                        local license = v['license']
-                                        local date_text = v['date_text'] or ""
-                                        local is_active = date_text:find("Действует", 1, true) and 1 or 2
-
-                                        if license == "car" then
-                                            sob_info.car = is_active
-                                        elseif license == "bike" then
-                                            sob_info.moto = is_active
-                                        elseif license == "gun" then
-                                            sob_info.gun = is_active
-                                        end
-                                    end
-
-                                    sendCef('documents.changePage|4')
-                                elseif document_type == 4 then 		--> Мед.карта
-                                    local zavisimost = tonumber(data['zavisimost']) or 0
-                                    local state = data['state'] or ""
+										if license == "car" then
+											sob_info.car = is_active
+										elseif license == "bike" then
+											sob_info.moto = is_active
+										elseif license == "gun" then
+											sob_info.gun = is_active
+										end
+									end
+									if setting.sob.close_doc then
+										lua_thread.create(function()
+											wait(200)
+											sendCef('documents.changePage|4')
+										end)
+									end
+								elseif document_type == 4 then 		--> Мед.карта
+									local zavisimost = tonumber(data['zavisimost']) or 0
+									local state = data['state'] or ""
 									 local sub_text = (data['demorgan'] and data['demorgan']['sub_text']) or ""
 
+									local med_status_m = {
+										["Полностью здоров"] = 1,
+										["Псих. отклонени"] = 2,
+										["Псих. нездоров"] = 3,
+										["Не определён"] = 4
+									}
 
-                                    local med_status_m = {
-                                        ["Полностью здоров"] = 1,
-                                        ["Псих. отклонени"] = 2,
-                                        ["Псих. нездоров"] = 3,
-                                        ["Не определён"] = 4
-                                    }
-
-									
-                                    local med_status = 4
-                                    local found_status = false
-                                    for key, value in pairs(med_status_m) do
-                                        if state:find(key, 1, true) then
-                                            med_status = value
-                                            found_status = true
-                                            break
-                                        end
-                                    end
+									local med_status = 4
+									local found_status = false
+									for key, value in pairs(med_status_m) do
+										if state:find(key, 1, true) then
+											med_status = value
+											found_status = true
+											break
+										end
+									end
 									
 									if sub_text == "Обновите мед. карту" then
 										sob_info.org = 2
@@ -1165,87 +1378,368 @@ function CefDialog()
 										sob_info.org = 1
 									end
 
-                                    if not found_status then
-                                        med_status = 5
-                                        sob_info.org = 3
-                                    end
+									if not found_status then
+										med_status = 5
+										sob_info.org = 3
+									end
 
-                                    sob_info.narko = zavisimost
-                                    sob_info.med = med_status
-                                    sendCef('documents.changePage|8')
-                                elseif document_type == 8 then			--> Военный билет
-                                    local have_army_ticket = tostring(data['have_army_ticket'] or 1)
+									sob_info.narko = zavisimost
+									sob_info.med = med_status
+									if setting.sob.close_doc then
+										lua_thread.create(function()
+											wait(200)
+											sendCef('documents.changePage|8')
+										end)
+									end
+								elseif document_type == 8 then			--> Военный билет
+									local have_army_ticket = tostring(data['have_army_ticket'] or 1)
 
-                                    if have_army_ticket:find("Есть", 1, true) then
-                                        sob_info.bilet = 0
-                                    elseif have_army_ticket:find("Нет", 1, true) then
-                                        sob_info.bilet = 1
-                                    else
-                                        sob_info.bilet = 1
-                                    end
-                                    sendCef('documents.close')
-                                end
+									if have_army_ticket:find("Есть", 1, true) then
+										sob_info.bilet = 0
+									elseif have_army_ticket:find("Нет", 1, true) then
+										sob_info.bilet = 1
+									else
+										sob_info.bilet = 1
+									end
+									if setting.sob.close_doc then
+										lua_thread.create(function()
+											sendCef('documents.close')
+											wait(1000)
+											sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+											sendCef('documents.close')
+											isCefScript = false
+										end)
+									end
+								end
 
-                            end
-                        end
+							end
+						end
 						if event == 'event.employment.updateData' then --> Трудовая книжка
 							local data = json.decode(body)
 							local member = data['member']
-							if member == 0 then						   --> Проверка на оргу, потом поменяю
+							if member == 0 then						   --> Проверка на оргу, потом поменяю :)
 								sob_info.warn = 1
 							else
 								sob_info.warn = 0
 							end
-							sendCef('loadInfo')
-							sendCef('selectMenuItem|4')
-							sendCef('exit')
+							if setting.sob.close_doc then
+								sendCef('loadInfo')
+								sendCef('selectMenuItem|4')
+								sendCef('exit')
+							end
 						end
-                    end
-					if event == 'event.documents.inititalizeData' then --> Отыгровка после закрытия паспорта
+					end
+
+					if event == 'event.documents.inititalizeData' then
 						local data = json.decode(body)
 						if data['name'] ~= my.nick and data['type'] == 1 then
 							document_opened = true
+							if setting.auto_close_doc then
+								lua_thread.create(function()
+									wait(0)
+									sampSendChat("/me взял".. sex('', 'а') .. " документ с рук человека, затем начал".. sex('', 'а') .. " его осматривать")
+								end)
+							end
 						end
 					end
-					
-					if event == 'event.arizonahud.updateGeoPositionVisibility' and body == "true" then --> Отыгровка после закрытия паспорта
+
+					if event == 'event.arizonahud.updateGeoPositionVisibility' and body == "false" then --> Отыгровка после закрытия паспорта
 						if document_opened and setting.auto_close_doc then
-							sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
+							if run_sob then
+								lua_thread.create(function()
+									wait(1000)
+									sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
+								end)
+							else
+								lua_thread.create(function()
+									wait(100)
+									sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
+								end)
+							end
 							document_opened = false
 						end
 					end
-                end
-            end
-        end
-    end)
+				end
+			end
+		end
+	end)
 
 function sendCef(str)
-    local bs = raknetNewBitStream()
-    raknetBitStreamWriteInt8(bs, 220)
-    raknetBitStreamWriteInt8(bs, 18)
-    raknetBitStreamWriteInt16(bs, #str)
-    raknetBitStreamWriteString(bs, str)
-    raknetBitStreamWriteInt32(bs, 0)
-    raknetSendBitStream(bs)
-    raknetDeleteBitStream(bs)
+	local bs = raknetNewBitStream()
+	raknetBitStreamWriteInt8(bs, 220)
+	raknetBitStreamWriteInt8(bs, 18)
+	raknetBitStreamWriteInt16(bs, #str)
+	raknetBitStreamWriteString(bs, str)
+	raknetBitStreamWriteInt32(bs, 0)
+	raknetSendBitStream(bs)
+	raknetDeleteBitStream(bs)
 	end
 end
 
+function sendJav(code)
+	local bs = raknetNewBitStream()
+	raknetBitStreamWriteInt8(bs, 17)
+	raknetBitStreamWriteInt32(bs, 0)
+	raknetBitStreamWriteInt16(bs, #code)
+	raknetBitStreamWriteInt8(bs, 0)
+	raknetBitStreamWriteString(bs, code)
+	raknetEmulPacketReceiveBitStream(220, bs)
+	raknetDeleteBitStream(bs)
+end
+
+function evalcef(code, encoded)
+	encoded = encoded or 0
+	local bs = raknetNewBitStream()
+	raknetBitStreamWriteInt8(bs, 17)
+	raknetBitStreamWriteInt32(bs, 0)
+	raknetBitStreamWriteInt16(bs, #code)
+	raknetBitStreamWriteInt8(bs, encoded)
+	raknetBitStreamWriteString(bs, code)
+	raknetEmulPacketReceiveBitStream(220, bs)
+	raknetDeleteBitStream(bs)
+end
+
+function evalanon(code) sendJav(("(() => {%s})()"):format(code)) end
+
+function injNotif()
+	if cssInjected then return end
+	evalanon("let s=document.createElement('style');s.innerHTML='@keyframes cefNotifySlideIn{from{transform:translate(-50%,150%);opacity:0}to{transform:translate(-50%,0);opacity:1}}@keyframes cefNotifySlideOut{from{transform:translate(-50%,0);opacity:1}to{transform:translate(-50%,150%);opacity:0}}@keyframes cefNotifyFadeOut{from{opacity:1}to{opacity:0}}';document.head.appendChild(s);")
+	cssInjected = true
+end
+
+function cefnotig(samp_text, duration_ms)
+	local text_html = "<span style='color:#f2f2f2;'>" .. samp_text .. "</span>"
+	text_html = text_html:gsub("{(%x%x%x%x%x%x)}", "</span><span style='color:#%1;'>")
+	text_html = text_html:gsub("`", "\\`")
+	local bgColor = "rgba(26, 26, 26, 0.9)"
+	local elementId = 'cefNotify_' .. math.random(1000, 9999)
+	local js_code = string.format(
+	[[
+		let oldNotifies = document.querySelectorAll('.cefNotifyInstance');
+		oldNotifies.forEach(oldEl => {
+			let computedStyle = window.getComputedStyle(oldEl);
+			let currentAnimation = computedStyle.animationName || computedStyle.webkitAnimationName;
+			if (currentAnimation !== 'cefNotifySlideOut') {
+				oldEl.style.animation = `cefNotifyFadeOut %dms ease-in forwards`;
+				setTimeout(() => { if(oldEl) oldEl.remove(); }, %d);
+			}
+		});
+		let el=document.createElement('div');el.id='%s';
+		el.classList.add('cefNotifyInstance');
+		el.innerHTML=`<div style="font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#f2f2f2;text-align:center;padding-bottom:8px">StateHelper</div><hr style="border:none;height:1px;background-color:#2e2e2e;margin:0 0 8px 0"><div style="font-family:Arial,sans-serif;font-size:20px;color:#f2f2f2">%s</div>`;
+		el.style.cssText=`position:fixed;bottom:10%%;left:50%%;transform:translate(-50%%,0);background:%s;padding:12px 24px;border-radius:7px;border:1px solid #2e2e2e;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:99999;pointer-events:none;animation:cefNotifySlideIn %dms ease-out forwards`;
+		document.body.appendChild(el);
+		setTimeout(()=>{let c=document.getElementById('%s');if(c)c.style.animation=`cefNotifySlideOut %dms ease-in forwards`},%d);
+		setTimeout(()=>{let c=document.getElementById('%s');if(c)c.remove()},%d);
+	]],
+	300, 300, 
+	elementId, text_html, bgColor, 400, elementId, 400, duration_ms - 400, elementId, duration_ms
+	)
+	evalanon(js_code)
+end
+ 
+cef_script = [[
+	(function() {
+		function addCssRule(selector, property, value) {
+			const style = document.createElement('style');
+			style.textContent = selector + ' { ' + property + ': ' + value + ' !important; }';
+			document.head.appendChild(style);
+			style.setAttribute('data-cef-hider-style', 'true');
+		}
+		addCssRule('.documents__content.documents__content--pasport', 'display', 'none');
+		addCssRule('.documents__navigation', 'display', 'none');
+		const pasportContent = document.querySelector('.documents__content.documents__content--pasport');
+		if (pasportContent) pasportContent.style.display = 'none';
+		const navigation = document.querySelector('.documents__navigation');
+		if (navigation) navigation.style.display = 'none';
+		const observer = new MutationObserver(mutationsList => {
+			for (const mutation of mutationsList) {
+				if (mutation.type === 'childList' || mutation.type === 'subtree' || mutation.type === 'attributes') {
+					const pasportContent = document.querySelector('.documents__content.documents__content--pasport');
+					if (pasportContent && pasportContent.style.display !== 'none') {
+						pasportContent.style.display = 'none';
+					}
+					const navigation = document.querySelector('.documents__navigation');
+					if (navigation && navigation.style.display !== 'none') {
+						navigation.style.display = 'none';
+					}
+				}
+			}
+		});
+		observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+		window.cleanupCefHider = function() {
+			if (observer) observer.disconnect();
+			const styles = document.querySelectorAll('style[data-cef-hider-style="true"]');
+			styles.forEach(style => {
+				style.remove();
+			});
+			const pasportContentToUnHide = document.querySelector('.documents__content.documents__content--pasport');
+			if (pasportContentToUnHide) {
+				pasportContentToUnHide.style.display = '';
+			}
+			const navigationToUnHide = document.querySelector('.documents__navigation');
+			if (navigationToUnHide) {
+				navigationToUnHide.style.display = '';
+			}
+		};
+	})();
+]]
 
 function main()
 	repeat wait(300) until isSampAvailable()
-	
+	reset_state()
+	injNotif()
+	create_folder('Police', 'для полиции')
+
+	local function loadTenCodes()
+		local tencode_path = dir .. '/State Helper/Police/tencode.json'
+		if doesFileExist(tencode_path) then
+			local file = io.open(tencode_path, 'r')
+			if file then
+				local data = file:read('*a')
+				file:close()
+				local success, all_codes = pcall(decodeJson, data)
+				if success then
+					local server_key_found = nil
+					for key, _ in pairs(all_codes) do
+						if key:find(s_na) then
+							server_key_found = key
+							break
+						end
+					end
+					if server_key_found then
+						tenCodes = all_codes[server_key_found]
+					else
+						tenCodes = all_codes["Default_Winslow_Scottdale_SaintRose_QueenCreek"] or {}
+					end
+				end
+			end
+		end
+	end
+
+	local tencode_path = dir .. '/State Helper/Police/tencode.json'
+	if not doesFileExist(tencode_path) then
+		downloadUrlToFile('https://github.com/wears22080/StateHelper/raw/refs/heads/main/StateHelper%203.0/cops/tencode.json', tencode_path, function(id, status)
+			if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+				lua_thread.create(function()
+					wait(1500)
+					loadTenCodes()
+				end)
+			end
+		end)
+	else
+		loadTenCodes()
+	end
+
+	checkVehicleData()
 	thread = lua_thread.create(function() return end)
 	pos_new_memb = lua_thread.create(function() return end)
 	
 	setting = apply_settings('Настройки.json', 'настроек', setting)
-	cmd = apply_settings('Отыгровки.json', 'отыгровок', cmd)
+	local settingsUpdated = false
+	
+	if setting.police_settings == nil or type(setting.police_settings) ~= 'table' then
+		setting.police_settings = { wanted_list = nil }
+		settingsUpdated = true
+	end
+	if setting.police_settings.wanted_list == nil or type(setting.police_settings.wanted_list) ~= 'table' then
+		setting.police_settings.wanted_list = { func = false, dialog = false, invers = false, interior = false, size = 12, flag = 5, dist = 21, vis = 70, color = {title = 0xFFFF8585, default = 0xFFFFFFFF, work = 0xFFFF8C00}, pos = {x = sx - 30, y = sy / 3} }
+		settingsUpdated = true
+	end
+
+	local existingGunIds = {}
+	for _, weapon in ipairs(setting.gun) do
+		existingGunIds[weapon.i_gun] = true
+	end
+	for _, defaultWeapon in ipairs(gun_orig) do
+		if not existingGunIds[defaultWeapon.i_gun] then
+			table.insert(setting.gun, deep_copy(defaultWeapon))
+			settingsUpdated = true
+		end
+	end
+
+	if settingsUpdated then
+		save()
+	end
+	
+	local old_cmds_file = dir .. '/State Helper/Отыгровки.json'
+	local base_dir = dir .. '/State Helper/Отыгровки/'
+
+	if doesFileExist(old_cmds_file) then	-- 976
+		sampAddChatMessage('[SH]{FFFFFF} Обнаружен старый файл отыгровок. Начинаем перенос в новую структуру...', 0xFF5345)
+		lua_thread.create(function()
+			wait(100)
+			local f_old = io.open(old_cmds_file, 'r')
+			if f_old then
+				local old_data = f_old:read('*a')
+				f_old:close()
+				
+				local res, old_cmd_table = pcall(decodeJson, old_data)
+				if res and type(old_cmd_table) == 'table' then
+					cmd = old_cmd_table
+					save_cmd()
+					os.remove(old_cmds_file)
+					sampAddChatMessage('[SH]{FFFFFF} Перенос успешно завершен! Скрипт перезагрузится для применения изменений.', 0xFF5345)
+					wait(1500)
+					scr:reload()
+				else
+					sampAddChatMessage('[SH]{FFFFFF} Ошибка при чтении старого файла отыгровок. Перенос отменен.', 0xFF5345)
+					create_folder('Отыгровки', 'отыгровок')
+				end
+			end
+		end)
+	else
+		if doesDirectoryExist(base_dir) then
+			local cat_file_path = base_dir .. 'categories.json'
+			if doesFileExist(cat_file_path) then
+				local f_cat = io.open(cat_file_path, 'r')
+				if f_cat then
+					local cat_data = f_cat:read('*a')
+					f_cat:close()
+					local res, cat_tbl = pcall(decodeJson, cat_data)
+					if res and type(cat_tbl) == 'table' then
+						cmd[2] = cat_tbl
+					end
+				end
+			end
+
+			cmd[1] = {}
+			for folder_index, folder_data in ipairs(cmd[2]) do
+				local folder_name = folder_data[1]
+				local folder_path = base_dir .. folder_name .. '/'
+				if doesDirectoryExist(folder_path) then
+					for file in lfs.dir(folder_path) do
+						if file:match('%.json$') then
+							local file_path = folder_path .. file
+							local f_cmd = io.open(file_path, 'r')
+							if f_cmd then
+								local cmd_data = f_cmd:read('*a')
+								f_cmd:close()
+								local res, cmd_obj = pcall(decodeJson, cmd_data)
+								if res and type(cmd_obj) == 'table' then
+									table.insert(cmd[1], cmd_obj)
+								else
+									if not setting.cef_notif then
+										sampAddChatMessage('[SH]{FFFFFF} Ошибка чтения файла отыгровки: ' .. file, 0xFF5345)
+									else
+										cefnotig('{FF5345}[SH]{FFFFFF} Ошибка чтения файла отыгровки: ' .. file, 4000)
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		else
+			create_folder('Отыгровки', 'отыгровок')
+		end
+	end
 	
 	repeat wait(100) until sampIsLocalPlayerSpawned()
 	local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
 	my = {id = myid, nick = sampGetPlayerNickname(myid)}
 	
-	lua_thread.create(activate_function_members)
+	lua_thread.create(update_lists)
 	lua_thread.create(time)
 	create_folder('Шрифты', 'шрифтов')
 	if #setting.fast.key ~= 0 then
@@ -1263,7 +1757,17 @@ function main()
 	CefDialog()
 	local ip, port = sampGetCurrentServerAddress()
 	server = ip .. ':' .. port
-	
+	for server_name, ip_list in pairs(ips) do
+		for _, ip_address in ipairs(ip_list) do
+			if ip_address == server then
+				s_na = server_name
+				break
+			end
+		end
+		if s_na ~= '' then
+			break
+		end
+	end
 	if #cmd[1] ~= 0 then
 		local bool_uid_save = false
 		for i = 1, #cmd[1] do
@@ -1279,7 +1783,7 @@ function main()
 					end
 				end
 			end
-			
+
 			if cmd[1][i].cmd ~= '' then
 				sampRegisterChatCommand(cmd[1][i].cmd, function(arg) cmd_start(arg, tostring(cmd[1][i].UID) .. cmd[1][i].cmd) end)
 				
@@ -1294,7 +1798,7 @@ function main()
 					end
 				end
 				
-				if server == '185.169.134.3:7777' and cmd[1][i].cmd == 'mc' and setting.new_mc then 
+				if s_na == 'Phoenix' and cmd[1][i].cmd == 'mc' and setting.new_mc then 
 					setting.new_mc = false
 					cmd[1][i] = mc_phoenix
 					bool_uid_save = true
@@ -1314,10 +1818,11 @@ function main()
 	end
 	if #setting.shp ~= 0 then
 		for i = 1, #setting.shp do
-			sampRegisterChatCommand(setting.shp[i].cmd, function(arg) cmd_shpora_open(arg, tostring(setting.shp[i].UID) .. setting.shp[i].cmd) end)
-			if #setting.shp[i].key[2] ~= 0 then
-				rkeys.registerHotKey(setting.shp[i].key[2], 3, true, function() on_hot_key(setting.shp[i].key[2]) end)
-				table.insert(all_keys, setting.shp[i].key[2])
+			local shp_to_reg = setting.shp[i]
+			sampRegisterChatCommand(shp_to_reg.cmd, function(arg) cmd_shpora_open(arg, tostring(shp_to_reg.UID) .. shp_to_reg.cmd) end)
+			if #shp_to_reg.key[2] ~= 0 then
+				rkeys.registerHotKey(shp_to_reg.key[2], 3, true, function() on_hot_key(shp_to_reg.key[2]) end)
+				table.insert(all_keys, shp_to_reg.key[2])
 			end
 		end
 	end
@@ -1327,13 +1832,31 @@ function main()
 			table.insert(all_keys, setting.key_tabs[i][2])
 		end
 	end
-	
+	if setting.police_settings.siren and #setting.police_settings.siren_key[2] ~= 0 then
+		rkeys.registerHotKey(setting.police_settings.siren_key[2], 3, true, function() on_hot_key(setting.police_settings.siren_key[2]) end)
+		table.insert(all_keys, setting.police_settings.siren_key[2])
+	end
+	if setting.police_settings.smart_su and (setting.org >= 11 and setting.org <= 15) then
+		sampRegisterChatCommand('su', smart_su_func)
+		download_wanted_reasons()
+	end
+	--[[
+	if setting.police_settings.smart_ticket and (setting.org >= 11 and setting.org <= 15) then
+		sampRegisterChatCommand('ticket', smart_ticket_func)
+		download_ticket_reasons()
+	end]]
 	if setting.cl == 'White' then
 		change_design('White', false)
 	else
 		change_design('Black', false)
 	end
+	sampRegisterChatCommand("st", function(param) 
+		processCommand(param, "time") 
+	end)
 	
+	sampRegisterChatCommand("sw", function(param)
+		processCommand(param, "weather")
+	end)
 	if setting.godeath.func and setting.godeath.cmd_go then
 		sampRegisterChatCommand('go', function()
 			go_medic_or_fire()
@@ -1342,7 +1865,11 @@ function main()
 	
 	if setting.dep_off then
 		sampRegisterChatCommand('d', function()
-			sampAddChatMessage('[SH]{FFFFFF} Вы отключили команду /d в настройках.', 0xFF5345)
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Вы отключили команду /d Ънастройках.', 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH]{FFFFFF} Вы отключили команду /d Ънастройках.', 3000)
+			end
 		end)
 	end
 	
@@ -1381,7 +1908,11 @@ function main()
 		work = convert_color(setting.mb.color.work)
 	}
 	fontes = renderCreateFont('Trebuchet MS', setting.mb.size, setting.mb.flag)
-
+	col_wanted = {
+		title = convert_color(setting.police_settings.wanted_list.color.title),
+		default = convert_color(setting.police_settings.wanted_list.color.default)
+	}
+	fontes_wanted = renderCreateFont('Trebuchet MS', setting.police_settings.wanted_list.size, setting.police_settings.wanted_list.flag)
 	if setting.mb.func then
 		members_wait.members = true
 		sampSendChat('/members')
@@ -1390,7 +1921,11 @@ function main()
 	add_cmd_in_all_cmd()
 	
 	if setting.hi_mes then
-		sampAddChatMessage(string.format('[SH]{FFFFFF} %s, для активации главного меню, отправьте в чат {a8a8a8}/sh', my.nick:gsub('_',' ')), 0xFF5345)
+		if not setting.cef_notif then
+			sampAddChatMessage(string.format('[SH]{FFFFFF} %s, для активации главного меню, отправьте в чат {a8a8a8}/sh', my.nick:gsub('_',' ')), 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH]{FFFFFF} ' .. my.nick:gsub('_',' ') .. ', для активации главного меню, отправьте в чат {a8a8a8}/sh', 4000)
+		end
 	end
 	
 	if setting.first_start then
@@ -1403,155 +1938,194 @@ function main()
 	end
 	
 	while true do wait(0)
-		local current_time = os.clock()
-		anim = current_time - anim_clock
-		anim_clock = current_time
-		
-		if sampIsDialogActive() then
-    		lastDialogWasActive = os.clock()
-    	end
-		
-		res_targ, ped_tar = getCharPlayerIsTargeting(PLAYER_HANDLE)
-		if res_targ then
-			_, targ_id = sampGetPlayerIdByCharHandle(ped_tar)
-		end
-		
-		if setting.auto_tazer then
-			local num_weap = getCurrentCharWeapon(playerPed)
-			if num_weap == 3 and not bool_tazer then 
-				sampSendChat('/me сняв дубинку с пояса, взял' .. sex('', 'а') .. ' её в правую руку')
-				bool_tazer = true
-			elseif num_weap ~= 3 and bool_tazer then
-				sampSendChat('/me повесил' .. sex('', 'а') .. ' дубинку на пояс')
-				bool_tazer = false
-			end
-		end
-		
-		if send_chat_rp then
-			if setting.auto_close_doc then
-				sampSendChat("/me взял".. sex('', 'а') .. " документ с рук человека, затем начал".. sex('', 'а') .. " его осматривать")
-			else
-				local texts_rp_all = {
-					'/me взял' .. sex('', 'а') .. ' документ с рук человека напротив, внимательно его изучил' .. sex('', 'а') .. ', после чего вернул' .. sex('', 'а') .. ' обратно',
-					'/me внимательно рассмотрел' .. sex('', 'а') .. ' документ, который был передан ' .. sex('ему', 'ей') .. ' с рук человека напротив',
-					'/me взял' .. sex('', 'а') .. ' документ с рук человека и осмотрел' .. sex('', 'а') .. ' его с пристальным вниманием',
-					'/me взял' .. sex('', 'а') .. ' документ с рук собеседника и провел' .. sex('', 'а') .. ' по нему взглядом для ознакомления с его содержимым',
-					'/me взял' .. sex('', 'а') .. ' документ и тщательно изучил' .. sex('', 'а') .. ' его, после чего вернул' .. sex('', 'а') .. ' обратно'
-				}
-				local random_index = math.random(1, #texts_rp_all)
-				local text_rp = texts_rp_all[random_index]
-				sampSendChat(text_rp)
-			end
-			send_chat_rp = false
-		end
-		
-		if isKeyJustPressed(VK_Q) then
-			TEST = TEST + 1
-		end
-		
-		if not scene_active then
-			if setting.mb.func and not isGamePaused() and ((setting.mb.dialog and not sampIsDialogActive() and not sampIsCursorActive() and not sampIsChatInputActive() and not isSampfuncsConsoleActive()) or not setting.mb.dialog) then
-				render_members()
-			elseif setting.mb.func and pos_new_memb:status() ~= 'dead' then
-				render_members()
-			end
-		end
-		
-		if setting.time_hud or setting.display_map_distance.user or setting.display_map_distance.server then
-			if not isPauseMenuActive() and not isGamePaused() and not scene_active then
-				time_hud_func_and_distance_point()
-			end
-		end
-		
-		if setting.replace_not_flood then
-			if replace_not_flood[1] > 0 and not isGamePaused() then
-				if replace_not_flood[1] > 3 and replace_not_flood[4] < 255 then
-					replace_not_flood[4] = replace_not_flood[4] + (500 * anim)
-					if replace_not_flood[4] > 255 then replace_not_flood[4] = 255 end
-				elseif replace_not_flood[1] <= 3 and replace_not_flood[4] > 0 then
-					replace_not_flood[4] = replace_not_flood[4] - (500 * anim)
-					if replace_not_flood[4] < 0 then replace_not_flood[4] = 0 end
+		if not setting.blockl then
+			if wanted_update then
+				local new_wanted_list = {}
+				local existing_ids = {}
+				for _, player in ipairs(emp_wanted_players) do
+					if player.id and not existing_ids[player.id] then
+						table.insert(new_wanted_list, player)
+						existing_ids[player.id] = true
+					end
 				end
 				
-				if not sampIsChatInputActive() then
-					if replace_not_flood[5] == 1 then
-						renderFontDrawText(font_flood, 'Не флуди!', replace_not_flood[2], replace_not_flood[3] - 7, join_argb(replace_not_flood[4], 255, 64, 64))
-					else
-						renderFontDrawText(font_flood, 'Не флуди! X' .. replace_not_flood[5], replace_not_flood[2], replace_not_flood[3] - 7, join_argb(replace_not_flood[4], 255, 64, 64))
-					end
+				table.sort(new_wanted_list, function(a, b)
+					return tonumber(a.level) > tonumber(b.level)
+				end)
+				
+				wanted_players = new_wanted_list
+				wanted_info.online = #new_wanted_list
+				wanted_update = false
+			end
+			if #command_queue > 0 then
+				local cmd_to_run = table.remove(command_queue, 1)
+				if cmd_to_run then
+					sampProcessChatInput(cmd_to_run)
 				end
 			end
-		end
-		
-		if not isGamePaused() and play.status ~= 'NULL' then
-			control_song_when_finished()
-		elseif isGamePaused() and play.status == 'PLAY' then
-			if get_status_potok_song() == 1 then
-				bass.BASS_ChannelPause(play.stream)
-			end
-		end
-		
-		if play.status ~= 'NULL' and setting.mini_player then
-			windows.player[0] = true
-		else
-			windows.player[0] = false
-		end
-		
-		if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' and play.status ~= 'NULL' and get_status_potok_song() == 1 then
-			play.pos_time = time_song_position(play.len_time)
-		end
-		
-		if not isGamePaused() then
-			if scene_active or scene_edit_pos or (new_scene and scene.preview) then
-				scene_work()
-			end
-		end
-		
-		if setting.stat_on_screen.func then
-			windows.stat[0] = true
-		else
-			windows.stat[0] = false
-		end
-		
-		if setting.gun_func then
-			local gun_ped = getCurrentCharWeapon(playerPed)
+			connetion()
+			updateTime()
+			local current_time = os.clock()
+			anim = current_time - anim_clock
+			anim_clock = current_time
 			
-			for i = 1, #setting.gun do
-				if anti_spam_gun[1] ~= -1 and anti_spam_gun[1] ~= gun_ped and anti_spam_gun[1] ~= setting.gun[i].i_gun and anti_spam_gun[3] == 0 then
-					for m = 1, #setting.gun do
-						if setting.gun[m].put and setting.gun[m].i_gun == anti_spam_gun[1] then
-							sampSendChat(u8:decode(sex_decode(setting.gun[m].put_rp)))
-							break
+			if sampIsDialogActive() then
+				lastDialogWasActive = os.clock()
+			end
+			
+			res_targ, ped_tar = getCharPlayerIsTargeting(PLAYER_HANDLE)
+			if res_targ then
+				_, targ_id = sampGetPlayerIdByCharHandle(ped_tar)
+			end
+			
+			if setting.auto_tazer then
+				local num_weap = getCurrentCharWeapon(playerPed)
+				if num_weap == 3 and not bool_tazer then 
+					sampSendChat('/me сняв дубинку с пояса, взял' .. sex('', 'а') .. ' её в правую руку')
+					bool_tazer = true
+				elseif num_weap ~= 3 and bool_tazer then
+					sampSendChat('/me повесил' .. sex('', 'а') .. ' дубинку на пояс')
+					bool_tazer = false
+				end
+			end
+			
+			if send_chat_rp then
+				if not setting.auto_close_doc then
+					local texts_rp_all = {
+						'/me взял' .. sex('', 'а') .. ' документ с рук человека напротив, внимательно его изучил' .. sex('', 'а') .. ', после чего вернул' .. sex('', 'а') .. ' обратно',
+						'/me внимательно рассмотрел' .. sex('', 'а') .. ' документ, который был передан ' .. sex('ему', 'ей') .. ' с рук человека напротив',
+						'/me взял' .. sex('', 'а') .. ' документ с рук человека и осмотрел' .. sex('', 'а') .. ' его с пристальным вниманием',
+						'/me взял' .. sex('', 'а') .. ' документ с рук собеседника и провел' .. sex('', 'а') .. ' по нему взглядом для ознакомления с его содержимым',
+						'/me взял' .. sex('', 'а') .. ' документ и тщательно изучил' .. sex('', 'а') .. ' его, после чего вернул' .. sex('', 'а') .. ' обратно'
+					}
+					local random_index = math.random(1, #texts_rp_all)
+					local text_rp = texts_rp_all[random_index]
+					sampSendChat(text_rp)
+					send_chat_rp = false
+				end
+			end
+			
+			if isKeyJustPressed(VK_Q) then
+				TEST = TEST + 1
+			end
+			
+			if not scene_active then
+				if setting.mb.func and not isGamePaused() and ((setting.mb.dialog and not sampIsDialogActive() and not sampIsCursorActive() and not sampIsChatInputActive() and not isSampfuncsConsoleActive()) or not setting.mb.dialog) then
+					render_members()
+				elseif setting.mb.func and pos_new_memb:status() ~= 'dead' then
+					render_members()
+				end
+				if setting.police_settings.wanted_list.func and (setting.org >= 11 and setting.org <= 15) and not isGamePaused() and ((setting.police_settings.wanted_list.dialog and not sampIsDialogActive() and not sampIsCursorActive() and not sampIsChatInputActive() and not isSampfuncsConsoleActive()) or not setting.police_settings.wanted_list.dialog) then
+					render_wanted()
+				end
+			end
+			
+			if setting.time_hud or setting.display_map_distance.user or setting.display_map_distance.server then
+				if not isPauseMenuActive() and not isGamePaused() and not scene_active then
+					time_hud_func_and_distance_point()
+				end
+			end
+			
+			if setting.replace_not_flood then
+				if replace_not_flood[1] > 0 and not isGamePaused() then
+					if replace_not_flood[1] > 3 and replace_not_flood[4] < 255 then
+						replace_not_flood[4] = replace_not_flood[4] + (500 * anim)
+						if replace_not_flood[4] > 255 then replace_not_flood[4] = 255 end
+					elseif replace_not_flood[1] <= 3 and replace_not_flood[4] > 0 then
+						replace_not_flood[4] = replace_not_flood[4] - (500 * anim)
+						if replace_not_flood[4] < 0 then replace_not_flood[4] = 0 end
+					end
+					
+					if not sampIsChatInputActive() then
+						if replace_not_flood[5] == 1 then
+							renderFontDrawText(font_flood, 'Не флуди!', replace_not_flood[2], replace_not_flood[3] - 7, join_argb(replace_not_flood[4], 255, 64, 64))
+						else
+							renderFontDrawText(font_flood, 'Не флуди! X' .. replace_not_flood[5], replace_not_flood[2], replace_not_flood[3] - 7, join_argb(replace_not_flood[4], 255, 64, 64))
 						end
 					end
-					anti_spam_gun[1] = -1
-					anti_spam_gun[3] = 2
-				elseif anti_spam_gun[1] == -1 and gun_ped == setting.gun[i].i_gun and anti_spam_gun[3] == 0 then
-					if setting.gun[i].take then
-						sampSendChat(u8:decode(sex_decode(setting.gun[i].take_rp)))
-					end
-					anti_spam_gun[1] = gun_ped
-					anti_spam_gun[3] = 2
 				end
 			end
-		else
-			anti_spam_gun[1] = -1
-		end
-		
-		if update_scr_check == 0 then
-			update_check()
-			update_scr_check = 7000
-		end
-		
-		if developer_mode > 8 then
-			developer_mode = 0
-			if not dev_mode then
-				sampAddChatMessage('[SH] Активирован режим отладки кода.', 0xFF5345)
-				dev_mode = true
-				open_main()
+			
+			if not isGamePaused() and play.status ~= 'NULL' then
+				control_song_when_finished()
+			elseif isGamePaused() and play.status == 'PLAY' then
+				if get_status_potok_song() == 1 then
+					bass.BASS_ChannelPause(play.stream)
+				end
+			end
+			
+			if not is_mini_player_pos then
+				if play.status ~= 'NULL' and setting.mini_player then
+					windows.player[0] = true
+				else
+					windows.player[0] = false
+				end
+			end
+			
+			if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' and play.status ~= 'NULL' and get_status_potok_song() == 1 then
+				play.pos_time = time_song_position(play.len_time)
+			end
+			
+			if not isGamePaused() then
+				if scene_active or scene_edit_pos or (new_scene and scene.preview) then
+					scene_work()
+				end
+			end
+			
+			if setting.stat_on_screen.func then
+				windows.stat[0] = true
 			else
-				sampAddChatMessage('[SH] Отключён режим отладки кода.', 0xFF5345)
-				dev_mode = false
+				windows.stat[0] = false
+			end
+			
+			if setting.gun_func then
+				local gun_ped = getCurrentCharWeapon(playerPed)
+				
+				for i = 1, #setting.gun do
+					if anti_spam_gun[1] ~= -1 and anti_spam_gun[1] ~= gun_ped and anti_spam_gun[1] ~= setting.gun[i].i_gun and anti_spam_gun[3] == 0 then
+						for m = 1, #setting.gun do
+							if setting.gun[m].put and setting.gun[m].i_gun == anti_spam_gun[1] then
+								sampSendChat(u8:decode(sex_decode(setting.gun[m].put_rp)))
+								break
+							end
+						end
+						anti_spam_gun[1] = -1
+						anti_spam_gun[3] = 2
+					elseif anti_spam_gun[1] == -1 and gun_ped == setting.gun[i].i_gun and anti_spam_gun[3] == 0 then
+						if setting.gun[i].take then
+							sampSendChat(u8:decode(sex_decode(setting.gun[i].take_rp)))
+						end
+						anti_spam_gun[1] = gun_ped
+						anti_spam_gun[3] = 2
+					end
+				end
+			else
+				anti_spam_gun[1] = -1
+			end
+			
+			if update_scr_check == 0 then
+				update_check()
+				update_scr_check = 7000
+			end
+			
+			if developer_mode > 8 then
+				developer_mode = 0
+				if not dev_mode then
+					if not setting.cef_notif then
+						sampAddChatMessage('[SH] Активирован режим отладки кода.', 0xFF5345)
+					else
+						cefnotig('{FF5345}[SH] Активирован режим отладки кода.', 3000)
+					end
+					dev_mode = true
+					open_main()
+				else
+					if not setting.cef_notif then
+						sampAddChatMessage('[SH] Отключён режим отладки кода.', 0xFF5345)
+					else
+						cefnotig('{FF5345}[SH] Отключён режим отладки кода.', 3000)
+					end
+					dev_mode = false
+				end
 			end
 		end
 	end
@@ -1714,7 +2288,7 @@ function gui.InputText(pos_draw, size_input, arg_text, name_input, buf_size_inpu
 	if filter_buf:find('num') then
 		if flag_input == nil then flag_input = 0 end
 		flag_input = flag_input + imgui.InputTextFlags.CharsDecimal
-	elseif filter_buf:find('rus') or filter_buf:find('en') or filter_buf:find('ern') or filter_buf:find('esp') then
+	elseif filter_buf:find('rus') or filter_buf:find('en') or filter_buf:find('ernh') or filter_buf:find('ern') or filter_buf:find('esp') then
 		if flag_input == nil then flag_input = 0 end
 		flag_input = flag_input + imgui.InputTextFlags.CallbackCharFilter
 	end
@@ -1730,6 +2304,8 @@ function gui.InputText(pos_draw, size_input, arg_text, name_input, buf_size_inpu
 		ret_true = imgui.InputText('##inp' .. name_input, arg_text_buf, ffi.sizeof(arg_text_buf), flag_input, TextCallbackRus)
 	elseif filter_buf:find('en') then
 		ret_true = imgui.InputText('##inp' .. name_input, arg_text_buf, ffi.sizeof(arg_text_buf), flag_input, TextCallbackEn)
+	elseif filter_buf:find('ernh') then
+		ret_true = imgui.InputText('##inp' .. name_input, arg_text_buf, ffi.sizeof(arg_text_buf), flag_input, TextCallbackEnRusNumH)
 	elseif filter_buf:find('ern') then
 		ret_true = imgui.InputText('##inp' .. name_input, arg_text_buf, ffi.sizeof(arg_text_buf), flag_input, TextCallbackEnRusNum)
 	elseif filter_buf:find('esp') then
@@ -2039,52 +2615,68 @@ function gui.Counter(pos_draw, arg_text, arg_num, arg_min, arg_max, name_counter
 	return arg_num
 end
 
-function gui.Switch(namebut, bool)
-    local rBool = false
-    if LastActiveTime == nil then
-        LastActiveTime = {}
-    end
-    if LastActive == nil then
-        LastActive = {}
-    end
-    local function ImSaturate(f)
-        return f < 0.06 and 0.06 or (f > 1.0 and 1.0 or f)
-    end
-    local p = imgui.GetCursorScreenPos()
-    local draw_list = imgui.GetWindowDrawList()
-    local height = imgui.GetTextLineHeightWithSpacing() * 1.35
-    local width = height * 1.20
-    local radius = height * 0.30
-    local ANIM_SPEED = 0.09
-    local butPos = imgui.GetCursorPos()
-    if imgui.InvisibleButton(namebut, imgui.ImVec2(width, height)) then
-        bool = not bool
-        rBool = true
-        LastActiveTime[tostring(namebut)] = os.clock()
-        LastActive[tostring(namebut)] = true
-    end
-    imgui.SetCursorPos(imgui.ImVec2(butPos.x + width + 3, butPos.y + 3.8))
-    imgui.Text( namebut:gsub('##.+', ''))
-    local t = bool and 1.0 or 0.06
-    if LastActive[tostring(namebut)] then
-        local time = os.clock() - LastActiveTime[tostring(namebut)]
-        if time <= ANIM_SPEED then
-            local t_anim = ImSaturate(time / ANIM_SPEED)
-            t = bool and t_anim or 1.0 - t_anim
-        else
-            LastActive[tostring(namebut)] = false
-        end
-    end
-	local col_neitral = 0xFF606060
-	if setting.cl == 'White' then
-		col_neitral =  0xFFD4CFCF
+function gui.Switch(namebut, bool, disable)
+	local rBool = false
+	if LastActiveTime == nil then
+		LastActiveTime = {}
 	end
-    local col_static = 0xFFFFFFFF
-    local col = bool and imgui.ColorConvertFloat4ToU32(cl.def) or col_neitral
-    draw_list:AddRectFilled(imgui.ImVec2(p.x, p.y + (height / 6)), imgui.ImVec2(p.x + width - 1.0, p.y + (height - (height / 6))), col, 10.0)
-    draw_list:AddCircleFilled(imgui.ImVec2(p.x + radius + t * (width - radius * 2.3) + 0.6, p.y + 5 + radius), radius - 0.75, col_static, 60)
+	if LastActive == nil then
+		LastActive = {}
+	end
+	local function ImSaturate(f)
+		return f < 0.06 and 0.06 or (f > 1.0 and 1.0 or f)
+	end
+	local p = imgui.GetCursorScreenPos()
+	local draw_list = imgui.GetWindowDrawList()
+	local height = imgui.GetTextLineHeightWithSpacing() * 1.35
+	local width = height * 1.20
+	local radius = height * 0.30
+	local ANIM_SPEED = 0.09
+	local butPos = imgui.GetCursorPos()
+	
+	local switch_active = true
+	if disable ~= nil and disable == true then
+		switch_active = false
+	end
 
-    return rBool
+	if imgui.InvisibleButton(namebut, imgui.ImVec2(width, height)) and switch_active then
+		bool = not bool
+		rBool = true
+		LastActiveTime[tostring(namebut)] = os.clock()
+		LastActive[tostring(namebut)] = true
+	end
+	imgui.SetCursorPos(imgui.ImVec2(butPos.x + width + 3, butPos.y + 3.8))
+	imgui.Text( namebut:gsub('##.+', ''))
+	
+	local t = bool and 1.0 or 0.06
+	if LastActive[tostring(namebut)] then
+		local time = os.clock() - LastActiveTime[tostring(namebut)]
+		if time <= ANIM_SPEED then
+			local t_anim = ImSaturate(time / ANIM_SPEED)
+			t = bool and t_anim or 1.0 - t_anim
+		else
+			LastActive[tostring(namebut)] = false
+		end
+	end
+
+	local col_neitral = 0xFF606060
+	local col_static = 0xFFFFFFFF
+	if setting.cl == 'White' then
+		col_neitral = 0xFFD4CFCF
+	end
+
+	local current_color_bg = bool and imgui.ColorConvertFloat4ToU32(cl.def) or col_neitral
+	local current_color_circle = col_static
+	
+	if not switch_active then
+		current_color_bg = imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+		current_color_circle = imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0.70, 0.70, 0.70, 0.50))
+	end
+
+	draw_list:AddRectFilled(imgui.ImVec2(p.x, p.y + (height / 6)), imgui.ImVec2(p.x + width - 1.0, p.y + (height - (height / 6))), current_color_bg, 10.0)
+	draw_list:AddCircleFilled(imgui.ImVec2(p.x + radius + t * (width - radius * 2.3) + 0.6, p.y + 5 + radius), radius - 0.75, current_color_circle, 60)
+
+	return rBool, bool
 end
 
 function gui.SwitchFalse(bool)
@@ -2139,26 +2731,14 @@ function gui.GetCursorScroll()
 end
 
 function gui.SliderBar(slider_text, slider_arg, slider_min, slider_max, slider_width, slider_pos, saving_it)
-	local function convert(param)
-		param = tonumber(param) * 100
-		return round(param, 1)
-	end
-	
-	local tbl_per = {}
-	local arg_buf_format
-	local pere_arg
-	local saveinter
-	local tap_slid = false
-	
-	arg_buf_format = imgui.new.float(slider_arg)
+	local arg_buf_format = imgui.new.float(slider_arg)
 	if arg_buf_format[0] == 'nil' then
 		arg_buf_format[0] = ''
 	end
 	
-	local slider_width_end = (slider_width - 15) / slider_max
 	imgui.SetCursorPos(imgui.ImVec2(slider_pos[1] + 5, slider_pos[2] + 9))
+
 	local p = imgui.GetCursorScreenPos()
-	local DragPos = imgui.GetCursorPos()
 	imgui.SetCursorPos(imgui.ImVec2(slider_pos[1], slider_pos[2]))
 	imgui.PushItemWidth(slider_width)
 	imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(0.00, 0.00, 0.00, 0.00))
@@ -2166,16 +2746,21 @@ function gui.SliderBar(slider_text, slider_arg, slider_min, slider_max, slider_w
 	imgui.PushStyleColor(imgui.Col.SliderGrabActive, imgui.ImVec4(0.00, 0.00, 0.00, 0.00))
 	imgui.SliderFloat(u8'##'..slider_text, arg_buf_format, slider_min, slider_max, u8'')
 	imgui.PopStyleColor(3)
-	
-	local col_sl_non = imgui.ImVec4(0.60, 0.60, 0.60 ,1.00)
-	local col_sl_circle = imgui.ImVec4(1.00, 1.00, 1.00 ,1.00)
-	if setting.cl == 'White' then
-		col_sl_non = imgui.ImVec4(0.83, 0.81, 0.81 ,1.00)
-	end
-	imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + slider_width - 15, p.y + 5), imgui.GetColorU32Vec4(imgui.ImVec4(0.90, 0.90, 0.90, 1.00)), 10, 15)
-	imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + (arg_buf_format[0] * slider_width_end), p.y + 5), imgui.GetColorU32Vec4(cl.def), 10, 15)
-	imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x + (arg_buf_format[0] * slider_width_end), p.y + 2), 9, imgui.GetColorU32Vec4(imgui.ImVec4(0.90, 0.90, 0.90, 1.00)), 60)
+
+	local track_color = (setting.cl == 'White' and imgui.ImVec4(0.85, 0.85, 0.85, 1.00)) or imgui.ImVec4(0.21, 0.21, 0.21, 1.00)
+	local knob_color = (setting.cl == 'White' and cl.def) or imgui.ImVec4(0.90, 0.90, 0.90, 1.00)
+
+	local track_width = slider_width - 15
+	local value_range = slider_max - slider_min
+	if value_range == 0 then value_range = 1 end
+	local value_ratio = (arg_buf_format[0] - slider_min) / value_range
+	local filled_width = track_width * value_ratio
+
+	imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + track_width, p.y + 5), imgui.GetColorU32Vec4(track_color), 10, 15)
+	imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + filled_width, p.y + 5), imgui.GetColorU32Vec4(cl.def), 10, 15)
+	imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x + filled_width, p.y + 2.5), 9, imgui.GetColorU32Vec4(knob_color), 60)
 	imgui.SameLine()
+
 	if not slider_text:find('##') then
 		imgui.PushFont(font[1])
 		imgui.Text(slider_text)
@@ -2582,6 +3167,10 @@ end
 --> Отображение окон
 img_step = {imgui.new.int(42)}
 img_duration = {imgui.new.int(350)}
+--local smi_spoiler = new.bool(false)
+local hospital_spoiler = new.bool(false)
+local army_spoiler = new.bool(false)
+local police_spoiler = new.bool(false)
 local hall = {}
 function hall.settings()
 	gui.Draw({4, 39}, {220, 369}, cl.tab, 0, 15)
@@ -2638,8 +3227,13 @@ function hall.settings()
 	else
 		gui.DrawCircle({29, 32}, 20, cl.circ_im)
 	end
-	
-	local all_org = {'Больница Лос-Сантос', 'Больница Сан-Фиерро', 'Больница Лас-Вентурас', 'Больница Джефферсон', 'Центр Лицензирования', 'Правительство', 'Армия Лос-Сантос', 'Армия Сан-Фиерро', 'Пожарный департамент', 'Тюрьма строгого режима'}
+	local all_org = {
+		'Больница Лос-Сантос', 'Больница Сан-Фиерро', 'Больница Лас-Вентурас', 'Больница Джефферсон', 
+		'Центр Лицензирования', 'Правительство', 
+		'Армия Лос-Сантос', 'Армия Сан-Фиерро', 
+		'Пожарный департамент', 'Тюрьма строгого режима',
+		'Полиция Лос-Сантос', 'Полиция Лас-Вентурас', 'Полиция Сан-Фиерро', 'Полиция Рэд-Каунти', 'ФБР'
+	}
 	local num_char = #u8:decode(setting.name_rus)
 	if num_char <= 19 then
 		gui.Text(57, 17, u8:decode(setting.name_rus), font[3])
@@ -2660,7 +3254,7 @@ function hall.settings()
 	local pos_tab_pl = 0
 	new_tab_setting(imgui.ImVec4(0.56, 0.56, 0.58, 1.00), fa.LOCK, 'Личная информация', 1, 0 + pos_tab_pl, {1, 0})
 	new_tab_setting(imgui.ImVec4(0.00, 0.40, 1.00, 1.00), fa.COMMENT, 'Игровой чат', 2, 0 + pos_tab_pl)
-	if setting.org <= 5 then
+	if setting.org <= 5 --[[or setting.org == 10]] then
 		new_tab_setting(imgui.ImVec4(0.30, 0.80, 0.39, 1.00), fa.COINS, 'Ценовая политика', 3, 0 + pos_tab_pl)
 	else
 		pos_tab_pl = pos_tab_pl - 1
@@ -2671,6 +3265,8 @@ function hall.settings()
 		new_tab_setting(imgui.ImVec4(1.00, 0.18, 0.33, 1.00), fa.TRUCK_MEDICAL, 'Вызовы', 6, 0 + pos_tab_pl, {-1.5, 0})
 	elseif setting.org == 9 then
 		new_tab_setting(imgui.ImVec4(1.00, 0.18, 0.15, 1.00), fa.FIRE, 'Вызовы', 6, 0 + pos_tab_pl, {1, 0})
+	elseif setting.org >= 11 and setting.org <= 15 then
+		new_tab_setting(imgui.ImVec4(0.50, 0.50, 0.50, 1.00), fa.WRENCH, 'Доп. настройки', 6, 0 + pos_tab_pl, {0, 0})
 	else
 		pos_tab_pl = pos_tab_pl -1
 	end
@@ -2803,7 +3399,8 @@ function hall.settings()
 		
 		gui.Text(26, 181, 'Организация', font[3])
 		local bool_set_org = setting.org
-		setting.org = gui.ListTableMove({572, 181}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима'}, setting.org, 'Select Organization')
+		setting.org = gui.ListTableMove({572, 181}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима', u8'Полиция Лос-Сантос', u8'Полиция Лас-Вентурас', u8'Полиция Сан-Фиерро', u8'Полиция Рэд-Каунти', u8'ФБР'}, setting.org, 'Select Organization')
+		--setting.org = gui.ListTableMove({572, 181}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима', u8'СМИ Лос-Сантос', u8'СМИ Сан-Фиерро', u8'СМИ Лас-Вентурас'}, setting.org, 'Select Organization')
 		if setting.org ~= bool_set_org then
 			if setting.org <= 4 then --> Для Больниц
 				for i = 1, #cmd_defoult.hospital do
@@ -2820,7 +3417,7 @@ function hall.settings()
 						sampRegisterChatCommand(cmd_defoult.hospital[i].cmd, function(arg) 
 						cmd_start(arg, tostring(cmd_defoult.hospital[i].UID) .. cmd_defoult.hospital[i].cmd) end)
 						
-						if server == '185.169.134.3:7777' then 
+						if s_na == 'Phoenix' then 
 							for i = 1, #cmd[1] do
 								if cmd[1][i].cmd == 'mc' then
 									cmd[1][i] = mc_phoenix
@@ -2911,7 +3508,7 @@ function hall.settings()
 					end
 					setting.gun_func = true
 				end
-			elseif setting.org == 11 then
+			--[[elseif setting.org == 11 then
 				for i = 1, #cmd_defoult.smi do
 					local command_return = false
 					if #cmd[1] ~= 0 then
@@ -2926,8 +3523,26 @@ function hall.settings()
 						sampRegisterChatCommand(cmd_defoult.smi[i].cmd, function(arg) 
 						cmd_start(arg, tostring(cmd_defoult.smi[i].UID) .. cmd_defoult.smi[i].cmd) end)
 					end
+				end]]
+			elseif setting.org >= 11 and setting.org <= 15 then --> Для Полиции
+				for i = 1, #cmd_defoult.police do
+					local command_return = false
+					if #cmd[1] ~= 0 then
+						for c = 1, #cmd[1] do
+							if cmd[1][c].cmd == cmd_defoult.police[i].cmd then
+								command_return = true
+							end
+						end
+					end
+					if not command_return then
+						table.insert(cmd[1], cmd_defoult.police[i])
+						sampRegisterChatCommand(cmd_defoult.police[i].cmd, function(arg) 
+						cmd_start(arg, tostring(cmd_defoult.police[i].UID) .. cmd_defoult.police[i].cmd) end)
+					end
+					setting.gun_func = true
 				end
 			end
+			
 			add_cmd_in_all_cmd()
 			save_cmd()
 			save()
@@ -2945,9 +3560,9 @@ function hall.settings()
 		end
 	elseif tab_settings == 2 then
 		gui.Text(25, 12, 'Получаемые сообщения', bold_font[1])
-		new_draw(37, 395)
+		new_draw(37, 431)
 		
-		for i = 0, 9 do
+		for i = 0, 10 do
 			gui.DrawLine({16, 72 + (i * 36)}, {602, 72 + (i * 36)}, cl.line)
 		end
 		
@@ -3017,108 +3632,183 @@ function hall.settings()
 			setting.replace_not_flood = not setting.replace_not_flood
 			save()
 		end
+		gui.Text(26, 442, 'Изменить цвет ника по цвету организации', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 437))
+		if gui.Switch(u8'##Цветные ники', setting.color_nick) then
+			setting.color_nick = not setting.color_nick
+			save()
+		end
+		if setting.color_nick then
+			if gui.Button(u8'Настроить', {370, 442}, {130, 20}) then
+				imgui.OpenPopup(u8'Настроить цвет ника')
+			end
+		else
+			imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+			imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+			imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+			gui.Button(u8'Настроить', {370, 442}, {130, 20}, false)
+			imgui.PopStyleColor(3)
+		end
+		if imgui.BeginPopupModal(u8'Настроить цвет ника', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+			imgui.SetCursorPos(imgui.ImVec2(0, 0))
+			imgui.BeginChild(u8'Настройки цветов', imgui.ImVec2(730, 164), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoScrollbar)
+			imgui.SetCursorPos(imgui.ImVec2(710, 2))
+			if imgui.InvisibleButton(u8'##Закрыть окно настроек', imgui.ImVec2(20, 20)) then
+				save()
+				imgui.CloseCurrentPopup()
+			end
+			if imgui.IsItemHovered() then
+				gui.DrawCircle({721, 12}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
+			else
+				gui.DrawCircle({721, 12}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00))
+			end			
+			gui.Draw({16, 16}, {698, 148}, cl.tab, 7, 15)
+			gui.Text(26, 26, 'Заменять цвет текста в IC сообщениях', font[3])
+			imgui.SameLine(0, 10)
+			if gui.Switch(u8'##Заменить IC', setting.replace_ic) then
+				setting.replace_ic = not setting.replace_ic
+				save()
+			end
+			gui.Text(26, 62, 'Заменять цвет текста в /s', font[3])
+			imgui.SameLine(0, 10)
+			if gui.Switch(u8'##Заменить /s', setting.replace_s) then
+				setting.replace_s = not setting.replace_s
+				save()
+			end
+			gui.Text(26, 98, 'Заменять цвет текста в /c', font[3])
+			imgui.SameLine(0, 10)
+			if gui.Switch(u8'##Заменить /c', setting.replace_c) then
+				setting.replace_c = not setting.replace_c
+				save()
+			end
+			gui.Text(26, 134, 'Заменять цвет текста в /b', font[3])
+			imgui.SameLine(0, 10)
+			if gui.Switch(u8'##Заменить /b', setting.replace_b) then
+				setting.replace_b = not setting.replace_b
+				save()
+			end
+			imgui.Dummy(imgui.ImVec2(0, 20))
+			imgui.EndChild()
+			imgui.Dummy(imgui.ImVec2(0, 13))
+			imgui.EndPopup()
+		end
+
+		gui.Text(25, 487, 'Отыгровки', bold_font[1])
+		new_draw(512, 694)
 		
-		gui.Text(25, 451, 'Отыгровки', bold_font[1])
-		new_draw(476, 363)
-		
-		gui.Text(26, 485, 'Автокоррекция отыгровок /me, /do, /todo', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 480))
+		gui.Text(26, 521, 'Корректор чата', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 516))
+		if gui.Switch(u8'##Корректор чата', setting.chat_corrector) then
+			setting.chat_corrector = not setting.chat_corrector
+			save()
+		end
+		gui.TextInfo({26, 540}, {'Автоматически делает первую букву заглавной, ставит точку в конце,', 'пробел после запятой и исправляет регистр после знаков . ? !'})
+		gui.DrawLine({16, 575}, {602, 575}, cl.line)
+
+		gui.Text(26, 585, 'Автокоррекция отыгровок /me, /do, /todo', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 580))
 		if gui.Switch(u8'##Автокоррекция отыгровок', setting.auto_edit) then
 			setting.auto_edit = not setting.auto_edit
 			save()
 		end
-		gui.DrawLine({16, 511}, {602, 511}, cl.line)
-		gui.Text(26, 521, 'Автоотыгровка при принятии документов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 516))
+		gui.DrawLine({16, 611}, {602, 611}, cl.line)
+
+		gui.Text(26, 621, 'Автоотыгровка при принятии документов', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 616))
 		if gui.Switch(u8'##Автоотыгровка при принятии документов', setting.auto_cmd_doc) then
 			setting.auto_cmd_doc = not setting.auto_cmd_doc
 			save()
 		end
-		gui.TextInfo({26, 540}, {'При просмотре паспорта, лицензий, медицинской карты или трудовой книжки, будет', 'автоматически воспроизведена отыгровка взятия просматриваемого документа.'})
-		gui.DrawLine({16, 579}, {602, 579}, cl.line)
-		gui.Text(26, 589, 'Автоотыгровка при закрытии документов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 585))
+		gui.TextInfo({26, 640}, {'При просмотре паспорта, лицензий, медицинской карты или трудовой книжки, будет', 'автоматически воспроизведена отыгровка взятия просматриваемого документа.'})
+		gui.DrawLine({16, 679}, {602, 679}, cl.line)
+
+		gui.Text(26, 689, 'Автоотыгровка при закрытии документов', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 685))
 		if gui.Switch(u8'##Автоотыгровка при закрытии документов', setting.auto_close_doc) then
-    		setting.auto_close_doc = not setting.auto_close_doc
-    		save()
+			setting.auto_close_doc = not setting.auto_close_doc
+			save()
 		end
-		gui.TextInfo({26, 608}, {'При закрытии окна с документами в чате автоматически будет воспроизведена отыгровка.'})
-		gui.DrawLine({16, 637}, {602, 637}, cl.line)
-		gui.Text(26, 647, 'Автоотыгровка дубинки', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 643))
+		gui.TextInfo({26, 708}, {'При закрытии окна с документами в чате автоматически будет воспроизведена отыгровка.'})
+		gui.DrawLine({16, 737}, {602, 737}, cl.line)
+
+		gui.Text(26, 747, 'Автоотыгровка дубинки', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 743))
 		if gui.Switch(u8'##Автоотыгровка дубинки', setting.auto_cmd_tazer) then
-    		setting.auto_cmd_tazer = not setting.auto_cmd_tazer
-    		save()
+			setting.auto_cmd_tazer = not setting.auto_cmd_tazer
+			save()
 		end
-		gui.DrawLine({16, 674}, {602, 674}, cl.line)
-		gui.Text(26, 688, 'Автоотыгровка /time', font[3])
+		gui.DrawLine({16, 774}, {602, 774}, cl.line)
+
+		gui.Text(26, 784, 'Автоотыгровка /time', font[3])
 		local bool_set_time = setting.auto_cmd_time
-		setting.auto_cmd_time = gui.InputText({190, 690}, 391, setting.auto_cmd_time, u8'Автоотыгровка time', 230, u8'Введите текст отыгровки')
+		setting.auto_cmd_time = gui.InputText({190, 786}, 391, setting.auto_cmd_time, u8'Автоотыгровка time', 230, u8'Введите текст отыгровки')
 		if setting.auto_cmd_time ~= bool_set_time then
-    		save()
+			save()
 		end
-		gui.TextInfo({26, 717}, {'После ввода команды /time, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
-		gui.DrawLine({16, 753}, {602, 753}, cl.line)
-		gui.Text(26, 767, 'Автоотыгровка /r', font[3])
+		gui.TextInfo({26, 815}, {'После ввода команды /time, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
+		gui.DrawLine({16, 851}, {602, 851}, cl.line)
+
+		gui.Text(26, 861, 'Автоотыгровка /r', font[3])
 		local bool_set_r = setting.auto_cmd_r
-		setting.auto_cmd_r = gui.InputText({190, 769}, 391, setting.auto_cmd_r, u8'Автоотыгровка r', 230, u8'Введите текст отыгровки')
+		setting.auto_cmd_r = gui.InputText({190, 863}, 391, setting.auto_cmd_r, u8'Автоотыгровка r', 230, u8'Введите текст отыгровки')
 		if setting.auto_cmd_r ~= bool_set_r then
-    		save()
+			save()
 		end
-		new_draw(848, 71)
-		gui.TextInfo({26, 796}, {'После ввода команды /r, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
-		gui.Text(26, 862, 'Тег в рацию /r', font[3])
+		gui.TextInfo({26, 892}, {'После ввода команды /r, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
+		gui.DrawLine({16, 928}, {602, 928}, cl.line)
+
+		gui.Text(26, 938, 'Тег в рацию /r', font[3])
 		local bool_set_teg = setting.teg_r
-		setting.teg_r = gui.InputText({190, 864}, 311, setting.teg_r, u8'Тег в рацию организации', 250, u8'Введите тег для рации')
+		setting.teg_r = gui.InputText({190, 940}, 391, setting.teg_r, u8'Тег в рацию организации', 250, u8'Введите тег для рации')
 		if setting.teg_r ~= bool_set_teg then
-    		save()
+			save()
 		end
-		gui.TextInfo({26, 891}, {'О необходимости использования тега уточните у лидера Вашей организации.'})
-		new_draw(928, 80)
+		gui.TextInfo({26, 969}, {'О необходимости использования тега уточните у лидера Вашей организации.'})
+		gui.DrawLine({16, 1005}, {602, 1005}, cl.line)
+
+		gui.Text(26, 1015, 'Использовать автоотыгровки при взаимодействии с оружием', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 1011))
+		if gui.Switch(u8'##Автоотыгровка взаимодействия с оружием', setting.gun_func) then
+			setting.gun_func = not setting.gun_func
+			save()
+		end
 		if setting.gun_func then
-	gui.Text(26, 978, 'Отыгровки оружия', font[3])
-			if gui.Button(u8'Редактировать...', {460, 975}, {130, 25}) then
+			gui.Text(26, 1041, 'Отыгровки оружия', font[3])
+			if gui.Button(u8'Редактировать...', {460, 1038}, {130, 25}) then
 				imgui.OpenPopup(u8'Редактировать отыгровки оружия')
 				gun_bool = deep_copy(setting.gun)
 			end
 		else
 			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-			gui.Text(26, 978, 'Отыгровки оружия', font[3])
+			gui.Text(26, 1041, 'Отыгровки оружия', font[3])
 			imgui.PopStyleColor(1)
-			gui.Button(u8'Редактировать...', {460, 975}, {130, 25}, false)
+			gui.Button(u8'Редактировать...', {460, 1038}, {130, 25}, false)
 		end
+		gui.DrawLine({16, 1069}, {602, 1069}, cl.line)
 
-		gui.Text(26, 942, 'Использовать автоотыгровки при взаимодействии с оружием', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 938))
-		if gui.Switch(u8'##Автоотыгровка взаимодействия с оружием', setting.gun_func) then
-			setting.gun_func = not setting.gun_func
-			save()
-		end
-		new_draw(1017, 91)
-
-		gui.Text(26, 1032, 'Автоматический перенос длинного текста в игровом чате', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 1027))
+		gui.Text(26, 1079, 'Автоматический перенос длинного текста в игровом чате', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 1075))
 		if gui.Switch(u8'##Автоматический перенос длинного текста в игровом чате', setting.wrap_text_chat.func) then
 			setting.wrap_text_chat.func = not setting.wrap_text_chat.func
 			save()
 		end
-
+		
 		if setting.wrap_text_chat.func then
-			gui.Text(26, 1070, 'Переносить текст после достижения', font[3])
+			gui.Text(26, 1106, 'Переносить текст после достижения', font[3])
 			local bool_set_wrap = setting.wrap_text_chat.num_char
-			setting.wrap_text_chat.num_char = gui.InputText({274, 1070}, 30, setting.wrap_text_chat.num_char, u8'Количество символов переносимого текста', 4, u8'Число', 'num')
+			setting.wrap_text_chat.num_char = gui.InputText({274, 1106}, 30, setting.wrap_text_chat.num_char, u8'Количество символов переносимого текста', 4, u8'Число', 'num')
 			if setting.wrap_text_chat.num_char ~= bool_set_wrap then
 				if setting.wrap_text_chat.num_char == '' then
 					setting.wrap_text_chat.num_char = '128'
 				end
 				save()
 			end
-			gui.Text(320, 1070, 'символов', font[3])
+			gui.Text(320, 1106, 'символов', font[3])
 		else
 			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-			gui.Text(26, 1070, 'Переносить текст после достижения', font[3])
-			gui.Text(320, 1070, 'символов', font[3])
-			gui.InputFalse(setting.wrap_text_chat.num_char, 274, 1070, 30)
+			gui.Text(26, 1106, 'Переносить текст после достижения', font[3])
+			gui.Text(320, 1106, 'символов', font[3])
+			gui.InputFalse(setting.wrap_text_chat.num_char, 274, 1106, 30)
 			imgui.PopStyleColor(1)
 		end
 
@@ -3175,6 +3865,13 @@ function hall.settings()
 			if gui.Button(u8'Сбросить отыгровки до дефолта', {490, 381}, {230, 31}) then
 				gun_bool = deep_copy(gun_orig)
 			end
+			if gui.Button(u8'Отключить все', {250, 417}, {230, 31}) then
+				for i = 1, #gun_bool do
+					gun_bool[i].take = false
+					gun_bool[i].put = false
+				end
+			end
+
 			imgui.Dummy(imgui.ImVec2(0, 13))
 			imgui.EndPopup()
 		end
@@ -3203,15 +3900,15 @@ function hall.settings()
 			local bool_set_rec = setting.price[1].rec
 			setting.price[1].rec = gui.InputText({481, 52}, 100, setting.price[1].rec, u8'Цена рецепта', 20, u8'Цена', 'num')
 			if setting.price[1].rec ~= bool_set_rec then save() end
-			gui.Text(381, 94, 'Тату', font[3])
-			local bool_set_tatu = setting.price[1].tatu
-			setting.price[1].tatu = gui.InputText({481, 96}, 100, setting.price[1].tatu, u8'Цена тату', 20, u8'Цена', 'num')
-			if setting.price[1].tatu ~= bool_set_tatu then save() end
-			gui.Text(381, 138, 'Антибиотик', font[3])
+			gui.Text(381, 94, 'Антибиотик', font[3])
 			local bool_set_ant = setting.price[1].ant
-			setting.price[1].ant = gui.InputText({481, 140}, 100, setting.price[1].ant, u8'Цена антибиотика', 20, u8'Цена', 'num')
+			setting.price[1].ant = gui.InputText({481, 96}, 100, setting.price[1].ant, u8'Цена антибиотика', 20, u8'Цена', 'num')
 			if setting.price[1].ant ~= bool_set_ant then save() end
-			
+			gui.Text(381, 138, 'Охранник', font[3])
+			local bool_set_gua = setting.price[1].tatu
+			setting.price[1].tatu = gui.InputText({481, 140}, 100, setting.price[1].tatu, u8'Цена охраны', 20, u8'Цена', 'num')
+			if setting.price[1].tatu ~= bool_set_gua then save() end
+
 			gui.Text(25, 187, 'Медицинская карта', bold_font[1])
 			new_draw(212, 175)
 			
@@ -3253,6 +3950,94 @@ function hall.settings()
 			if setting.price[1].mcupd[4] ~= bool_set_mcupd4 then save() end
 			
 			imgui.Dummy(imgui.ImVec2(0, 26))
+			--[[ НУ И КОСТЫЛЫ. Сделаю по другому потом
+		elseif setting.org == 10 then
+			gui.Text(25, 12, 'Выход по УДО', bold_font[1])
+
+			local price_presets = {
+				Chandler	 = { box = '45000', eat = '60000', cloth = '60000', trash = '75000', min = '10000' },
+				RedRock	  = { box = '30000', eat = '35000', cloth = '35000', trash = '40000', min = '25000' },
+				Gilbert	  = { box = '50000', eat = '70000', cloth = '70000', trash = '50000', min = '50000' },
+				ShowLow	  = { box = '200000', eat = '250000', cloth = '250000', trash = '200000', min = '30000' },
+				CasaGrande   = { box = '75000', eat = '80000', cloth = '80000', trash = '80000', min = '35000' },
+				SunCity	  = { box = '40000', eat = '60000', cloth = '50000', trash = '40000', min = '30000' },
+				Holiday	  = { box = '16000', eat = '23000', cloth = '25000', trash = '28000', min = '43000' },
+				Christmas	= { box = '50000', eat = '70000', cloth = '70000', trash = '50000', min = '50000' },
+				Scottdale	= { box = '50000', eat = '70000', cloth = '70000', trash = '50000', min = '50000' },
+				Winslow	  = { task1 = '20000000', task2 = '15000000', task3 = '12000000', task4 = '11000000', task5 = '6500000', task6 = '3000000'},
+				QueenCreek   = { task1 = '30000000', task2 = '15000000', task3 = '10000000', task4 = '6000000', task5 = '3000000'},
+				Wednesday	= { task1 = '30000000', task2 = '25000000', task3 = '20000000', task4 = '15000000', task5 = '10000000', task6 = '5000000'}
+			}
+
+			if not setting.price[3] and price_presets[s_na] then
+				setting.price[3] = price_presets[s_na]
+			end
+
+			if (s_na == 'Chandler' or s_na == 'RedRock' or s_na == 'Gilbert' or s_na == 'ShowLow' or s_na == 'CasaGrande' or s_na == 'SunCity' or s_na == 'Holiday' or s_na == 'Christmas' or s_na == 'Scottdale') then
+				new_draw(37, 131)
+				gui.Text(26, 50, 'За 1 ящик', font[3])
+				local bool_set_box = setting.price[3].box
+				setting.price[3].box = gui.InputText({130, 52}, 100, setting.price[3].box, u8'Цена ящика', 20, u8'Цена', 'num')
+				if setting.price[3].box ~= bool_set_box then save() end
+				gui.DrawLine({16, 80}, {602, 80}, cl.line)
+				gui.Text(26, 94, 'За 1 еду', font[3])
+				local bool_set_eat = setting.price[3].eat
+				setting.price[3].eat = gui.InputText({130, 96}, 100, setting.price[3].eat, u8'Цена еды', 20, u8'Цена', 'num')
+				if setting.price[3].eat ~= bool_set_eat then save() end
+				gui.DrawLine({16, 124}, {602, 124}, cl.line)
+				gui.Text(26, 138, 'За 1 одежду', font[3])
+				local bool_set_cloth = setting.price[3].cloth
+				setting.price[3].cloth = gui.InputText({130, 140}, 100, setting.price[3].cloth, u8'Цена одежды', 20, u8'Цена', 'num')
+				if setting.price[3].cloth ~= bool_set_cloth then save() end
+				gui.Text(381, 50, 'За 1 мусор', font[3])
+				local bool_set_trash = setting.price[3].trash
+				setting.price[3].trash = gui.InputText({481, 52}, 100, setting.price[3].trash, u8'Цена мусора', 20, u8'Цена', 'num')
+				if setting.price[3].trash ~= bool_set_trash then save() end
+				gui.Text(381, 94, 'За 1 минуту', font[3])
+				local bool_set_min = setting.price[3].min
+				setting.price[3].min = gui.InputText({481, 96}, 100, setting.price[3].min, u8'Цена за минуту', 20, u8'Цена', 'num')
+				if setting.price[3].min ~= bool_set_min then save() end
+			elseif (s_na == 'Winslow' or s_na == 'Wednesday') then
+				new_draw(37, 262)
+				gui.Text(26, 50, 'Без выполненных работ', font[3])
+				local bool_set_task1 = setting.price[3].task1
+				setting.price[3].task1 = gui.InputText({300, 52}, 100, setting.price[3].task1, u8'Цена ящика', 20, u8'Цена', 'num')
+				if setting.price[3].task1 ~= bool_set_task1 then save() end
+				gui.DrawLine({16, 80}, {602, 80}, cl.line)
+				gui.Text(26, 94, 'С сделанным 1 заданием', font[3])
+				local bool_set_task2 = setting.price[3].task2
+				setting.price[3].task2 = gui.InputText({300, 96}, 100, setting.price[3].task2, u8'Цена еды', 20, u8'Цена', 'num')
+				if setting.price[3].task2 ~= bool_set_task2 then save() end
+				gui.DrawLine({16, 124}, {602, 124}, cl.line)
+				gui.Text(26, 138, 'С сделанными 2 заданиями', font[3])
+				local bool_set_task3 = setting.price[3].task3
+				setting.price[3].task3 = gui.InputText({300, 140}, 100, setting.price[3].task3, u8'Цена одежды', 20, u8'Цена', 'num')
+				if setting.price[3].task3 ~= bool_set_task3 then save() end
+				gui.DrawLine({16, 168}, {602, 168}, cl.line)
+				gui.Text(26, 182, 'С сделанными 3 заданиями', font[3])
+				local bool_set_task4 = setting.price[3].task4
+				setting.price[3].task4 = gui.InputText({300, 184}, 100, setting.price[3].task4, u8'Цена мусора', 20, u8'Цена', 'num')
+				if setting.price[3].task4 ~= bool_set_task4 then save() end
+				gui.DrawLine({16, 212}, {602, 212}, cl.line)
+				gui.Text(26, 226, 'С сделанными 4 заданиями', font[3])
+				local bool_set_task5 = setting.price[3].task5
+				setting.price[3].task5 = gui.InputText({300, 228}, 100, setting.price[3].task5, u8'Цена за минуту', 20, u8'Цена', 'num')
+				if setting.price[3].task5 ~= bool_set_task5 then save() end
+				gui.DrawLine({16, 256}, {602, 256}, cl.line)
+				gui.Text(26, 270, 'Осталось только время', font[3])
+				local bool_set_task6 = setting.price[3].task6
+				setting.price[3].task6 = gui.InputText({300, 272}, 100, setting.price[3].task6, u8'Цена за минуту', 20, u8'Цена', 'num')
+				if setting.price[3].task6 ~= bool_set_task6 then save() end
+				end
+				new_draw(318, 53)
+				gui.Text(26, 327, 'Оставлять окно с заданиями открытым', font[3])
+				imgui.SetCursorPos(imgui.ImVec2(561, 322))
+				if gui.Switch(u8'##Оставлять окно видемым', setting.prinfo) then
+					setting.prinfo = not setting.prinfo
+					save()
+				end
+			gui.TextInfo({26, 352}, {'Скрипт будет оставлять окно /getjail открытым на экране, для возможности его скриншота.'})
+			]]
 		elseif setting.org == 5 then
 			new_draw(16, 428)
 			
@@ -4044,21 +4829,22 @@ function hall.settings()
 					setting.godeath.two_text = not setting.godeath.two_text
 					save()
 				end
-				
-				new_draw(354, 35)
-				
-				gui.Text(26, 363, 'Цвет текста вызова', font[3])
-				accent_col(0, {1.00, 0.33, 0.31}, {1.00, 0.23, 0.31})
-				accent_col(1, {0.75, 0.35, 0.87}, {0.75, 0.25, 0.87})
-				accent_col(2, {0.26, 0.45, 0.94}, {0.26, 0.35, 0.94})
-				accent_col(3, {0.20, 0.74, 0.29}, {0.20, 0.64, 0.29})
-				accent_col(4, {0.50, 0.50, 0.52}, {0.40, 0.40, 0.42})
+
+				if setting.godeath.two_text then
+					new_draw(354, 35)
+					gui.Text(26, 363, 'Цвет текста вызова', font[3])
+					accent_col(0, {1.00, 0.33, 0.31}, {1.00, 0.23, 0.31})
+					accent_col(1, {0.75, 0.35, 0.87}, {0.75, 0.25, 0.87})
+					accent_col(2, {0.26, 0.45, 0.94}, {0.26, 0.35, 0.94})
+					accent_col(3, {0.20, 0.74, 0.29}, {0.20, 0.64, 0.29})
+					accent_col(4, {0.50, 0.50, 0.52}, {0.40, 0.40, 0.42})
+				end
 				
 				imgui.Dummy(imgui.ImVec2(0, 18))
 			end
-		else
+		elseif setting.org == 9 then
 			new_draw(16, 53)
-			
+
 			gui.Text(26, 26, 'Упростить систему выездов на пожары', font[3])
 			imgui.SetCursorPos(imgui.ImVec2(561, 21))
 			if gui.Switch(u8'##Упростить вызовы на пожары', setting.godeath.func) then
@@ -4311,6 +5097,251 @@ function hall.settings()
 				imgui.Dummy(imgui.ImVec2(0, 22))
 				tags_in_call()
 			end
+		elseif setting.org >= 11 and setting.org <= 15 then
+			new_draw(16, 53)
+		 	gui.Text(26, 25, 'Умный розыск', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, 21))
+			local toggled_smart_su, new_smart_su = gui.Switch('##smart_su', setting.police_settings.smart_su)
+			if toggled_smart_su then
+				setting.police_settings.smart_su = new_smart_su
+				if new_smart_su then
+					sampRegisterChatCommand('su', smart_su_func)
+					download_wanted_reasons()
+				else
+					sampUnregisterChatCommand('su')
+				end
+				save()
+			end
+			gui.TextInfo({26, 44}, {'Позволяет удобно выдавать розыск, активация /su'})
+				--> 976 Штрафы сюда
+			new_draw(88, 53)
+			gui.Text(26, 98, 'Быстрое включение сирены', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, 93))
+			if gui.Switch(u8'##siren_toggle', setting.police_settings.siren) then
+				setting.police_settings.siren = not setting.police_settings.siren
+				save()
+			end
+			gui.TextInfo({26, 117}, {'Взаимодействие с сиреной по одному нажатию кнопки.'})
+			if setting.police_settings.siren then
+				if gui.Button(u8'Настроить', {370, 98}, {130, 20}) then
+					imgui.OpenPopup(u8'Настроить сирену')
+				end
+			else
+				imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+				imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+				imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+				gui.Button(u8'Настроить', {370, 98}, {130, 20}, false)
+				imgui.PopStyleColor(3)
+			end
+			if imgui.BeginPopupModal(u8'Настроить сирену', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+				imgui.BeginChild(u8'Настройки сирены', imgui.ImVec2(730, 210), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoScrollbar)
+				gui.Draw({16, 16}, {698, 180}, cl.tab, 7, 15)
+				gui.Text(260, 22, "Настройки быстрой сирены", bold_font[1])
+				imgui.SetCursorPos(imgui.ImVec2(710, 0))
+				if imgui.InvisibleButton(u8'##Закрыть окно настроек сирены', imgui.ImVec2(20, 20)) then
+					save()
+					imgui.CloseCurrentPopup()
+				end
+				if imgui.IsItemHovered() then
+					gui.DrawCircle({720, 10}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
+				else
+					gui.DrawCircle({720, 10}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00))
+				end
+				gui.DrawLine({16, 50}, {714, 50}, cl.line)
+				local current_key_text = (setting.police_settings.siren_key[1] ~= '' and setting.police_settings.siren_key[1] or 'Не назначена')
+				gui.Text(26, 58, 'Клавиша активации: ' .. current_key_text, font[3])
+				local key_text_edit = (setting.police_settings.siren_key[1] ~= '' and u8'Изменить...' or u8'Назначить...')
+				if gui.Button(key_text_edit .. u8'##клавишу активации для сирены', {594, 55}, {110, 25}) then
+					current_key = {'', {}}
+					imgui.OpenPopup(u8'Изменить клавишу активации сирены')
+					lockPlayerControl(true)
+					edit_key = true
+					key_bool_cur = setting.police_settings.siren_key[2]
+				end
+				gui.DrawLine({16, 88}, {714, 88}, cl.line)
+				gui.Text(26, 96, 'РП отыгровка включения', font[3])
+				local bool_set_on_rp = setting.police_settings.siren_on_rp
+				setting.police_settings.siren_on_rp = gui.InputText({230, 100}, 474, setting.police_settings.siren_on_rp or '', u8'siren_on_rp', 230, u8'Введите текст отыгровки')
+				if setting.police_settings.siren_on_rp ~= bool_set_on_rp then
+					save()
+				end
+				gui.DrawLine({16, 124}, {714, 124}, cl.line)
+				gui.Text(26, 132, 'РП отыгровка выключения', font[3])
+				local bool_set_off_rp = setting.police_settings.siren_off_rp
+				setting.police_settings.siren_off_rp = gui.InputText({230, 136}, 474, setting.police_settings.siren_off_rp or '', u8'siren_off_rp', 230, u8'Введите текст отыгровки')
+				if setting.police_settings.siren_off_rp ~= bool_set_off_rp then
+					save()
+				end
+				gui.DrawLine({16, 160}, {714, 160}, cl.line)
+				if gui.Button(u8'Сохранить', {265, 166}, {200, 25}) then
+					save()
+					imgui.CloseCurrentPopup()
+				end
+				local bool_result = key_edit(u8'Изменить клавишу активации сирены', setting.police_settings.siren_key)
+				if bool_result[1] then
+					local old_key_to_remove = setting.police_settings.siren_key[2]
+					if #old_key_to_remove > 0 then
+						rkeys.unRegisterHotKey(old_key_to_remove)
+						for i, key in ipairs(all_keys) do
+							if compare_array_disable_order(key, old_key_to_remove) then
+								table.remove(all_keys, i)
+								break
+							end
+						end
+					end
+					setting.police_settings.siren_key = bool_result[2]
+					if #setting.police_settings.siren_key[2] > 0 then
+						rkeys.registerHotKey(setting.police_settings.siren_key[2], 3, true, function() on_hot_key(setting.police_settings.siren_key[2]) end)
+						table.insert(all_keys, setting.police_settings.siren_key[2])
+					end
+					save()
+				end
+				imgui.EndChild()
+				imgui.EndPopup()
+			end
+			new_draw(160, 53)
+			gui.Text(26, 169, 'Расшифровка тен-кодов в чате.', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, 165))
+			if gui.Switch(u8'##ten_code', setting.police_settings.ten_code) then
+				setting.police_settings.ten_code = not setting.police_settings.ten_code
+				save()
+			end
+			gui.TextInfo({26, 188}, {'Расшифровывает полицейские тен-коды (10-XX) в чате.'})
+			--new_draw(232, 53)
+			--gui.Text(26, 241, 'Автоматическая /z', font[3])
+			--imgui.SetCursorPos(imgui.ImVec2(561, 237))
+			--if gui.Switch(u8'##auto_z_toggle', setting.police_settings.auto_z) then
+			--	setting.police_settings.auto_z = not setting.police_settings.auto_z
+			--	save()
+			--end
+			--gui.TextInfo({26, 260}, {'Накидывает/z на игрока, за которым вы в погоне'})
+			new_draw(232, 53)
+			gui.Text(26, 232 + 9, 'Заполнять бланк расследования', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, 232 + 5))
+			if gui.Switch(u8'##auto_inves_toggle', setting.police_settings.auto_inves) then
+				setting.police_settings.auto_inves = not setting.police_settings.auto_inves
+				save()
+			end
+			gui.TextInfo({26, 232 + 28}, {'Заполняет данные в бланке расследования за вас (дата, время, оружие...)'})
+			local pos_wanted = 232 + 53 + 19
+			new_draw(pos_wanted, 37)
+			gui.Text(26, pos_wanted + 9, 'Список разыскиваемых на Вашем экране', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, pos_wanted + 5))
+			if gui.Switch(u8'##wanted_list_func', setting.police_settings.wanted_list.func) then
+				setting.police_settings.wanted_list.func = not setting.police_settings.wanted_list.func
+				save()
+			end
+			pos_wanted = pos_wanted + 37 + 19
+			if setting.police_settings.wanted_list.func then
+				gui.Text(25, pos_wanted, 'Содержимое', bold_font[1])
+				pos_wanted = pos_wanted + 25
+				local content_box_height = 71
+				new_draw(pos_wanted, content_box_height)
+				gui.Text(26, pos_wanted + 9, 'Скрывать дистанцию до разыскиваемого', font[3])
+				imgui.SetCursorPos(imgui.ImVec2(561, pos_wanted + 5))
+				if gui.Switch(u8'##hide_distance', setting.police_settings.wanted_list.hide_distance) then
+					setting.police_settings.wanted_list.hide_distance = not setting.police_settings.wanted_list.hide_distance
+					save()
+				end
+				gui.DrawLine({16, pos_wanted + 35}, {602, pos_wanted + 35}, cl.line)
+				gui.Text(26, pos_wanted + 45, 'Скрывать игроков в интерьере', font[3])
+				imgui.SetCursorPos(imgui.ImVec2(561, pos_wanted + 40))
+				if gui.Switch(u8'##interior', setting.police_settings.wanted_list.interior) then
+					setting.police_settings.wanted_list.interior = not setting.police_settings.wanted_list.interior
+					save()
+				end
+				pos_wanted = pos_wanted + content_box_height + 19
+				gui.Text(25, pos_wanted, 'Визуальное отображение', bold_font[1])
+				pos_wanted = pos_wanted + 25
+				local visual_box_height = 330
+				new_draw(pos_wanted, visual_box_height)
+				gui.Text(26, pos_wanted + 9, 'Скрывать при открытом диалоге', font[3])
+				imgui.SetCursorPos(imgui.ImVec2(561, pos_wanted + 5))
+				if gui.Switch(u8'##wanted_dialog', setting.police_settings.wanted_list.dialog) then
+					setting.police_settings.wanted_list.dialog = not setting.police_settings.wanted_list.dialog
+					save()
+				end
+				gui.DrawLine({16, pos_wanted + 35}, {602, pos_wanted + 35}, cl.line)
+				gui.Text(26, pos_wanted + 45, 'Инверсировать текст', font[3])
+				imgui.SetCursorPos(imgui.ImVec2(561, pos_wanted + 40))
+				if gui.Switch(u8'##wanted_invers', setting.police_settings.wanted_list.invers) then
+					setting.police_settings.wanted_list.invers = not setting.police_settings.wanted_list.invers
+					save()
+				end
+				gui.DrawLine({16, pos_wanted + 71}, {602, pos_wanted + 71}, cl.line)
+				gui.Text(26, pos_wanted + 81, 'Флаг шрифта', font[3])
+				local bool_set_flag = setting.police_settings.wanted_list.flag
+				setting.police_settings.wanted_list.flag = gui.ListTableMove({572, pos_wanted + 81}, {u8'Без обводки', u8'Без обводки наклонённый', u8'Без обводки жирный наклонённый', u8'С обводкой', u8'С обводкой жирный', u8'С обводкой наклонённый', u8'С обводкой жирный наклонённый', u8'Без обводки с тенью', u8'Без обводки жирный с тенью', u8'Без обводки с тенью наклонённый', u8'Без обводки с тенью жирный наклонённый', u8'С обводкой и тенью', u8'С обводкой и тенью жирный'}, setting.police_settings.wanted_list.flag, 'Select Wanted Size')
+				if setting.police_settings.wanted_list.flag ~= bool_set_flag then
+					fontes_wanted = renderCreateFont('Trebuchet MS', setting.police_settings.wanted_list.size, setting.police_settings.wanted_list.flag)
+					save()
+				end
+				gui.DrawLine({16, pos_wanted + 107}, {602, pos_wanted + 107}, cl.line)
+				local wanted_set = {
+					vis = imgui.new.float(setting.police_settings.wanted_list.vis),
+					size = imgui.new.float(setting.police_settings.wanted_list.size),
+					dist = imgui.new.float(setting.police_settings.wanted_list.dist)
+				}
+				gui.SliderCircle('SliderVisibleWanted',{54, pos_wanted + 130}, 70, 257, imgui.GetColorU32Vec4(imgui.ImVec4(0.90, 0.90, 0.90, 1.00)), 12, 50, 100, wanted_set.vis[0])
+				gui.SliderCircle('SliderVisibleWanted2',{239, pos_wanted + 130}, 70, 257, imgui.GetColorU32Vec4(imgui.ImVec4(0.90, 0.90, 0.90, 1.00)), 12, 50, 50, wanted_set.size[0])
+				gui.SliderCircle('SliderVisibleWanted3',{424, pos_wanted + 130}, 70, 257, imgui.GetColorU32Vec4(imgui.ImVec4(0.90, 0.90, 0.90, 1.00)), 12, 50, 50, wanted_set.dist[0])
+				gui.Text(78, pos_wanted + 265, 'Прозрачность', font[3])
+				local bool_set_vis = wanted_set.vis[0]
+				wanted_set.vis[0] = gui.SliderBar('##wanted_vis', wanted_set.vis, 0, 100, 152, {51, pos_wanted + 290})
+				if wanted_set.vis[0] ~= bool_set_vis then
+					setting.police_settings.wanted_list.vis = floor(wanted_set.vis[0])
+					save()
+				end
+				gui.Text(286, pos_wanted + 265, 'Размер', font[3])
+				local bool_set_size = wanted_set.size[0]
+				wanted_set.size[0] = gui.SliderBar('##wanted_size',wanted_set.size, 1, 50, 152, {236, pos_wanted + 290})
+				if wanted_set.size[0] ~= bool_set_size then
+					setting.police_settings.wanted_list.size = floor(wanted_set.size[0])
+					fontes_wanted = renderCreateFont('Trebuchet MS', wanted_set.size[0], setting.police_settings.wanted_list.flag)
+					save()
+				end
+				gui.Text(400, pos_wanted + 265, 'Расстояние между строками', font[3])
+				local bool_set_dist = wanted_set.dist[0]
+				wanted_set.dist[0] = gui.SliderBar('##wanted_dist', wanted_set.dist, 0, 50, 152, {421, pos_wanted + 290})
+				if wanted_set.dist[0] ~= bool_set_dist then
+					setting.police_settings.wanted_list.dist = floor(wanted_set.dist[0])
+					save()
+				end
+				setting.police_settings.wanted_list.vis = wanted_set.vis[0]
+				setting.police_settings.wanted_list.size = wanted_set.size[0]
+				setting.police_settings.wanted_list.dist = wanted_set.dist[0]
+				pos_wanted = pos_wanted + visual_box_height + 19
+				gui.Text(25, pos_wanted, 'Цветовой стиль текста', bold_font[1])
+				pos_wanted = pos_wanted + 25
+				local color_box_height = 71
+				new_draw(pos_wanted, color_box_height)
+				gui.Text(26, pos_wanted + 9, 'Заголовок', font[3])
+				gui.DrawLine({16, pos_wanted + 35}, {602, pos_wanted + 35}, cl.line)
+				gui.Text(26, pos_wanted + 45, 'Игроки в розыске', font[3])
+				imgui.PushStyleVarVec2(imgui.StyleVar.FramePadding, imgui.ImVec2(6.5, 6.5))
+				imgui.SetCursorPos(imgui.ImVec2(564, pos_wanted + 4))
+				if imgui.ColorEdit4('##wantedTitleColor', col_wanted.title, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel + imgui.ColorEditFlags.NoAlpha) then
+					local c = imgui.ImVec4(col_wanted.title[0], col_wanted.title[1], col_wanted.title[2], col_wanted.title[3])
+					setting.police_settings.wanted_list.color.title = imgui.ColorConvertFloat4ToARGB(c)
+					save()
+				end
+				imgui.SetCursorPos(imgui.ImVec2(564, pos_wanted + 40))
+				if imgui.ColorEdit4('##wantedDefColor', col_wanted.default, imgui.ColorEditFlags.NoInputs + imgui.ColorEditFlags.NoLabel + imgui.ColorEditFlags.NoAlpha) then
+					local c = imgui.ImVec4(col_wanted.default[0], col_wanted.default[1], col_wanted.default[2], col_wanted.default[3])
+					setting.police_settings.wanted_list.color.default = imgui.ColorConvertFloat4ToARGB(c)
+					save()
+				end
+				imgui.PopStyleVar()
+				pos_wanted = pos_wanted + color_box_height + 19
+				local position_box_height = 35
+				new_draw(pos_wanted, position_box_height)
+				gui.Text(26, pos_wanted + 9, 'Положение текста на экране', font[3])
+				if gui.Button(u8'Изменить...', {491, pos_wanted + 5}, {99, 25}) then
+					changeWantedPosition()
+				end
+				pos_wanted = pos_wanted + position_box_height
+				imgui.Dummy(imgui.ImVec2(0, 21))
+			end
 		end
 	elseif tab_settings == 7 then
 		new_draw(16, 53)
@@ -4344,41 +5375,56 @@ function hall.settings()
 			save()
 		end
 		gui.TextInfo({26, 117}, {'Когда в рации департамента обратятся к Вашей организации, Вы будете уведомлены звуком.'})
-		
+
+		local function clean_tag(tag)
+			return tag:gsub("%%%-%%", "-")
+		end
+
+		local function encode_tag(tag)
+			return tag:gsub("%-", "%%-%%")
+		end
+
 		if setting.notice.dep then
 			gui.DrawLine({16, 143}, {602, 143}, cl.line)
 			gui.Text(26, 153, 'Тег организации на который реагировать', font[3])
-			
-			local bool_save_input_tag1 = setting.dep.my_tag
-			setting.dep.my_tag = gui.InputText({431, 155}, 150, setting.dep.my_tag, u8'Тег организации 1', 40, u8'Введите тег', 'ern')
-			if setting.dep.my_tag ~= bool_save_input_tag1 then
+
+			local old_tag1 = setting.dep.my_tag
+			local input_tag1 = gui.InputText({431, 155}, 150, clean_tag(setting.dep.my_tag), u8'Тег организации 1', 40, u8'Введите тег', 'ernh')
+			if input_tag1 ~= clean_tag(old_tag1) then
+				setting.dep.my_tag = encode_tag(input_tag1)
 				save()
 			end
-			
+
 			if setting.dep.my_tag ~= '' then 
 				gui.DrawLine({16, 179}, {602, 179}, cl.line)
 				gui.Text(26, 189, 'Дополнительный тег (не обязательно)', font[3])
-				local bool_save_input_tag2 = setting.dep.my_tag_en
-				setting.dep.my_tag_en = gui.InputText({431, 191}, 150, setting.dep.my_tag_en, u8'Тег организации 2', 40, u8'Введите тег', 'ern')
-				if setting.dep.my_tag_en ~= bool_save_input_tag2 then
+
+				local old_tag2 = setting.dep.my_tag_en
+				local input_tag2 = gui.InputText({431, 191}, 150, clean_tag(setting.dep.my_tag_en), u8'Тег организации 2', 40, u8'Введите тег', 'ernh')
+				if input_tag2 ~= clean_tag(old_tag2) then
+					setting.dep.my_tag_en = encode_tag(input_tag2)
 					save()
 				end
-				
+
 				if setting.dep.my_tag_en ~= '' then
 					gui.DrawLine({16, 215}, {602, 215}, cl.line)
 					gui.Text(26, 225, 'Второй дополнительный тег (не обязательно)', font[3])
-					local bool_save_input_tag3 = setting.dep.my_tag_en2
-					setting.dep.my_tag_en2 = gui.InputText({431, 227}, 150, setting.dep.my_tag_en2, u8'Тег организации 3', 40, u8'Введите тег', 'ern')
-					if setting.dep.my_tag_en2 ~= bool_save_input_tag3 then
+
+					local old_tag3 = setting.dep.my_tag_en2
+					local input_tag3 = gui.InputText({431, 227}, 150, clean_tag(setting.dep.my_tag_en2), u8'Тег организации 3', 40, u8'Введите тег', 'ernh')
+					if input_tag3 ~= clean_tag(old_tag3) then
+						setting.dep.my_tag_en2 = encode_tag(input_tag3)
 						save()
 					end
-					
+
 					if setting.dep.my_tag_en2 ~= '' then
 						gui.DrawLine({16, 251}, {602, 251}, cl.line)
 						gui.Text(26, 261, 'Третий дополнительный тег (не обязательно)', font[3])
-						local bool_save_input_tag4 = setting.dep.my_tag_en3
-						setting.dep.my_tag_en3 = gui.InputText({431, 263}, 150, setting.dep.my_tag_en3, u8'Тег организации 4', 40, u8'Введите тег', 'ern')
-						if setting.dep.my_tag_en3 ~= bool_save_input_tag4 then
+
+						local old_tag4 = setting.dep.my_tag_en3
+						local input_tag4 = gui.InputText({431, 263}, 150, clean_tag(setting.dep.my_tag_en3), u8'Тег организации 4', 40, u8'Введите тег', 'ernh')
+						if input_tag4 ~= clean_tag(old_tag4) then
+							setting.dep.my_tag_en3 = encode_tag(input_tag4)
 							save()
 						end
 					end
@@ -4448,55 +5494,51 @@ function hall.settings()
 			end
 		end
 	elseif tab_settings == 9 then
-		new_draw(16, 405)
+		new_draw(16, 361)
 		
-		gui.Text(26, 25, 'Моментальное открытие дверей и шлагбаумов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 20))
-		if gui.Switch(u8'##Моментальное открытие дверей и шлагбаумов', setting.speed_door) then
-			setting.speed_door = not setting.speed_door
-			save()
-		end
-		gui.TextInfo({26, 44}, {'Двери и шлагбаумы станут открываться моментально на клавишу H.'})
-		gui.DrawLine({16, 69}, {602, 69}, cl.line)
-		gui.Text(26, 79, 'Автоматическое принятие документов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 74))
+		gui.Text(26, 35, 'Автоматическое принятие документов', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 30))
 		if gui.Switch(u8'##Автопринятие документов', setting.show_dialog_auto) then
 			setting.show_dialog_auto = not setting.show_dialog_auto
 			save()
 		end
-		gui.TextInfo({26, 98}, {'Вам больше не нужно будет вводить /offer, чтобы посмотреть паспорт, мед. карту, лицензии', 'или трудовую книжку, которую хочет предложит посмотреть Вам игрок.'})
-		gui.DrawLine({16, 137}, {602, 137}, cl.line)
-		gui.Text(26, 147, 'Отключить команду рации департамента', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 142))
+		gui.TextInfo({26, 54}, {'Вам больше не нужно будет вводить /offer, чтобы посмотреть паспорт, мед. карту, лицензии', 'или трудовую книжку, которую хочет предложит посмотреть Вам игрок.'})
+		gui.DrawLine({16, 93}, {602, 93}, cl.line)
+		gui.Text(26, 103, 'Отключить команду рации департамента', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 98))
 		if gui.Switch(u8'##Отключить рацию депа', setting.dep_off) then
 			setting.dep_off = not setting.dep_off
 			save()
 			if setting.dep_off then
 				sampRegisterChatCommand('d', function()
-					sampAddChatMessage('[SH]{FFFFFF} Вы отключили команду /d в настройках.', 0xFF5345)
+					if not setting.cef_notif then
+						sampAddChatMessage('[SH]{FFFFFF} Вы отключили команду /d в настройках.', 0xFF5345)
+					else
+						cefnotig('{FF5345}[SH]{FFFFFF} Вы отключили команду /d в настройках.', 3000)
+					end
 				end)
 			else
 				sampUnregisterChatCommand('d')
 			end
 		end
-		gui.TextInfo({26, 166}, {'Если Вы очень часто по случайности отправляете информацию в рацию департамента,', 'то можете отключить команду /d. Тогда эта команда просто перестанет работать.'})
-		gui.DrawLine({16, 205}, {602, 205}, cl.line)
-		gui.Text(26, 215, 'Отображать под миникартой расстояние до серверной метки', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 210))
+		gui.TextInfo({26, 122}, {'Если Вы очень часто по случайности отправляете информацию в рацию департамента,', 'то можете отключить команду /d. Тогда эта команда просто перестанет работать.'})
+		gui.DrawLine({16, 161}, {602, 161}, cl.line)
+		gui.Text(26, 171, 'Отображать под миникартой расстояние до серверной метки', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 166))
 		if gui.Switch(u8'##Серверная метка', setting.display_map_distance.server) then
 			setting.display_map_distance.server = not setting.display_map_distance.server
 			save()
 		end
-		gui.DrawLine({16, 241}, {602, 241}, cl.line)
-		gui.Text(26, 251, 'Отображать под миникартой расстояние до пользовательской метки', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 246))
+		gui.DrawLine({16, 197}, {602, 197}, cl.line)
+		gui.Text(26, 207, 'Отображать под миникартой расстояние до пользовательской метки', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 202))
 		if gui.Switch(u8'##Пользовательская метка', setting.display_map_distance.user) then
 			setting.display_map_distance.user = not setting.display_map_distance.user
 			save()
 		end
-		gui.DrawLine({16, 277}, {602, 277}, cl.line)
-		gui.Text(26, 287, 'Скриншот экрана + /time командой /ts', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 282))
+		gui.DrawLine({16, 233}, {602, 233}, cl.line)
+		gui.Text(26, 243, 'Скриншот экрана + /time командой /ts', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 238))
 		if gui.Switch(u8'##Команда ts', setting.ts) then
 			setting.ts = not setting.ts
 			if setting.ts then
@@ -4506,25 +5548,25 @@ function hall.settings()
 			end
 			save()
 		end
-		gui.DrawLine({16, 313}, {602, 313}, cl.line)
-		gui.Text(26, 323, 'Отображать дату и время под миникартой', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 318))
+		gui.DrawLine({16, 269}, {602, 269}, cl.line)
+		gui.Text(26, 279, 'Отображать дату и время под миникартой', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 274))
 		if gui.Switch(u8'##Дата и время', setting.time_hud) then
 			setting.time_hud = not setting.time_hud
 			save()
 		end
-		gui.DrawLine({16, 349}, {602, 349}, cl.line)
-		gui.Text(26, 359, 'Клавиша для остановки отыгровки - ' .. setting.act_key[2], font[3])
-		if gui.Button(u8'Изменить...', {491, 355}, {99, 25}) then
+		gui.DrawLine({16, 305}, {602, 305}, cl.line)
+		gui.Text(26, 315, 'Клавиша для остановки отыгровки - ' .. setting.act_key[2], font[3])
+		if gui.Button(u8'Изменить...', {491, 311}, {99, 25}) then
 			imgui.OpenPopup(u8'Изменить клавишу деактивации команды')
 			lockPlayerControl(true)
 			edit_key = true
 			act_key = setting.act_key[1]
 			current_key = {u8'Page Down', {34}}
 		end
-		gui.DrawLine({16, 385}, {602, 385}, cl.line)
-		gui.Text(26, 395, 'Клавиша для продолжения отыгровки - ' .. setting.enter_key[2], font[3])
-		if gui.Button(u8'Изменить...##клавишу продолжения', {491, 391}, {99, 25}) then
+		gui.DrawLine({16, 341}, {602, 341}, cl.line)
+		gui.Text(26, 351, 'Клавиша для продолжения отыгровки - ' .. setting.enter_key[2], font[3])
+		if gui.Button(u8'Изменить...##клавишу продолжения', {491, 347}, {99, 25}) then
 			imgui.OpenPopup(u8'Изменить клавишу продолжения команды')
 			lockPlayerControl(true)
 			edit_key = true
@@ -4532,16 +5574,16 @@ function hall.settings()
 			current_key = {u8'Enter', {13}}
 		end
 		
-		new_draw(440, 53)
-		gui.Text(26, 449, 'Изменить значение текущего времени', font[3])
-		gui.TextInfo({26, 468}, {'Скрипт начнёт воспринимать текущее время с учётом Вашего изменения.'})
+		new_draw(396, 53)
+		gui.Text(26, 405, 'Изменить значение текущего времени', font[3])
+		gui.TextInfo({26, 424}, {'Скрипт начнёт воспринимать текущее время с учётом Вашего изменения.'})
 		
 		local color_imVec4_button1, color_imVec4_button_text1 = cl.bg, cl.text
 		if setting.time_offset >= 12 then
 			color_imVec4_button1 = imgui.ImVec4(0.40, 0.40, 0.40, 0.50)
 			color_imVec4_button_text1 = imgui.ImVec4(0.50, 0.50, 0.50, 1.00)
 		else
-			imgui.SetCursorPos(imgui.ImVec2(566, 454))
+			imgui.SetCursorPos(imgui.ImVec2(566, 410))
 			if imgui.InvisibleButton(u8'##Прибавить значение к времени', imgui.ImVec2(26, 26)) then
 				setting.time_offset = setting.time_offset + 1
 				save()
@@ -4552,15 +5594,15 @@ function hall.settings()
 				color_imVec4_button_text1 = imgui.ImVec4(0.95, 0.95, 0.95, 1.00)
 			end
 		end
-		gui.DrawCircle({578.5, 466.5}, 12.5, color_imVec4_button1)
-		gui.FaText(572, 458, fa.PLUS, fa_font[3], color_imVec4_button_text1)
+		gui.DrawCircle({578.5, 422.5}, 12.5, color_imVec4_button1)
+		gui.FaText(572, 414, fa.PLUS, fa_font[3], color_imVec4_button_text1)
 		
 		local color_imVec4_button2, color_imVec4_button_text2 = cl.bg, cl.text
 		if setting.time_offset <= -12 then
 			color_imVec4_button2 = imgui.ImVec4(0.40, 0.40, 0.40, 0.50)
 			color_imVec4_button_text2 = imgui.ImVec4(0.50, 0.50, 0.50, 1.00)
 		else
-			imgui.SetCursorPos(imgui.ImVec2(450, 454))
+			imgui.SetCursorPos(imgui.ImVec2(450, 410))
 			if imgui.InvisibleButton(u8'##Убавить значение к времени', imgui.ImVec2(26, 26)) then
 				setting.time_offset = setting.time_offset - 1
 				save()
@@ -4571,8 +5613,8 @@ function hall.settings()
 				color_imVec4_button_text2 = imgui.ImVec4(0.95, 0.95, 0.95, 1.00)
 			end
 		end
-		gui.DrawCircle({462.5, 466.5}, 12.5, color_imVec4_button2)
-		gui.FaText(456, 458, fa.MINUS, fa_font[3], color_imVec4_button_text2)
+		gui.DrawCircle({462.5, 422.5}, 12.5, color_imVec4_button2)
+		gui.FaText(456, 414, fa.MINUS, fa_font[3], color_imVec4_button_text2)
 		
 		local format_time_text = ' час'
 		if setting.time_offset >= -4 and setting.time_offset <= 4 and setting.time_offset ~= -1 and setting.time_offset ~= 1 then
@@ -4582,21 +5624,20 @@ function hall.settings()
 		end
 		
 		if setting.time_offset == 0 then
-			gui.Text(492, 456, '0 часов', bold_font[1])
+			gui.Text(492, 412, '0 часов', bold_font[1])
 		elseif setting.time_offset > 0 then
 			imgui.PushFont(bold_font[1])
 			local text_format = '+' .. tostring(setting.time_offset) .. format_time_text
 			local calc_size_text = imgui.CalcTextSize(u8(text_format))
 			imgui.PopFont()
-			gui.Text(521 - (calc_size_text.x / 2), 456, text_format, bold_font[1])
+			gui.Text(521 - (calc_size_text.x / 2), 412, text_format, bold_font[1])
 		else
 			imgui.PushFont(bold_font[1])
 			local text_format = tostring(setting.time_offset) .. format_time_text
 			local calc_size_text = imgui.CalcTextSize(u8(text_format))
 			imgui.PopFont()
-			gui.Text(521 - (calc_size_text.x / 2), 456, text_format, bold_font[1])
+			gui.Text(521 - (calc_size_text.x / 2), 412, text_format, bold_font[1])
 		end
-		
 		
 		if imgui.BeginPopupModal(u8'Изменить клавишу деактивации команды', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
 			imgui.SetCursorPos(imgui.ImVec2(10, 10))
@@ -4887,28 +5928,28 @@ function hall.settings()
 		local pos_y_dopf = 0
 		if setting.kick_afk.func then
 			pos_y_dopf = 72
-			new_draw(512, 107)
+			new_draw(468, 107)
 		else
-			new_draw(512, 35)
-		end
-		gui.Text(26, 521, 'Автоматически кикать при привышении нормы АФК', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 516))
+			new_draw(468, 35)
+		end	
+		gui.Text(26, 477, 'Автоматически кикать при привышение нормы АФК', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 472))
 		if gui.Switch(u8'##Автокик АФК', setting.kick_afk.func) then
 			setting.kick_afk.func = not setting.kick_afk.func
 			save()
 		end
 		if setting.kick_afk.func then
-			gui.DrawLine({16, 547}, {602, 547}, cl.line)
-			gui.Text(26, 557, 'Введите значение в минутах', font[3])
+			gui.DrawLine({16, 503}, {602, 503}, cl.line)
+			gui.Text(26, 513, 'Введите значение в минутах', font[3])
 			local bool_save_input_afk = setting.accent.text
-			setting.kick_afk.time_kick = gui.InputText({417, 559}, 164, setting.kick_afk.time_kick, u8'АФК кик', 4, u8'Введите значение', 'num')
+			setting.kick_afk.time_kick = gui.InputText({417, 515}, 164, setting.kick_afk.time_kick, u8'АФК кик', 4, u8'Введите значение', 'num')
 			if setting.kick_afk.time_kick ~= bool_save_input_afk then
 				save()
 			end
-			gui.DrawLine({16, 583}, {602, 583}, cl.line)
-			gui.Text(26, 593, 'Действие после привышения значения', font[3])
+			gui.DrawLine({16, 539}, {602, 539}, cl.line)
+			gui.Text(26, 549, 'Действие после привышения значения', font[3])
 			local bool_set_act = setting.kick_afk.mode
-			setting.kick_afk.mode = gui.ListTableMove({572, 593}, {u8'Полностью закрыть игру', u8'Закрыть соединение с сервером'}, setting.kick_afk.mode, 'Select action AFK')
+			setting.kick_afk.mode = gui.ListTableMove({572, 549}, {u8'Полностью закрыть игру', u8'Закрыть соединение с сервером'}, setting.kick_afk.mode, 'Select action AFK')
 			if setting.kick_afk.mode ~= bool_set_act then
 				save() 
 			end
@@ -5002,6 +6043,23 @@ function hall.settings()
 		accent_col(5, {1.00, 0.57, 0.04}, {1.00, 0.47, 0.04})
 		accent_col(6, {0.20, 0.74, 0.29}, {0.20, 0.64, 0.29})
 		accent_col(7, {0.50, 0.50, 0.52}, {0.40, 0.40, 0.42})
+
+		new_draw(261, 35)
+		gui.Text(26, 270, 'Прозрачность окна', font[3])
+		local alpha_slider = imgui.new.float(setting.window_alpha)
+		local new_alpha = gui.SliderBar('##Прозрачность окна', alpha_slider, 0.2, 1.0, 200, {380, 267})
+		if new_alpha ~= setting.window_alpha then
+			setting.window_alpha = round(new_alpha, 2)
+			save()
+		end
+
+		new_draw(315, 35)
+		gui.Text(26, 324, 'Заменять уведомления скрипта на оконные', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 319))
+		if gui.Switch(u8'##Заменять уведомления на оконные', setting.cef_notif) then
+			setting.cef_notif = not setting.cef_notif
+			save()
+		end
 	elseif tab_settings == 11 then
 		new_draw(16, 71)
 		
@@ -5393,6 +6451,7 @@ function hall.settings()
 			'Ilya_Kustov, Phoenix {FF9500}(QA-инженер, поддержка скрипта и обработка предложений)',
 			'Emma_Simmons, Phoenix {FF9500}(QA-инженер, помощь в разработке функциональности)',
 			'Oliver_Blain, Love {FF9500}(QA-инженер стадии Бета)',
+			'Richard_Forbes, Surprise {FF9500}(Разработчик сайта, помощь в разработке функций)',
 			'Robert_Poloskyn, Winslow {FF9500}(QA-инженер стадии Бета, помощь в разработке функций)',
 			'Maestro_Hennessy, Phoenix {FF9500}(QA-инженер стадии Бета)',
 			'Daniel_Heiliger, Love {FF9500}(QA-инженер стадии Бета)',
@@ -5408,6 +6467,7 @@ function hall.settings()
 			'Saul_Goodmaan, Love {FF9500}(QA-инженер стадии Бета)',
 			'Aaron_Grella, Mesa {FF9500}(QA-инженер стадии Бета)',
 			'Virka_Vandalov, Wednesday {FF9500}(QA-инженер стадии Бета)',
+			'Akio_Hayasi, Tucson {FF9500}(QA-тестировщик)',
 			'Richard_Anderson, Phoenix {FF9500}(QA-тестировщик, помощь в ранней стадии разработки)',
 			'Samuel_Kloppo, Red-Rock {FF9500}(Помощь в разработке функциональности)',
 			'Kevin_Hatiko, Saint Rose {FF9500}(Вдохновение на создание скрипта)',
@@ -5480,8 +6540,10 @@ function hall.settings()
 			save()
 		end
 		if setting.stat_on_screen.func then
-			new_draw(160, 395)
-			for ps = 0, 9 do
+
+			new_draw(160, 395)	--new_draw(160, 431)
+
+			for ps = 0, 11 do
 				gui.DrawLine({16, 195 + (ps * 36)}, {602, 195 + (ps * 36)}, cl.line)
 			end
 			
@@ -5547,7 +6609,12 @@ function hall.settings()
 			if gui.Button(u8'Изменить...', {492, 524}, {100, 27}) then
 				ch_pos_on_stat()
 			end
-			
+			--gui.Text(26, 565, 'Приостанавливать онлайн в заданное время', font[3])
+			--imgui.SetCursorPos(imgui.ImVec2(561, 560))
+			--if gui.Switch(u8'##Приостанавливать онлайн', setting.stat_on_screen.stop_timer) then
+			--	setting.stat_on_screen.stop_timer = not setting.stat_on_screen.stop_timer
+			--	save()
+			--end
 			imgui.Dummy(imgui.ImVec2(0, 21))
 		end
 	elseif tab_settings == 20 then --> Музыка
@@ -5638,6 +6705,7 @@ function hall.settings()
 end
 
 function hall.cmd()
+	local to_delete = nil
 	local color_ItemActive = imgui.ImVec4(0.20, 0.20, 0.20, 1.00)
 	local color_ItemHovered = imgui.ImVec4(0.24, 0.24, 0.24, 1.00)
 	if setting.cl == 'White' then
@@ -5714,6 +6782,66 @@ function hall.cmd()
 			
 			return return_bool
 		end
+		local function FolderMove(pos_draw, name_table)
+			local col_stand_imvec4 = imgui.ImVec4(0.00, 0.00, 0.00, 0.00)
+			local return_bool = 0
+			local arg_table = {u8'Переименовать', u8'Удалить'}
+			local icon_table = {fa.PEN_TO_SQUARE, fa.TRASH}
+			imgui.PushFont(font[3])
+			
+			if table_move_cmd == name_table then
+				imgui.SetCursorPos(imgui.ImVec2(pos_draw[1], pos_draw[2]))
+				imgui.BeginChild(u8'Окно выбора действия с папкой' .. name_table, imgui.ImVec2(160, 56), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse)
+				
+				imgui.SetCursorPos(imgui.ImVec2(0, 0))
+				local p = imgui.GetCursorScreenPos()
+				imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + 160, p.y + 54), imgui.GetColorU32Vec4(cl.bg), 7, 15)
+				local text_and_icon_color = (setting.cl == 'White') and imgui.ImVec4(0.0, 0.0, 0.0, 1.0) or imgui.ImVec4(1.0, 1.0, 1.0, 1.0)
+				for m = 1, #arg_table do
+					local col_stand_imvec4_2 = imgui.ImVec4(0.00, 0.00, 0.00, 0.00)
+					imgui.SetCursorPos(imgui.ImVec2(0, 1 + (m - 1) * 27))
+					if imgui.InvisibleButton('##FolderMoveSelect ' .. name_table .. m, imgui.ImVec2(160, 27)) then
+						table_move_cmd = ''
+						return_bool = m
+					end
+					if imgui.IsItemActive() then
+						col_stand_imvec4_2 = cl.def
+					elseif imgui.IsItemHovered() then
+						col_stand_imvec4_2 = cl.bg2
+					end
+					imgui.SetCursorPos(imgui.ImVec2(1, 1 + (m - 1) * 27))
+					local p = imgui.GetCursorScreenPos()
+					local flag = {0, 0}
+					if m == 1 then
+						flag = {4, 3}
+					elseif m == #arg_table then
+						flag = {4, 12}
+					end
+					imgui.GetWindowDrawList():AddRectFilled(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + 158, p.y + 27), imgui.GetColorU32Vec4(col_stand_imvec4_2), flag[1], flag[2])
+					imgui.PushStyleColor(imgui.Col.Text, text_and_icon_color)
+					imgui.SetCursorPos(imgui.ImVec2(25, 6 + ((m - 1) * 27)))
+					imgui.Text(arg_table[m])
+					imgui.PushFont(fa_font[2])
+					imgui.SetCursorPos(imgui.ImVec2(7, 6 + ((m - 1) * 27)))
+					imgui.Text(icon_table[m])
+					imgui.PopFont()
+					imgui.PopStyleColor()
+				end
+				imgui.SetCursorPos(imgui.ImVec2(0, 0))
+				local p = imgui.GetCursorScreenPos()
+				imgui.GetWindowDrawList():AddRect(imgui.ImVec2(p.x, p.y), imgui.ImVec2(p.x + 160, p.y + 55), imgui.GetColorU32Vec4(cl.def), 7, 15)
+				imgui.EndChild()
+				
+				if imgui.IsMouseReleased(0) and not imgui.IsItemHovered() then
+					table_move_cmd = ''
+				end
+			end
+			
+			imgui.PopFont()
+			
+			return return_bool
+		end
+
 		local function folder_list_defoult(TEXT, FA, NUM, POS) --> Отрисовка стандартных папок
 			POS = ((POS - 1) * 30) + ps_y
 			local return_break = false
@@ -5727,6 +6855,11 @@ function hall.cmd()
 					an[12][3] = false
 					an[12][2] = 0
 				end
+
+				if imgui.IsItemClicked(1) and NUM > 7 then
+					table_move_cmd = 'FOLDER_MOVE ' .. NUM
+				end
+
 				if imgui.IsItemActive() and int_cmd.folder ~= NUM and table_move_cmd == ''  then
 					gui.Draw({25, 15 + POS}, {172, 24}, color_ItemActive, 5, 15)
 				elseif imgui.IsItemHovered() and int_cmd.folder ~= NUM and table_move_cmd == ''  then
@@ -5768,17 +6901,7 @@ function hall.cmd()
 			else
 				imgui.SetCursorPos(imgui.ImVec2(29 + FA.SDVIG[1], 18 + FA.SDVIG[2] + POS))
 				if imgui.InvisibleButton('##DEL_FOLDER' .. NUM, imgui.ImVec2(19, 19)) then
-					if #cmd[1] ~= 0 then
-						for j = 1, #cmd[1] do
-							if cmd[1][j].folder == NUM then
-								cmd[1][j].folder = 1
-							elseif cmd[1][j].folder > NUM then
-								cmd[1][j].folder = cmd[1][j].folder - 1
-							end
-						end
-					end
-					table.remove(cmd[2], NUM)
-					return_break = true
+					imgui.OpenPopup(u8'Удалить папку?' .. NUM)
 				end
 				if imgui.IsItemActive() then
 					gui.FaText(31 + FA.SDVIG[1], 19 + FA.SDVIG[2] + POS, fa.CIRCLE_MINUS, fa_font[3], imgui.ImVec4(1.00, 0.09, 0.19, 1.00))
@@ -5786,6 +6909,52 @@ function hall.cmd()
 					gui.FaText(31 + FA.SDVIG[1], 19 + FA.SDVIG[2] + POS, fa.CIRCLE_MINUS, fa_font[3], imgui.ImVec4(1.00, 0.23, 0.19, 1.00))
 				end
 			end
+
+			if NUM > 7 then
+				local folder_action = FolderMove({25, 15 + POS + 26}, 'FOLDER_MOVE ' .. NUM)
+				if folder_action == 1 then
+					edit_all_cmd = true
+				elseif folder_action == 2 then
+					imgui.OpenPopup(u8'Удалить папку?' .. NUM)
+				end
+			end
+
+			if imgui.BeginPopupModal(u8'Удалить папку?' .. NUM, nil, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+				if setting.cl == 'White' then
+					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.00, 0.00, 0.00, 1.00))
+				else
+					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
+				end
+				gui.Text(25, 5, 'Удалить папку\nи все команды внутри неё?', font[3])
+				imgui.PopStyleColor(1)
+				if gui.Button(u8'Удалить', {24, 43}, {90, 27}) then
+					if #cmd[1] > 0 then
+						for j = #cmd[1], 1, -1 do
+							if cmd[1][j].folder == NUM then
+								if #cmd[1][j].key[2] ~= 0 then
+									rkeys.unRegisterHotKey(cmd[1][j].key[2])
+								end
+								if cmd[1][j].cmd ~= '' then
+									sampUnregisterChatCommand(cmd[1][j].cmd)
+								end
+								table.remove(cmd[1], j)
+							elseif cmd[1][j].folder > NUM then
+								cmd[1][j].folder = cmd[1][j].folder - 1
+							end
+						end
+					end
+					table.remove(cmd[2], NUM)
+					save_cmd()
+					add_cmd_in_all_cmd()
+					return_break = true
+					imgui.CloseCurrentPopup()
+				end
+				if gui.Button(u8'Отмена', {141, 43}, {90, 27}) then
+					imgui.CloseCurrentPopup()
+				end
+				imgui.EndPopup()
+			end
+
 			if return_break then
 				imgui.PopStyleColor(1)
 				imgui.PopFont()
@@ -6102,7 +7271,7 @@ function hall.cmd()
 				if cmd[1][i].folder == int_cmd.folder or int_cmd.folder == 1 then
 					if search_cmd ~= '' then
 						if not search_for_matches(u8:decode(search_cmd), cmd[1][i].cmd .. ' ' .. u8:decode(cmd[1][i].desc)) then
-							goto continue_at_end_of_cmd_loop
+							goto continue_cmd_loop
 						end
 					end
 					
@@ -6159,8 +7328,7 @@ function hall.cmd()
 						gui.FaText(525, -25 + pl_y, fa.PEN_RULER, fa_font[4], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.FaText(480, -25 + pl_y, fa.CIRCLE_PLAY, fa_font[4], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 					end
-					local del_cmd = false
-					if imgui.BeginPopupModal(u8'Подтверждение удаления команды2' .. i, null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+if imgui.BeginPopupModal(u8'Подтверждение удаления команды2' .. i, null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
 						imgui.SetCursorPos(imgui.ImVec2(10, 10))
 						if imgui.InvisibleButton(u8'##Закрыть окно удаления команды', imgui.ImVec2(16, 16)) then
 							imgui.CloseCurrentPopup()
@@ -6176,25 +7344,9 @@ function hall.cmd()
 						imgui.SetCursorPos(imgui.ImVec2(6, 40))
 						imgui.BeginChild(u8'Подтверждение удаления команды ', imgui.ImVec2(261, 90), false, imgui.WindowFlags.NoScrollbar)
 						
-						gui.Text(25, 5, 'Вы уверены, что хотите удалить \n                     команду?', font[3])
+						gui.Text(25, 5, 'Вы уверены, что хотите удалить \n					 команду?', font[3])
 						if gui.Button(u8'Удалить', {24, 50}, {90, 27}) then
-							if #cmd[1][cmd_del_i].key[2] ~= 0 then
-								rkeys.unRegisterHotKey(cmd[1][cmd_del_i].key[2])
-								for ke = 1, #all_keys do
-									if table.concat(all_keys[ke], ' ') == table.concat(cmd[1][cmd_del_i].key[2], ' ') then
-										table.remove(all_keys, ke)
-									end
-								end
-							end
-							if cmd[1][cmd_del_i].cmd ~= '' then
-								sampUnregisterChatCommand(cmd[1][cmd_del_i].cmd)
-							end
-							table.remove(cmd[1], cmd_del_i)
-							an[12][2] = 0
-							an[12][3] = false
-							save_cmd()
-							add_cmd_in_all_cmd()
-							del_cmd = true
+							to_delete = cmd_del_i
 							imgui.CloseCurrentPopup()
 						end
 						if gui.Button(u8'Отмена', {141, 50}, {90, 27}) then
@@ -6203,7 +7355,6 @@ function hall.cmd()
 						imgui.EndChild()
 						imgui.EndPopup()
 					end
-					if del_cmd then break end
 						
 					local pl_x = 0
 					if an[12][1] == i then
@@ -6312,13 +7463,34 @@ function hall.cmd()
 					end
 				end
 				
-				::continue_at_end_of_cmd_loop::
+				::continue_cmd_loop::
+			end
+			if to_delete then
+				if cmd[1][to_delete] then
+					if #cmd[1][to_delete].key[2] ~= 0 then
+						rkeys.unRegisterHotKey(cmd[1][to_delete].key[2])
+						for ke = #all_keys, 1, -1 do
+							if table.concat(all_keys[ke], ' ') == table.concat(cmd[1][to_delete].key[2], ' ') then
+								table.remove(all_keys, ke)
+								break
+							end
+						end
+					end
+					if cmd[1][to_delete].cmd ~= '' then
+						sampUnregisterChatCommand(cmd[1][to_delete].cmd)
+					end
+					table.remove(cmd[1], to_delete)
+					an[12][2] = 0
+					an[12][3] = false
+					save_cmd()
+					add_cmd_in_all_cmd()
+				end
 			end
 			imgui.Dummy(imgui.ImVec2(0, 20))
 		end
 		
 		if not presence_of_a_team then
-			edit_all_cmd = false
+			--edit_all_cmd = false --976
 			if setting.cl == 'White' then
 				imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.40, 0.40, 0.40, 1.00))
 			else
@@ -6340,7 +7512,7 @@ function hall.cmd()
 		gui.DrawBox({428, 16}, {396, 113}, cl.tab, cl.line, 7, 15)
 		
 		gui.Text(26, 26, 'Команда', font[3])
-		bl_cmd.cmd = gui.InputText({191, 28}, 200, bl_cmd.cmd, u8'Установка команды', 30, u8'Введите команду', 'en')
+		bl_cmd.cmd = gui.InputText({191, 28}, 200, bl_cmd.cmd, u8'Установка команды', 30, u8'Введите команду', 'esp')
 		gui.DrawLine({16, 53}, {412, 53}, cl.line)
 		gui.Text(26, 64, 'Описание', font[3])
 		bl_cmd.desc = gui.InputText({191, 66}, 200, bl_cmd.desc, u8'Описание команды', 150, u8'Введите описание команды')
@@ -6384,9 +7556,43 @@ function hall.cmd()
 		
 		gui.DrawBox({16, 145}, {808, 37}, cl.tab, cl.line, 7, 15)
 		gui.Text(26, 155, 'Задержка проигрывания отыгровки', font[3])
+		local color_plus_bg, color_plus_text = cl.bg, cl.text
+		if bl_cmd.delay >= 20.0 then
+			color_plus_bg = imgui.ImVec4(0.40, 0.40, 0.40, 0.50)
+			color_plus_text = (setting.cl == 'White' and imgui.ImVec4(0.50, 0.50, 0.50, 1.00)) or imgui.ImVec4(0.7, 0.7, 0.7, 1.00)
+		else
+			imgui.SetCursorPos(imgui.ImVec2(795, 152))
+			if imgui.InvisibleButton(u8'##Прибавить к задержке', imgui.ImVec2(20, 20)) then
+				bl_cmd.delay = round(bl_cmd.delay + 0.1, 1)
+			end
+			if imgui.IsItemActive() then
+				color_plus_bg = cl.def
+				color_plus_text = imgui.ImVec4(0.95, 0.95, 0.95, 1.00)
+			end
+		end
+		gui.DrawCircle({804, 162}, 9.5, color_plus_bg)
+		gui.FaText(799, 155, fa.PLUS, fa_font[2], color_plus_text)
+		local color_minus_bg, color_minus_text = cl.bg, cl.text
+		if bl_cmd.delay <= 0.5 then
+			color_minus_bg = imgui.ImVec4(0.40, 0.40, 0.40, 0.50)
+			color_minus_text = (setting.cl == 'White' and imgui.ImVec4(0.50, 0.50, 0.50, 1.00)) or imgui.ImVec4(0.7, 0.7, 0.7, 1.00)
+		else
+			imgui.SetCursorPos(imgui.ImVec2(545, 152))
+			if imgui.InvisibleButton(u8'##Убавить от задержки', imgui.ImVec2(20, 20)) then
+				bl_cmd.delay = round(bl_cmd.delay - 0.1, 1)
+			end
+			if imgui.IsItemActive() then
+				color_minus_bg = cl.def
+				color_minus_text = imgui.ImVec4(0.95, 0.95, 0.95, 1.00)
+			end
+		end
+		gui.DrawCircle({555, 162}, 9.5, color_minus_bg)
+		gui.FaText(550, 155, fa.MINUS, fa_font[2], color_minus_text)
 		local bool_delay = imgui.new.float(bl_cmd.delay)
-		bl_cmd.delay = gui.SliderBar('##Прозрачность текста', bool_delay, 0.5, 20, 180, {643, 152})
-		bl_cmd.delay = round(bl_cmd.delay, 0.1)
+		local new_main_delay = gui.SliderBar('##Прозрачность текста', bool_delay, 0.5, 20, 140, {643, 152})
+		if new_main_delay ~= bl_cmd.delay then
+			bl_cmd.delay = round(new_main_delay, 1)
+		end
 		gui.Text(575, 155, tostring(bl_cmd.delay) .. ' сек.', font[3])
 		
 		local pixel_y_arg = #bl_cmd.arg * 72
@@ -6553,7 +7759,18 @@ function hall.cmd()
 			local if_disp = 0
 			local bool_y = 0
 			local num_el_if = 0
+			local collapsed_level = 0
 			for i = 1, #bl_cmd.act do
+				if collapsed_level > 0 then
+					if bl_cmd.act[i][1] == 'IF' then
+						collapsed_level = collapsed_level + 1
+					elseif bl_cmd.act[i][1] == 'END' then
+						collapsed_level = collapsed_level - 1
+					end
+					if collapsed_level > 0 then
+						goto continue_loop_render
+					end
+				end
 				if if_disp > 168 then
 					if_disp = 168
 				end
@@ -6661,6 +7878,7 @@ function hall.cmd()
 						gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
 						gui.FaText(23 + 1 + if_disp, 295 + pxl, fa.SHARE, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Отправить сообщение в чат', font[3])
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							table.remove(bl_cmd.act, i)
 							break
@@ -6698,7 +7916,60 @@ function hall.cmd()
 						imgui.SetCursorPos(imgui.ImVec2(27 + if_disp, 326 + pxl))
 						imgui.PopFont()
 					end
-					
+					pxl = pxl + 77
+					if not optimization then
+						add_action_other(272 + pxl, i)
+					end
+				elseif bl_cmd.act[i][1] == 'SEND_CMD' then
+					if not optimization then
+						gui.DrawBox({16 + if_disp, 288 + pxl}, {808 - if_disp, 61}, cl.tab, cl.line, 7, 15)
+						gui.Draw({21 + if_disp, 293 + pxl}, {21, 21}, imgui.ImVec4(0.20, 0.60, 0.80, 1.00), 3, 15)
+						gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
+						gui.FaText(23 + 1 + if_disp, 295 + pxl, fa.TERMINAL, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
+						gui.Text(50 + if_disp, 295 + pxl, 'Отправить пользовательскую команду', font[3])
+						gui.Text(523, 295 + pxl, 'Останавливать отыгровки:', font[3])
+						imgui.SetCursorPos(imgui.ImVec2(703, 290 + pxl))
+						if gui.Switch(u8'##StopPlayback' .. i, bl_cmd.act[i][3]) then
+							bl_cmd.act[i][3] = not bl_cmd.act[i][3]
+						end
+						if AddMoveButtons(i, pxl) then break end
+						if remove_action(pxl, i) then
+							table.remove(bl_cmd.act, i)
+							break
+						end
+						
+						if gui.Button(u8'Вставить тег...##' .. i, {701, 323 + pxl}, {112, 23}) then
+							popup_open_tags = true
+							insert_tag_popup[3] = true
+							insert_tag_popup[1] = i
+						end
+						
+						imgui.PushFont(font[3])
+						if insert_tag_popup[1] == i and not insert_tag_popup[3] then
+							if bl_cmd.act[i][2] ~= '' then
+								bl_cmd.act[i][2] = bl_cmd.act[i][2] .. ' ' .. insert_tag_popup[2]
+							else
+								bl_cmd.act[i][2] = bl_cmd.act[i][2] .. insert_tag_popup[2]
+							end
+							insert_tag_popup[1] = 0
+							insert_tag_popup[2] = ''
+						end
+						local txt_inp_buf = imgui.new.char[600](bl_cmd.act[i][2])
+						imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(0.30, 0.30, 0.30, 0.00))
+						imgui.SetCursorPos(imgui.ImVec2(27 + if_disp, 326 + pxl))
+						imgui.PushItemWidth(662 - if_disp)
+						imgui.InputText('##SEND_CMD_CHAT' .. i, txt_inp_buf, ffi.sizeof(txt_inp_buf))
+						if bl_cmd.act[i][2] == '' then
+							imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+							gui.Text(29 + if_disp, 326 + pxl, 'Команда', font[3])
+							imgui.PopStyleColor(1)
+						end
+						imgui.PopItemWidth()
+						bl_cmd.act[i][2] = ffi.string(txt_inp_buf)
+						imgui.PopStyleColor(1)
+						imgui.SetCursorPos(imgui.ImVec2(27 + if_disp, 326 + pxl))
+						imgui.PopFont()
+					end
 					pxl = pxl + 77
 					if not optimization then
 						add_action_other(272 + pxl, i)
@@ -6710,6 +7981,7 @@ function hall.cmd()
 						gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
 						gui.FaText(23 + if_disp, 295 + pxl, fa.KEYBOARD, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Открыть игровой чат с текстом', font[3])
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							table.remove(bl_cmd.act, i)
 							break
@@ -6758,6 +8030,7 @@ function hall.cmd()
 						gui.Draw({21 + if_disp, 293 + pxl}, {21, 21}, imgui.ImVec4(0.30, 0.75, 0.39, 1.00), 3, 15)
 						gui.FaText(23 + 3 + if_disp, 295 + pxl, fa.HOURGLASS, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Ожидание нажатия клавиши Enter', font[3])
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							table.remove(bl_cmd.act, i)
 							break
@@ -6775,6 +8048,7 @@ function hall.cmd()
 						gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
 						gui.FaText(23  + if_disp, 295 + pxl, fa.SHARE_FROM_SQUARE, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Вывести в чат информацию для себя', font[3])
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							table.remove(bl_cmd.act, i)
 							break
@@ -6825,6 +8099,7 @@ function hall.cmd()
 						gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
 						gui.FaText(23 + if_disp, 295 + pxl, fa.SQUARE_ROOT_VARIABLE, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Задать для переменной', font[3])
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							table.remove(bl_cmd.act, i)
 							break
@@ -6847,6 +8122,7 @@ function hall.cmd()
 						gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
 						gui.FaText(23 + 1 + if_disp, 295 + pxl, fa.BARS_STAGGERED, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Диалог выбора дальнейшего действия', font[3])
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							table.remove(bl_cmd.act, i)
 							break
@@ -6856,33 +8132,35 @@ function hall.cmd()
 						bl_cmd.act[i][2] = gui.InputText({123 + if_disp, 330 + pxl}, 120, bl_cmd.act[i][2], u8'Имя диалога' .. i, 20, u8'Имя диалога', 'esp')
 						gui.DrawLine({16 + if_disp, 353 + pxl}, {824, 353 + pxl}, cl.line)
 					end
-						for vr = 1, #bl_cmd.act[i][3] do
-							if not optimization then
-								local txt_inp_buf = imgui.new.char[60](bl_cmd.act[i][3][vr])
-								imgui.SetCursorPos(imgui.ImVec2(50 + if_disp, 362 + pxl))
-								imgui.PushItemWidth(763 - if_disp)
-								imgui.InputText('##BOOL_DIALOG' .. i .. vr, txt_inp_buf, ffi.sizeof(txt_inp_buf))
-								if bl_cmd.act[i][3][vr] == '' then
-									imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-									gui.Text(52 + if_disp, 362 + pxl, 'Текст варианта', font[3])
-									imgui.PopStyleColor(1)
-								end
-								imgui.PopItemWidth()
-								bl_cmd.act[i][3][vr] = ffi.string(txt_inp_buf)
-								imgui.SetCursorPos(imgui.ImVec2(24 + if_disp, 358 + pxl))
-								if imgui.InvisibleButton('DEL_OPTION' .. i .. vr, imgui.ImVec2(23, 23)) then
-									table.remove(bl_cmd.act[i][3], vr)
-									break
-								end
-								if imgui.IsItemActive() then
-									gui.FaText(27 + if_disp, 361 + pxl, fa.CIRCLE_MINUS, fa_font[4], imgui.ImVec4(1.00, 0.09, 0.19, 1.00))
-								else
-									gui.FaText(27 + if_disp, 361 + pxl, fa.CIRCLE_MINUS, fa_font[4], imgui.ImVec4(1.00, 0.23, 0.19, 1.00))
-								end
-								gui.DrawLine({16 + if_disp, 387 + pxl}, {824, 387 + pxl}, cl.line)
+					local max_variants = 10
+					local count = math.min(#bl_cmd.act[i][3], max_variants)
+					for vr = 1, count do
+						if not optimization then
+							local txt_inp_buf = imgui.new.char[60](bl_cmd.act[i][3][vr])
+							imgui.SetCursorPos(imgui.ImVec2(50 + if_disp, 362 + pxl))
+							imgui.PushItemWidth(763 - if_disp)
+							imgui.InputText('##BOOL_DIALOG' .. i .. vr, txt_inp_buf, ffi.sizeof(txt_inp_buf))
+							if bl_cmd.act[i][3][vr] == '' then
+								imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+								gui.Text(52 + if_disp, 362 + pxl, 'Текст варианта', font[3])
+								imgui.PopStyleColor(1)
 							end
-							pxl = pxl + 34
+							imgui.PopItemWidth()
+							bl_cmd.act[i][3][vr] = ffi.string(txt_inp_buf)
+							imgui.SetCursorPos(imgui.ImVec2(24 + if_disp, 358 + pxl))
+							if imgui.InvisibleButton('DEL_OPTION' .. i .. vr, imgui.ImVec2(23, 23)) then
+								table.remove(bl_cmd.act[i][3], vr)
+								break
+							end
+							if imgui.IsItemActive() then
+								gui.FaText(27 + if_disp, 361 + pxl, fa.CIRCLE_MINUS, fa_font[4], imgui.ImVec4(1.00, 0.09, 0.19, 1.00))
+							else
+								gui.FaText(27 + if_disp, 361 + pxl, fa.CIRCLE_MINUS, fa_font[4], imgui.ImVec4(1.00, 0.23, 0.19, 1.00))
+							end
+							gui.DrawLine({16 + if_disp, 387 + pxl}, {824, 387 + pxl}, cl.line)
 						end
+						pxl = pxl + 34
+					end
 					if not optimization then
 						if #bl_cmd.act[i][3] <= 9 then
 							imgui.SetCursorPos(imgui.ImVec2(23 + if_disp, 358 + pxl))
@@ -6918,18 +8196,42 @@ function hall.cmd()
 					end
 				elseif bl_cmd.act[i][1] == 'IF' then
 					local param_plus = 0
-					if bl_cmd.act[i][2] ~= 1 then
+					if bl_cmd.act[i][2] ~= 1 and not bl_cmd.act[i][6] then
 						param_plus = 36
 					end
 					if not optimization then
 						gui.DrawBox({16 + if_disp, 288 + pxl}, {808 - if_disp, 31 + param_plus}, cl.tab, cl.line, 7, 15)
 						gui.Draw({21 + if_disp, 293 + pxl}, {21, 21}, imgui.ImVec4(0.56, 0.56, 0.58, 1.00), 3, 15)
-						gui.FaText(23 + 2 + if_disp, 295 + pxl, fa.ARROWS_CROSS, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
+						--gui.FaText(23 + 2 + if_disp, 295 + pxl, fa.ARROWS_CROSS, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
+						imgui.SetCursorPos(imgui.ImVec2(16 + if_disp, 288 + pxl))
+						if imgui.InvisibleButton('##TOGGLE_COLLAPSE' .. i, imgui.ImVec2(21, 31)) then
+							bl_cmd.act[i][6] = not bl_cmd.act[i][6]
+						end
+						local collapse_icon = bl_cmd.act[i][6] and fa.SQUARE_PLUS or fa.SQUARE_MINUS
+						gui.FaText(18 + if_disp, 290 + pxl, collapse_icon, fa_font[4], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Если', font[3])
-						if bl_cmd.act[i][2] ~= 1 then
+						if bl_cmd.act[i][6] then
+							local hidden_lines = 0
+							local nesting_level = 1
+							for j = i + 1, #bl_cmd.act do
+								if bl_cmd.act[j][1] == 'IF' then
+									nesting_level = nesting_level + 1
+								elseif bl_cmd.act[j][1] == 'END' then
+									nesting_level = nesting_level - 1
+								end
+								if nesting_level == 0 then break end
+								hidden_lines = hidden_lines + 1
+							end
+							local text_to_display = '... (' .. hidden_lines .. ' строк)'
+							local text_size = imgui.CalcTextSize(u8(text_to_display))
+							imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.70))
+							gui.Text(734 - text_size.x - if_disp, 295 + pxl, text_to_display, font[3])
+							imgui.PopStyleColor(1)
+						end
+						if bl_cmd.act[i][2] ~= 1 and not bl_cmd.act[i][6] then
 							gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
 						end
-						
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							local remove_array = {i}
 							for j = 1, #bl_cmd.act do
@@ -6949,7 +8251,6 @@ function hall.cmd()
 							end
 							break
 						end
-						
 						local param_edit = bl_cmd.act[i][2]
 						bl_cmd.act[i][2] = gui.ListTableMove({265 + if_disp, 295 + pxl}, {u8'Входные данные', u8'В диалоге выбран вариант', u8'Сравнение аргумента', u8'Сравнение переменной'}, bl_cmd.act[i][2], 'Select if' .. i)
 						if param_edit ~= bl_cmd.act[i][2] then
@@ -6959,34 +8260,38 @@ function hall.cmd()
 								bl_cmd.act[i][3] = {'', ''}
 							end
 						end
-						
-						if bl_cmd.act[i][2] == 2 then
-							gui.Text(26 + if_disp, 329 + pxl, 'Имя диалога', font[3])
-							bl_cmd.act[i][3][1] = gui.InputText({127 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя диалога' .. i, 20, u8'Имя диалога', 'esp')
-							gui.Text(300 + if_disp, 329 + pxl, 'Выбранный вариант', font[3])
-							local param_opt = tonumber(bl_cmd.act[i][3][2])
-							param_opt = gui.Counter({460 + if_disp, 329 + pxl}, tostring(param_opt), param_opt, 1, 99, u8'Выбранный вариант' .. i)
-							bl_cmd.act[i][3][2] = tostring(param_opt)
-						elseif bl_cmd.act[i][2] == 3 then
-							gui.Text(26 + if_disp, 329 + pxl, 'Имя аргумента', font[3])
-							bl_cmd.act[i][3][1] = gui.InputText({139 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя аргумента ' .. i, 20, u8'Имя аргумента', 'esp')
-							gui.Text(389 + if_disp, 329 + pxl, 'Значение', font[3])
-							bl_cmd.act[i][3][2] = gui.InputText({467 + if_disp, 331 + pxl}, 336 - if_disp, bl_cmd.act[i][3][2], u8'Значение равенства arg' .. i, 500, u8'Значение')
-							bl_cmd.act[i][5] = gui.ListTableMove({600 + if_disp, 295 + pxl}, {u8'Аргумент равен', u8'Аргумент больше, чем значение', u8'Аргумент больше или равняется значению', u8'Аргумент меньше значения', u8'Аргумент меньше или равняется значению', u8'Аргумент не равен значению'}, bl_cmd.act[i][5], 'Select Equality Values Arg' .. i)
-						elseif bl_cmd.act[i][2] == 4 then
-							gui.Text(26 + if_disp, 329 + pxl, 'Имя переменной', font[3])
-							bl_cmd.act[i][3][1] = gui.InputText({151 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя переменной ' .. i, 20, u8'Имя переменной', 'esp')
-							gui.Text(389 + if_disp, 329 + pxl, 'Значение', font[3])
-							bl_cmd.act[i][3][2] = gui.InputText({467 + if_disp, 331 + pxl}, 336 - if_disp, bl_cmd.act[i][3][2], u8'Значение равенства var' .. i, 500, u8'Значение')
-							bl_cmd.act[i][5] = gui.ListTableMove({600 + if_disp, 295 + pxl}, {u8'Переменная равна', u8'Переменная больше, чем значение', u8'Переменная больше или равняется значению', u8'Переменная меньше значения', u8'Переменная меньше или равняется значению', u8'Переменная не равна значению'}, bl_cmd.act[i][5], 'Select Equality Values Var' .. i)
+						if not bl_cmd.act[i][6] then
+							if bl_cmd.act[i][2] == 2 then
+								gui.Text(26 + if_disp, 329 + pxl, 'Имя диалога', font[3])
+								bl_cmd.act[i][3][1] = gui.InputText({127 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя диалога' .. i, 20, u8'Имя диалога', 'esp')
+								gui.Text(300 + if_disp, 329 + pxl, 'Выбранный вариант', font[3])
+								local param_opt = tonumber(bl_cmd.act[i][3][2])
+								param_opt = gui.Counter({460 + if_disp, 329 + pxl}, tostring(param_opt), param_opt, 1, 99, u8'Выбранный вариант' .. i)
+								bl_cmd.act[i][3][2] = tostring(param_opt)
+							elseif bl_cmd.act[i][2] == 3 then
+								gui.Text(26 + if_disp, 329 + pxl, 'Имя аргумента', font[3])
+								bl_cmd.act[i][3][1] = gui.InputText({139 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя аргумента ' .. i, 20, u8'Имя аргумента', 'esp')
+								gui.Text(389 + if_disp, 329 + pxl, 'Значение', font[3])
+								bl_cmd.act[i][3][2] = gui.InputText({467 + if_disp, 331 + pxl}, 336 - if_disp, bl_cmd.act[i][3][2], u8'Значение равенства arg' .. i, 500, u8'Значение')
+								bl_cmd.act[i][5] = gui.ListTableMove({600 + if_disp, 295 + pxl}, {u8'Аргумент равен', u8'Аргумент больше, чем значение', u8'Аргумент больше или равняется значению', u8'Аргумент меньше значения', u8'Аргумент меньше или равняется значению', u8'Аргумент не равен значению'}, bl_cmd.act[i][5], 'Select Equality Values Arg' .. i)
+							elseif bl_cmd.act[i][2] == 4 then
+								gui.Text(26 + if_disp, 329 + pxl, 'Имя переменной', font[3])
+								bl_cmd.act[i][3][1] = gui.InputText({151 + if_disp, 331 + pxl}, 120, bl_cmd.act[i][3][1], u8'Имя переменной ' .. i, 20, u8'Имя переменной', 'esp')
+								gui.Text(389 + if_disp, 329 + pxl, 'Значение', font[3])
+								bl_cmd.act[i][3][2] = gui.InputText({467 + if_disp, 331 + pxl}, 336 - if_disp, bl_cmd.act[i][3][2], u8'Значение равенства var' .. i, 500, u8'Значение')
+								bl_cmd.act[i][5] = gui.ListTableMove({600 + if_disp, 295 + pxl}, {u8'Переменная равна', u8'Переменная больше, чем значение', u8'Переменная больше или равняется значению', u8'Переменная меньше значения', u8'Переменная меньше или равняется значению', u8'Переменная не равна значению'}, bl_cmd.act[i][5], 'Select Equality Values Var' .. i)
+							end
 						end
 					end
-					pxl = pxl + 47 + param_plus
-					if_disp = if_disp + 24
-					num_el_if = num_el_if + 1
-					
-					
-					if not optimization then
+					if bl_cmd.act[i][6] then 
+						collapsed_level = 1
+						pxl = pxl + 47
+					else
+						pxl = pxl + 47 + param_plus
+						if_disp = if_disp + 24
+						num_el_if = num_el_if + 1
+					end
+					if not optimization and not bl_cmd.act[i][6] then
 						add_action_other(272 + pxl, i)
 					end
 				elseif bl_cmd.act[i][1] == 'ELSE' then
@@ -7029,7 +8334,7 @@ function hall.cmd()
 						gui.Draw({21 + if_disp, 293 + pxl}, {21, 21}, imgui.ImVec4(0.56, 0.56, 0.58, 1.00), 3, 15)
 						gui.FaText(23 + 1 + if_disp, 295 + pxl, fa.HAND, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Остановить отыгровку', font[3])
-						
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							table.remove(bl_cmd.act, i)
 							break
@@ -7047,6 +8352,7 @@ function hall.cmd()
 						gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
 						gui.FaText(23 + 1 + if_disp, 295 - 1 + pxl, fa.COMMENT, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Комментарий', font[3])
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							table.remove(bl_cmd.act, i)
 							break
@@ -7081,11 +8387,13 @@ function hall.cmd()
 						gui.FaText(23 + 1 + if_disp, 295 + pxl, fa.CLOCK_ROTATE_LEFT, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
 						gui.Text(50 + if_disp, 295 + pxl, 'Изменить задержку проигрывания отыгровки', font[3])
 						local bool_new_delay = imgui.new.float(bl_cmd.act[i][2])
-						bl_cmd.act[i][2] = gui.SliderBar('##Изменить задержку отыгровки ' .. i, bool_new_delay, 0.5, 20, 180, {618, 292 + pxl})
-						delay_act_def = bl_cmd.act[i][2]
-						bl_cmd.act[i][2] = round(bl_cmd.act[i][2], 0.1)
-						gui.Text(560, 295 + pxl, tostring(bl_cmd.act[i][2]) .. ' сек.', font[3])
-						
+						local new_delay_value = gui.SliderBar('##Изменить задержку отыгровки ' .. i, bool_new_delay, 0.5, 20, 180, {554, 292 + pxl})
+						if new_delay_value ~= bl_cmd.act[i][2] then
+							bl_cmd.act[i][2] = round(new_delay_value, 1)
+							delay_act_def = bl_cmd.act[i][2]
+						end
+						gui.Text(496, 295 + pxl, tostring(bl_cmd.act[i][2]) .. ' сек.', font[3])
+						if AddMoveButtons(i, pxl) then break end
 						if remove_action(pxl, i) then
 							table.remove(bl_cmd.act, i)
 							break
@@ -7096,7 +8404,80 @@ function hall.cmd()
 					if not optimization then
 						add_action_other(272 + pxl, i)
 					end
+				elseif bl_cmd.act[i][1] == 'SEND_DIALOG' then
+					if not optimization then
+						gui.DrawBox({16 + if_disp, 288 + pxl}, {808 - if_disp, 61}, cl.tab, cl.line, 7, 15)
+						gui.Draw({21 + if_disp, 293 + pxl}, {21, 21}, imgui.ImVec4(0.20, 0.60, 0.80, 1.00), 3, 15)
+						gui.DrawLine({16 + if_disp, 319 + pxl}, {824, 319 + pxl}, cl.line)
+						gui.FaText(23 + 1 + if_disp, 295 + pxl, fa.PEN_TO_SQUARE, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
+						gui.Text(50 + if_disp, 295 + pxl, 'Отправить текст в диалог', font[3])
+						if AddMoveButtons(i, pxl) then break end
+						if remove_action(pxl, i) then
+							table.remove(bl_cmd.act, i)
+							break
+						end
+
+						if gui.Button(u8'Вставить тег...##' .. i, {701, 323 + pxl}, {112, 23}) then
+							popup_open_tags = true
+							insert_tag_popup[3] = true
+							insert_tag_popup[1] = i
+						end
+
+						imgui.PushFont(font[3])
+						if insert_tag_popup[1] == i and not insert_tag_popup[3] then
+							if bl_cmd.act[i][2] ~= '' then
+								bl_cmd.act[i][2] = bl_cmd.act[i][2] .. ' ' .. insert_tag_popup[2]
+							else
+								bl_cmd.act[i][2] = bl_cmd.act[i][2] .. insert_tag_popup[2]
+							end
+							insert_tag_popup[1] = 0
+							insert_tag_popup[2] = ''
+						end
+						local txt_inp_buf = imgui.new.char[600](bl_cmd.act[i][2])
+						imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(0.30, 0.30, 0.30, 0.00))
+						imgui.SetCursorPos(imgui.ImVec2(27 + if_disp, 326 + pxl))
+						imgui.PushItemWidth(662 - if_disp)
+						imgui.InputText('##SEND_DIALOG_TEXT' .. i, txt_inp_buf, ffi.sizeof(txt_inp_buf))
+						if bl_cmd.act[i][2] == '' then
+							imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+							gui.Text(29 + if_disp, 326 + pxl, 'Текст', font[3])
+							imgui.PopStyleColor(1)
+						end
+						imgui.PopItemWidth()
+						bl_cmd.act[i][2] = ffi.string(txt_inp_buf)
+						imgui.PopStyleColor(1)
+						imgui.SetCursorPos(imgui.ImVec2(27 + if_disp, 326 + pxl))
+						imgui.PopFont()
+					end
+					pxl = pxl + 77
+					if not optimization then
+						add_action_other(272 + pxl, i)
+					end
+				elseif bl_cmd.act[i][1] == 'SELECT_DIALOG_ROW' then
+					if not optimization then
+						gui.DrawBox({16 + if_disp, 288 + pxl}, {808 - if_disp, 31}, cl.tab, cl.line, 7, 15)
+						gui.Draw({21 + if_disp, 293 + pxl}, {21, 21}, imgui.ImVec4(0.20, 0.80, 0.60, 1.00), 3, 15)
+						gui.FaText(23 + 1 + if_disp + 4, 295 + pxl, fa.ARROW_POINTER, fa_font[3], imgui.ImVec4(0.90, 0.90, 0.90, 1.00))
+						gui.Text(50 + if_disp, 295 + pxl, 'Нажать рядок в диалоге', font[3])
+						if AddMoveButtons(i, pxl) then break end
+						if remove_action(pxl, i) then
+							table.remove(bl_cmd.act, i)
+							break
+						end
+
+						gui.Text(568 + if_disp, 295 + pxl, 'Номер рядка (от 1):', font[3])
+						local bool_set_row = bl_cmd.act[i][2]
+						bl_cmd.act[i][2] = gui.InputText({708 + if_disp, 297 + pxl}, 15, bl_cmd.act[i][2], u8'Номер рядка диалога'..i, 5, u8'№', 'num')
+						if bl_cmd.act[i][2] == '' then
+							bl_cmd.act[i][2] = '0'
+						end
+					end
+					pxl = pxl + 47
+					if not optimization then
+						add_action_other(272 + pxl, i)
+					end
 				end
+				::continue_loop_render::
 			end
 		end
 		
@@ -7144,38 +8525,46 @@ function hall.cmd()
 				''
 			})
 		end
-		if add_action(2, {ICON = fa.KEYBOARD, COLOR_BG = imgui.ImVec4(1.00, 0.30, 0.00, 1.00), SDVIG = {0, 0}}, 'Открыть игровой чат с текстом') then
+		if add_action(2, {ICON = fa.TERMINAL, COLOR_BG = imgui.ImVec4(0.20, 0.60, 0.80, 1.00), SDVIG = {0, 0}}, 'Отправить пользовательскую команду') then
+			table.insert(bl_cmd.act, {
+				'SEND_CMD',
+				'',
+				false
+			})
+			imgui.CloseCurrentPopup()
+		end
+		if add_action(3, {ICON = fa.KEYBOARD, COLOR_BG = imgui.ImVec4(1.00, 0.30, 0.00, 1.00), SDVIG = {0, 0}}, 'Открыть игровой чат с текстом') then
 			table.insert(bl_cmd.act, {
 				'OPEN_INPUT',
 				''
 			})
 		end
-		if add_action(3, {ICON = fa.HOURGLASS, COLOR_BG = imgui.ImVec4(0.30, 0.75, 0.39, 1.00), SDVIG = {3, 0}}, 'Ожидание нажатия Enter') then
+		if add_action(4, {ICON = fa.HOURGLASS, COLOR_BG = imgui.ImVec4(0.30, 0.75, 0.39, 1.00), SDVIG = {3, 0}}, 'Ожидание нажатия Enter') then
 			table.insert(bl_cmd.act, {
 				'WAIT_ENTER'
 			})
 		end
-		if add_action(4, {ICON = fa.SHARE_FROM_SQUARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {0, 0}}, 'Вывести информацию для себя') then
+		if add_action(5, {ICON = fa.SHARE_FROM_SQUARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {0, 0}}, 'Вывести информацию для себя') then
 			table.insert(bl_cmd.act, {
 				'SEND_ME',
 				''
 			})
 		end
-		if add_action(5, {ICON = fa.SQUARE_ROOT_VARIABLE, COLOR_BG = imgui.ImVec4(0.00, 0.48, 1.00, 1.00), SDVIG = {0, 0}}, 'Задать для переменной') then
+		if add_action(6, {ICON = fa.SQUARE_ROOT_VARIABLE, COLOR_BG = imgui.ImVec4(0.00, 0.48, 1.00, 1.00), SDVIG = {0, 0}}, 'Задать для переменной') then
 			table.insert(bl_cmd.act, {
 				'NEW_VAR',
 				'', --> Имя переменной
 				'' --> Значение переменной
 			})
 		end
-		if add_action(6, {ICON = fa.BARS_STAGGERED, COLOR_BG = imgui.ImVec4(0.69, 0.32, 0.87, 1.00), SDVIG = {1, 0}}, 'Диалог выбора действия') then
+		if add_action(7, {ICON = fa.BARS_STAGGERED, COLOR_BG = imgui.ImVec4(0.69, 0.32, 0.87, 1.00), SDVIG = {1, 0}}, 'Диалог выбора действия') then
 			table.insert(bl_cmd.act, {
 				'DIALOG',
 				'', --> Имя диалога
 				{'', ''} --> Варианты действий
 			})
 		end
-		if add_action(7, {ICON = fa.ARROWS_CROSS, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {2, 0}}, 'Если') then
+		if add_action(8, {ICON = fa.ARROWS_CROSS, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {2, 0}}, 'Если') then
 			table.insert(bl_cmd.act, {
 				'IF',
 				1, --> Условие
@@ -7192,24 +8581,35 @@ function hall.cmd()
 				bl_cmd.id_element
 			})
 		end
-		if add_action(8, {ICON = fa.CLOCK_ROTATE_LEFT, COLOR_BG = imgui.ImVec4(1.00, 0.50, 0.88, 1.00), SDVIG = {1, 0}}, 'Изменить задержку отыгровки') then
+		if add_action(9, {ICON = fa.CLOCK_ROTATE_LEFT, COLOR_BG = imgui.ImVec4(1.00, 0.50, 0.88, 1.00), SDVIG = {1, 0}}, 'Изменить задержку отыгровки') then
 			table.insert(bl_cmd.act, {
 				'DELAY',
 				delay_act_def
 			})
 		end
-		if add_action(9, {ICON = fa.HAND, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {1, 0}}, 'Остановить отыгровку') then
+		if add_action(10, {ICON = fa.HAND, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {1, 0}}, 'Остановить отыгровку') then
 			table.insert(bl_cmd.act, {
 				'STOP'
 			})
 		end
-		if add_action(10, {ICON = fa.COMMENT, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, -1}}, 'Комментарий') then
+		if add_action(11, {ICON = fa.COMMENT, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, -1}}, 'Комментарий') then
 			table.insert(bl_cmd.act, {
 				'COMMENT',
 				''
 			})
 		end
-		
+		if add_action(12, {ICON = fa.PEN_TO_SQUARE, COLOR_BG = imgui.ImVec4(0.20, 0.60, 0.80, 1.00), SDVIG = {0, 0}}, 'Отправить текст в диалог') then
+			table.insert(bl_cmd.act, {
+				'SEND_DIALOG',
+				''
+			})
+		end
+		if add_action(13, {ICON = fa.ARROW_POINTER, COLOR_BG = imgui.ImVec4(0.20, 0.80, 0.60, 1.00), SDVIG = {5, 0}}, 'Нажать рядок в диалоге') then
+			table.insert(bl_cmd.act, {
+				'SELECT_DIALOG_ROW',
+				'1'
+			})
+		end
 		imgui.Dummy(imgui.ImVec2(0, 17))
 		new_action_popup()
 		tags_in_cmd()
@@ -7677,42 +9077,50 @@ function hall.sob()
 	imgui.BeginChild(u8'Собеседование', imgui.ImVec2(840, 369), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse)
 	imgui.Scroller(u8'Собеседование', img_step[1][0], img_duration[1][0], imgui.HoveredFlags.AllowWhenBlockedByActiveItem)
 	
-	if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
-		gui.DrawBox({16, 16}, {808, 37}, cl.tab, cl.line, 7, 15)
-		gui.Text(26, 26, 'Введите id игрока, чтобы начать собеседование', font[3])
-		id_sobes, ret_bool = gui.InputText({520, 28}, 100, id_sobes, u8'id игрока собеседование', 4, u8'Введите id', 'num')
-		if id_sobes ~= '' and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp) and (setting.sob.min_law ~= '' or not setting.sob.auto_law)
-		and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
-			if gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}) or ret_bool then
+if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
+	gui.DrawBox({16, 16}, {808, 37}, cl.tab, cl.line, 7, 15)
+	gui.Text(26, 26, 'Введите id игрока, чтобы начать собеседование', font[3])
+	id_sobes, ret_bool = gui.InputText({520, 28}, 100, id_sobes, u8'id игрока собеседование', 4, u8'Введите id', 'num')
+
+	if id_sobes ~= '' and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp) and (setting.sob.min_law ~= '' or not setting.sob.auto_law)
+	and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
+		if gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}) or ret_bool then
+			if sampIsPlayerConnected(tonumber(id_sobes)) then
 				run_sob = true
-				if sampIsPlayerConnected(id_sobes) then
-					sob_info = {
-						exp = -1,
-						law = -1,
-						narko = -1,
-						org = -1,
-						med = -1,
-						blacklist = -1,
-						ticket = -1,
-						bilet = -1,
-						car = -1,
-						moto = -1,
-						gun = -1,
-						warn = -1,
-						bl_info = {},
-						org_info = '',
-						id = tonumber(id_sobes),
-						nick = sampGetPlayerNickname(id_sobes),
-						history = {}
-					}
+				sob_info = {
+					exp = -1,
+					law = -1,
+					narko = -1,
+					org = -1,
+					med = -1,
+					blacklist = -1,
+					ticket = -1,
+					bilet = -1,
+					car = -1,
+					moto = -1,
+					gun = -1,
+					warn = -1,
+					bl_info = {},
+					org_info = '',
+					id = tonumber(id_sobes),
+					nick = sampGetPlayerNickname(tonumber(id_sobes)),
+					history = {}
+				}
+			else
+				if not setting.cef_notif then
+					sampAddChatMessage("[SH] {FFFFFF}Игрок с таким ID не найден, либо это Вы", 0xFF5345)
+				else
+					cefnotig("{FF5345}[SH] {FFFFFF}Игрок с таким ID не найден, либо это Вы", 3000)
 				end
 			end
-		else
-			gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}, false)
 		end
+	else
+		gui.Button(u8'Начать собеседование', {643, 21}, {165, 27}, false)
+	end
+
 		gui.Text(297, 67, 'Настройки меню собеседования', bold_font[1])
 		gui.DrawBox({16, 92}, {808, 417}, cl.tab, cl.line, 7, 15)
-		for i = 1, 10 do
+		for i = 1, 11 do
 			gui.DrawLine({16, 91 + (i * 38)}, {824, 91 + (i * 38)}, cl.line)
 		end
 		gui.Text(26, 102, 'Минимальный уровень игрока для вступления в организацию', font[3])
@@ -7801,31 +9209,67 @@ function hall.sob()
 		end
 		
 		gui.Text(349, 523, 'Другие параметры', bold_font[1])
-		gui.DrawBox({16, 548}, {808, 75}, cl.tab, cl.line, 7, 15)
+
+		gui.DrawBox({16, 548}, {808, 113 + 38}, cl.tab, cl.line, 7, 15)
+
 		gui.DrawLine({16, 585}, {824, 585}, cl.line)
+		gui.DrawLine({16, 623}, {824, 623}, cl.line)
+		gui.DrawLine({16, 661}, {824, 661}, cl.line)
+
 		gui.Text(26, 558, 'Отображать локальный чат', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(783, 554))
 		if gui.Switch(u8'##chat игрока функция', setting.sob.chat) then
 			setting.sob.chat = not setting.sob.chat
 			save()
 		end
+
 		gui.Text(26, 596, 'Автоматически закрывать показанные документы игрока', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(783, 592))
 		if gui.Switch(u8'##close doc игрока функция', setting.sob.close_doc) then
 			setting.sob.close_doc = not setting.sob.close_doc
 			save()
 		end
-		
-		gui.Text(379, 637, 'Отыгровки', bold_font[1])
-		gui.DrawBox({16, 662}, {808, 75}, cl.tab, cl.line, 7, 15)
-		gui.DrawLine({16, 699}, {824, 699}, cl.line)
-		gui.Text(26, 672, 'Отыгровки вопросов', font[3])
-		gui.Text(26, 710, 'Отыгровки при определении годности', font[3])
-		if gui.Button(u8'Настроить...##1', {693, 667}, {115, 27}) then
+
+		local disable_hide_doc = not setting.sob.close_doc
+		if disable_hide_doc then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+		end
+		gui.Text(26, 634, 'Скрывать документы с экрана', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(783, 630))
+		local r_hide_doc, b_hide_doc = gui.Switch(u8'##hide doc функция', setting.sob.hide_doc, disable_hide_doc)
+		if r_hide_doc then
+			if not disable_hide_doc then
+				setting.sob.hide_doc = b_hide_doc
+			else
+				if setting.sob.hide_doc then
+					setting.sob.hide_doc = false
+				end
+			end
+			save()
+		end
+		if disable_hide_doc then
+			imgui.PopStyleColor(1)
+		end
+
+		gui.Text(26, 672, 'Красить текст в цвет сообщения', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(783, 668))
+		if gui.Switch(u8'##sob color', setting.sob.use_original_color) then
+			setting.sob.use_original_color = not setting.sob.use_original_color
+			save()
+		end
+
+		gui.Text(379, 713, 'Отыгровки', bold_font[1])
+		gui.DrawBox({16, 738}, {808, 75}, cl.tab, cl.line, 7, 15)
+		gui.DrawLine({16, 775}, {824, 775}, cl.line)
+
+		gui.Text(26, 748, 'Отыгровки вопросов', font[3])
+		if gui.Button(u8'Настроить...##1', {693, 743}, {115, 27}) then
 			edit_rp_q_sob = true
 			an[19] = {0, 0}
 		end
-		if gui.Button(u8'Настроить...##2', {693, 705}, {115, 27}) then
+
+		gui.Text(26, 786, 'Отыгровки при определении годности', font[3])
+		if gui.Button(u8'Настроить...##2', {693, 781}, {115, 27}) then
 			edit_rp_fit_sob = true
 			an[19] = {0, 0}
 		end
@@ -8195,12 +9639,16 @@ function hall.sob()
 		end
 		if #setting.sob.rp_fit ~= 0 then
 			if gui.Button(u8'Определить годность', {320, 334}, {200, 27}) then
+				sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+				isCefScript = false
 				imgui.OpenPopup(u8'Определить годность в хелпере')
 			end
 		else
 			gui.Button(u8'Определить годность', {320, 334}, {200, 27}, false)
 		end
 		if gui.Button(u8'Прекратить собеседование', {624, 334}, {200, 27}) then
+			sendJav("if(typeof window.cleanupCefHider === 'function') { window.cleanupCefHider(); }")
+			isCefScript = false
 			run_sob = false
 		end
 		
@@ -8282,6 +9730,9 @@ function hall.sob()
 				end
 				if gui.Button(text_name_sob .. '##rff4' .. i, {10, 8 + pos_y_b}, {274, 27}) then
 					start_sob_cmd(setting.sob.rp_fit[i].rp)
+					open_main()
+					run_sob = false
+					
 					imgui.CloseCurrentPopup()
 				end
 				pos_y_b = pos_y_b + 35
@@ -8615,7 +10066,7 @@ function hall.reminder()
 				imgui.SetCursorPos(imgui.ImVec2(6, 40))
 				imgui.BeginChild(u8'Подтверждение удаления напоминания ', imgui.ImVec2(261, 90), false, imgui.WindowFlags.NoScrollbar)
 				
-				gui.Text(25, 5, 'Вы уверены, что хотите удалить \n                 напоминание?', font[3])
+				gui.Text(25, 5, 'Вы уверены, что хотите удалить \n				 напоминание?', font[3])
 				if gui.Button(u8'Удалить', {24, 50}, {90, 27}) then
 					table.remove(setting.reminder, del_rem)
 					imgui.CloseCurrentPopup()
@@ -8634,6 +10085,7 @@ function hall.reminder()
 	
 	imgui.EndChild()
 end
+
 
 function hall.stat()
 	local color_ItemActive = imgui.ImVec4(0.20, 0.20, 0.20, 1.00)
@@ -8756,6 +10208,7 @@ function hall.stat()
 	imgui.PopFont()
 	
 	imgui.Dummy(imgui.ImVec2(0, 23))
+
 	imgui.EndChild()
 end
 
@@ -9364,17 +10817,24 @@ function hall.music()
 		
 		imgui.EndChild()
 	elseif tab_music == 6 then
-		gui.Draw({160, 16}, {664, 37}, cl.tab, 7, 15)
+		gui.Draw({160, 16}, {664, 75}, cl.tab, 7, 15)
+		gui.DrawLine({160, 53}, {824, 53}, cl.line)
+
 		gui.Text(170, 26, 'Отображать мини-плеер на экране', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(783, 21))
 		if gui.Switch(u8'##Отображать мини-плеер на экране', setting.mini_player) then
 			setting.mini_player = not setting.mini_player
 			save()
 		end
-		imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 1.00))
-		gui.Text(170, 60, 'Некоторые сервисы и функции могут быть недоступны в Вашей стране или регионе.', font[2])
-		imgui.PopStyleColor(1)
+
+		gui.Text(170, 64, 'Изменить местоположение окна', font[3])
+		if gui.Button(u8'Изменить...', {713, 60}, {100, 27}) then
+			mini_player_position()
+		end
 		
+		imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 1.00))
+		gui.Text(170, 98, 'Некоторые сервисы и функции могут быть недоступны в Вашей стране или регионе.', font[2])
+		imgui.PopStyleColor(1)
 	end
 	
 	if play.status ~= 'NULL' then
@@ -9978,10 +11438,22 @@ function hall.actions()
 	gui.DrawLine({16, 265}, {824, 265}, cl.line)
 	gui.DrawLine({16, 303}, {824, 303}, cl.line)
 	if gui.Button(u8'Переключить показ никнеймов игроков', {220, 195}, {400, 27}) then
-		sampSendChat('/settings')
-		nickname_dialog = true
-		time_dialog_nickname = 0
+		local Hnick = sampGetServerSettingsPtr()
+		if Hnick ~= 0 then
+			local currentDist = mem.getfloat(Hnick + 39)
+			local currentWall = mem.getint8(Hnick + 47)
+
+			if currentDist < 1.0 then
+				mem.setfloat(Hnick + 39, 50.0)
+				mem.setint8(Hnick + 47, 1)
+			else
+				mem.setfloat(Hnick + 39, 0.00001)
+				mem.setint8(Hnick + 47, 0)
+			end
+		end
 	end
+
+
 	if gui.Button(u8'Узнать дистанцию до серверной метки на карте', {220, 233}, {400, 27}) then
 		local my_int = getActiveInterior()
 		if my_int == 0 then
@@ -9989,12 +11461,24 @@ function hall.actions()
 			if bool_result then
 				local x_player, y_player, z_player = getCharCoordinates(PLAYER_PED)
 				local distance = getDistanceBetweenCoords3d(pos_X, pos_Y, pos_Z, x_player, y_player, z_player)
+				if not setting.cef_notif then
 				sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Расстояние от Вас до метки: ' .. removeDecimalPart(distance) .. ' м.', 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH] {FFFFFF}{f7c52f}Расстояние от Вас до метки: ' .. removeDecimalPart(distance) .. ' м.', 4000)
+				end
 			else
+				if not setting.cef_notif then
 				sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как отсутствует метка.', 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как отсутствует метка.', 4000)
+				end
 			end
 		else
-			sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как Вы находитесь в интерьере.', 0xFF5345)
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как Вы находитесь в интерьере.', 0xFF5345)
+			else
+				cefnotig("{FF5345}[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как Вы находитесь в интерьере.", 4000)
+			end
 		end
 	end
 	if gui.Button(u8'Узнать дистанцию до собственной метки на карте', {220, 271}, {400, 27}) then
@@ -10004,12 +11488,24 @@ function hall.actions()
 			if bool_result then
 				local x_player, y_player, z_player = getCharCoordinates(PLAYER_PED)
 				local distance = getDistanceBetweenCoords3d(pos_X, pos_Y, pos_Z, x_player, y_player, z_player)
-				sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Расстояние от Вас до метки: ' .. removeDecimalPart(distance) .. ' м.', 0xFF5345)
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Расстояние от Вас до метки: ' .. removeDecimalPart(distance) .. ' м.', 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH] {FFFFFF}{f7c52f}Расстояние от Вас до метки: ' .. removeDecimalPart(distance) .. ' м.', 4000)
+				end
 			else
-				sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как отсутствует метка.', 0xFF5345)
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как отсутствует метка.', 0xFF5345)
+				else
+					cefnotig("{FF5345}[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как отсутствует метка.", 5000)
+				end
 			end
 		else
-			sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как Вы находитесь в интерьере.', 0xFF5345)
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как Вы находитесь в интерьере.', 0xFF5345)
+			else
+				cefnotig("{FF5345}[SH] {FFFFFF}{f7c52f}Невозможно определить дистанцию, так как Вы находитесь в интерьере.", 4000)
+			end
 		end
 	end
 	
@@ -10025,13 +11521,16 @@ function hall.actions()
 		showCursor(false)
 		scr:reload()
 	end
-	if gui.Button(script_ac.reset == 0 and u8'Сбросить все настройки скрипта' or u8'Нажмите снова для сброса настроек', {220, 424}, {400, 27}) then
+	if gui.Button(script_ac.reset == 0 and u8'Сбросить все настройки скрипта' or u8'Нажмите снова для сброса настроек', {220, 424}, {400, 27}) then 
 		script_ac.reset = script_ac.reset + 1
 		if script_ac.reset > 1 then
 			os.remove(dir .. '/State Helper/Настройки.json')
-			os.remove(dir .. '/State Helper/Отыгровки.json')
-			
-			sampAddChatMessage('[SH] {FFFFFF}Настройки сброшены. Перезагрузка скрипта...', 0xFF5345)
+			remove(dir .. '/State Helper/Отыгровки')
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH] {FFFFFF}Настройки сброшены. Перезагрузка скрипта...', 0xFF5345)
+			else
+				cefnotig("[SH] {FFFFFF}Настройки сброшены. Перезагрузка скрипта...", 3000)
+			end
 			showCursor(false)
 			scr:reload()
 		end
@@ -10039,7 +11538,11 @@ function hall.actions()
 	if gui.Button(script_ac.del == 0 and u8'Удалить скрипт с этого устройства' or u8'Нажмите снова для удаления скрипта', {220, 462}, {400, 27}) then
 		script_ac.del = script_ac.del + 1
 		if script_ac.del > 1 then
-			sampAddChatMessage('[SH] {FFFFFF}Скрипт удалён. Настройки сохранены, Вы можете снова установить его в любое время.', 0xFF5345)
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH] {FFFFFF}Скрипт удалён. Настройки сохранены, Вы можете снова установить его в любое время.', 0xFF5345)
+			else
+				cefnotig("{FF5345}[SH] {FFFFFF}Скрипт удалён. Настройки сохранены, Вы можете снова установить его в любое время.", 4000)
+			end
 			windows.main[0] = false
 			showCursor(false)
 			os.remove(scr.path)
@@ -10156,32 +11659,32 @@ function get_today_date()
 	return date_array
 end
 function new_text_block_popup()
-    print(1)
-    if imgui.BeginPopupModal(u8'Текстовый блок', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
-        imgui.SetCursorPos(imgui.ImVec2(10, 10))
-        print(2)
-        if imgui.InvisibleButton(u8'##Закрыть окно текстового блока', imgui.ImVec2(16, 16)) then
-            imgui.CloseCurrentPopup()
-        end
-        imgui.SetCursorPos(imgui.ImVec2(16, 16))
-        imgui.BeginChild(u8'Текстовый блок добавление', imgui.ImVec2(346, 420), false, imgui.WindowFlags.NoScrollbar)
-        if imgui.IsItemHovered() then
-            imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x - 0.4, p.y - 0.2), 7, imgui.GetColorU32Vec4(imgui.ImVec4(0.98, 0.32, 0.38 ,1.00)), 60)
-        else
-            imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x - 0.4, p.y - 0.2), 7, imgui.GetColorU32Vec4(imgui.ImVec4(0.98, 0.42, 0.38 ,1.00)), 60)
-        end
-        gui.DrawLine({10, 31}, {346, 31}, cl.line)
-        local text_multiline = imgui.new.char[512000]('')
-        imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(0.50, 0.50, 0.50, 0.00))
-        imgui.PushStyleVarVec2(imgui.StyleVar.FramePadding, imgui.ImVec2(5, 5))
-        imgui.PushFont(font[3])
-        imgui.InputTextMultiline('##Окно ввода текста шпаргалки', text_multiline, ffi.sizeof(text_multiline), imgui.ImVec2(803, 205))
-        imgui.PopStyleColor()
-        imgui.PopStyleVar(1)
-        imgui.PopFont()
-        imgui.EndChild()
-        imgui.EndPopup()
-    end
+	print(1)
+	if imgui.BeginPopupModal(u8'Текстовый блок', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+		imgui.SetCursorPos(imgui.ImVec2(10, 10))
+		print(2)
+		if imgui.InvisibleButton(u8'##Закрыть окно текстового блока', imgui.ImVec2(16, 16)) then
+			imgui.CloseCurrentPopup()
+		end
+		imgui.SetCursorPos(imgui.ImVec2(16, 16))
+		imgui.BeginChild(u8'Текстовый блок добавление', imgui.ImVec2(346, 420), false, imgui.WindowFlags.NoScrollbar)
+		if imgui.IsItemHovered() then
+			imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x - 0.4, p.y - 0.2), 7, imgui.GetColorU32Vec4(imgui.ImVec4(0.98, 0.32, 0.38 ,1.00)), 60)
+		else
+			imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x - 0.4, p.y - 0.2), 7, imgui.GetColorU32Vec4(imgui.ImVec4(0.98, 0.42, 0.38 ,1.00)), 60)
+		end
+		gui.DrawLine({10, 31}, {346, 31}, cl.line)
+		local text_multiline = imgui.new.char[512000]('')
+		imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(0.50, 0.50, 0.50, 0.00))
+		imgui.PushStyleVarVec2(imgui.StyleVar.FramePadding, imgui.ImVec2(5, 5))
+		imgui.PushFont(font[3])
+		imgui.InputTextMultiline('##Окно ввода текста шпаргалки', text_multiline, ffi.sizeof(text_multiline), imgui.ImVec2(803, 205))
+		imgui.PopStyleColor()
+		imgui.PopStyleVar(1)
+		imgui.PopFont()
+		imgui.EndChild()
+		imgui.EndPopup()
+	end
 end
 local text_multilineBlock = imgui.new.char[512000]('')
 function new_action_popup()
@@ -10205,8 +11708,8 @@ function new_action_popup()
 			pix_y = pix_y + 37
 			local dopOt = 0
 			local BOOL = false
-			if NUM_ACTION == 11 then
-			    dopOt = 300
+			if NUM_ACTION == 14 then
+				dopOt = 200
 			end
 			imgui.SetCursorPos(imgui.ImVec2(11, 1 + pix_y))
 			if imgui.InvisibleButton(u8'Добавить действие в команде в popup' .. NUM_ACTION, imgui.ImVec2(720, 27)) then
@@ -10228,14 +11731,14 @@ function new_action_popup()
 			imgui.PushStyleColor(imgui.Col.Text, cl.def)
 			gui.FaText(710, 7 + pix_y, fa.PLUS, fa_font[3])
 			imgui.PopStyleColor(1)
-			if NUM_ACTION == 11 then
-                imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(0.50, 0.50, 0.50, 0.00))
-                imgui.PushStyleVarVec2(imgui.StyleVar.FramePadding, imgui.ImVec2(15, 5))
-                imgui.PushFont(font[3])
-                imgui.InputTextMultiline('##Окно ввода текста шпаргалки', text_multilineBlock, ffi.sizeof(text_multilineBlock), imgui.ImVec2(718, 290))
-                imgui.PopStyleColor()
-                imgui.PopStyleVar(1)
-                imgui.PopFont()
+			if NUM_ACTION == 14 then
+				imgui.PushStyleColor(imgui.Col.FrameBg, imgui.ImVec4(0.50, 0.50, 0.50, 0.00))
+				imgui.PushStyleVarVec2(imgui.StyleVar.FramePadding, imgui.ImVec2(15, 5))
+				imgui.PushFont(font[3])
+				imgui.InputTextMultiline('##Окно ввода текста шпаргалки', text_multilineBlock, ffi.sizeof(text_multilineBlock), imgui.ImVec2(718, 190))
+				imgui.PopStyleColor()
+				imgui.PopStyleVar(1)
+				imgui.PopFont()
 			end
 			return BOOL
 		end
@@ -10246,27 +11749,35 @@ function new_action_popup()
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(2, {ICON = fa.KEYBOARD, COLOR_BG = imgui.ImVec4(1.00, 0.30, 0.00, 1.00), SDVIG = {0, 0}}, 'Открыть игровой чат с текстом') then
+		if add_action(2, {ICON = fa.TERMINAL, COLOR_BG = imgui.ImVec4(0.20, 0.60, 0.80, 1.00), SDVIG = {0, 0}}, 'Отправить пользовательскую команду') then
+			table.insert(bl_cmd.act, number_i_cmd + 1, {
+				'SEND_CMD',
+				'',
+				false
+			})
+			imgui.CloseCurrentPopup()
+		end
+		if add_action(3, {ICON = fa.KEYBOARD, COLOR_BG = imgui.ImVec4(1.00, 0.30, 0.00, 1.00), SDVIG = {0, 0}}, 'Открыть игровой чат с текстом') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'OPEN_INPUT',
 				''
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(3, {ICON = fa.HOURGLASS, COLOR_BG = imgui.ImVec4(0.30, 0.75, 0.39, 1.00), SDVIG = {3, 0}}, 'Ожидание нажатия Enter') then
+		if add_action(4, {ICON = fa.HOURGLASS, COLOR_BG = imgui.ImVec4(0.30, 0.75, 0.39, 1.00), SDVIG = {3, 0}}, 'Ожидание нажатия Enter') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'WAIT_ENTER'
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(4, {ICON = fa.SHARE_FROM_SQUARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {0, 0}}, 'Вывести информацию для себя') then
+		if add_action(5, {ICON = fa.SHARE_FROM_SQUARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {0, 0}}, 'Вывести информацию для себя') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'SEND_ME',
 				''
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(5, {ICON = fa.SQUARE_ROOT_VARIABLE, COLOR_BG = imgui.ImVec4(0.00, 0.48, 1.00, 1.00), SDVIG = {0, 0}}, 'Задать для переменной') then
+		if add_action(6, {ICON = fa.SQUARE_ROOT_VARIABLE, COLOR_BG = imgui.ImVec4(0.00, 0.48, 1.00, 1.00), SDVIG = {0, 0}}, 'Задать для переменной') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'NEW_VAR',
 				'', --> Имя переменной
@@ -10274,7 +11785,7 @@ function new_action_popup()
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(6, {ICON = fa.BARS_STAGGERED, COLOR_BG = imgui.ImVec4(0.69, 0.32, 0.87, 1.00), SDVIG = {1, 0}}, 'Диалог выбора действия') then
+		if add_action(7, {ICON = fa.BARS_STAGGERED, COLOR_BG = imgui.ImVec4(0.69, 0.32, 0.87, 1.00), SDVIG = {1, 0}}, 'Диалог выбора действия') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'DIALOG',
 				'', --> Имя диалога
@@ -10282,13 +11793,14 @@ function new_action_popup()
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(7, {ICON = fa.ARROWS_CROSS, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {2, 0}}, 'Если') then
+		if add_action(8, {ICON = fa.ARROWS_CROSS, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {2, 0}}, 'Если') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'IF',
 				1, --> Условие
 				{'', ''}, --> Входные данные,
 				bl_cmd.id_element,
-				1
+				1,
+				false --> Свернутый блок
 			})
 			table.insert(bl_cmd.act, number_i_cmd + 2, {
 				'ELSE',
@@ -10300,55 +11812,67 @@ function new_action_popup()
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(8, {ICON = fa.CLOCK_ROTATE_LEFT, COLOR_BG = imgui.ImVec4(1.00, 0.50, 0.88, 1.00), SDVIG = {1, 0}}, 'Изменить задержку отыгровки') then
+		if add_action(9, {ICON = fa.CLOCK_ROTATE_LEFT, COLOR_BG = imgui.ImVec4(1.00, 0.50, 0.88, 1.00), SDVIG = {1, 0}}, 'Изменить задержку отыгровки') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'DELAY',
 				delay_act_def
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(9, {ICON = fa.HAND, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {1, 0}}, 'Остановить отыгровку') then
+		if add_action(10, {ICON = fa.HAND, COLOR_BG = imgui.ImVec4(0.56, 0.56, 0.58, 1.00), SDVIG = {1, 0}}, 'Остановить отыгровку') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'STOP'
 			})
 			imgui.CloseCurrentPopup()
 		end
-		if add_action(10, {ICON = fa.COMMENT, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, -1}}, 'Комментарий') then
+		if add_action(11, {ICON = fa.COMMENT, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, -1}}, 'Комментарий') then
 			table.insert(bl_cmd.act, number_i_cmd + 1, {
 				'COMMENT',
 				''
 			})
 			imgui.CloseCurrentPopup()
 		end
-        if add_action(11, {ICON = fa.SHARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, 0}}, 'Открыть текстовых блок') then
-            local ii = 1
-            local t = ffi.string(text_multilineBlock)
-            local result = {}
-            for line in t:gmatch("(.-)\r?\n") do
-                line = line:match("^%s*(.-)%s*$") -- Trim пробелы
-                table.insert(result, line)
-            end
-            local lastLine = t:match(".*\r?\n(.-)$")
-            if lastLine and lastLine ~= "" then
-                lastLine = lastLine:match("^%s*(.-)%s*$")
-                table.insert(result, lastLine)
-            end
-            for i, line in ipairs(result) do
-                print(line)
-                table.insert(bl_cmd.act, number_i_cmd + ii, {
-                    'SEND',
-                    line
-                })
-                ii = ii + 1
-            end
-            --table.insert(bl_cmd.act, number_i_cmd + 1, {
-            --    'SEND',
-            --    ''
-            --})
-            text_multilineBlock = imgui.new.char[512000]('')
-            imgui.CloseCurrentPopup()
-            --imgui.OpenPopup(u8'Текстовый блок')
-        end
+			if add_action(12, {ICON = fa.PEN_TO_SQUARE, COLOR_BG = imgui.ImVec4(0.20, 0.60, 0.80, 1.00), SDVIG = {0, 0}}, 'Отправить текст в диалог') then
+			table.insert(bl_cmd.act, number_i_cmd + 1, {
+				'SEND_DIALOG',
+				''
+			})
+			imgui.CloseCurrentPopup()
+		end
+		if add_action(13, {ICON = fa.ARROW_POINTER, COLOR_BG = imgui.ImVec4(0.20, 0.80, 0.60, 1.00), SDVIG = {5, 0}}, 'Нажать рядок в диалоге') then
+			table.insert(bl_cmd.act, number_i_cmd + 1, {
+				'SELECT_DIALOG_ROW',
+				'1'
+			})
+			imgui.CloseCurrentPopup()
+		end
+		if add_action(14, {ICON = fa.SHARE, COLOR_BG = imgui.ImVec4(1.00, 0.58, 0.00, 1.00), SDVIG = {1, 0}}, 'Открыть текстовый блок') then
+			local text_to_process = ffi.string(text_multilineBlock)
+			local lines = {}
+			for line in text_to_process:gmatch("(.-)[\r\n]") do
+				local trimmed_line = line:match("^%s*(.-)%s*$")
+				if trimmed_line ~= "" then
+					table.insert(lines, trimmed_line)
+				end
+			end
+			local last_line = text_to_process:match("([^\r\n]*)$")
+			if last_line and last_line ~= "" and not text_to_process:match("[\r\n]$") then
+				local trimmed_last_line = last_line:match("^%s*(.-)%s*$")
+				if trimmed_last_line ~= "" then
+					table.insert(lines, trimmed_last_line)
+				end
+			end
+			local insert_index = number_i_cmd + 1
+			for i, line in ipairs(lines) do
+				table.insert(bl_cmd.act, insert_index, {
+					'SEND',
+					line
+				})
+				insert_index = insert_index + 1
+			end
+			text_multilineBlock = imgui.new.char[512000]('') 
+			imgui.CloseCurrentPopup()
+		end
 		imgui.EndChild()
 		--new_text_block_popup()
 		imgui.EndPopup()
@@ -10399,10 +11923,10 @@ function tags_in_cmd()
 			{'{medup60}', 'Выведет цену на обновлённую мед. карту на 60 дней'},
 			{'{pricenarko}', 'Выведет цену на снятие укропозависимости'},
 			{'{pricerecept}', 'Выведет цену на рецепт'},
-			{'{pricetatu}', 'Выведет цену удаление татуировки с тела'},
 			{'{priceant}', 'Выведет цену на антибиотик'},
 			{'{pricelec}', 'Выведет цену на лечение'},
 			{'{priceosm}', 'Выведет цену на мед. осмотр'},
+			{'{priceguard}', 'Выведет цену на лечение охранника'},
 			{'{priceauto1}', 'Выведет цену на авто на 1 месяц'},
 			{'{priceauto2}', 'Выведет цену на авто на 2 месяца'},
 			{'{priceauto3}', 'Выведет цену на авто на 3 месяца'},
@@ -10439,7 +11963,13 @@ function tags_in_cmd()
 			{'{nearplayer}', 'Получить id ближайшего игрока'},
 			{'{getlevel[id игрока]}', 'Получить игровой уровень игрока'},
 			{'{spcar}', 'Заспавнить транспорт организации (/lmenu)'},
-			{'{PhoneApp[номер приложения]}', 'Открывает приложение в телефоне по списку (всего 36 пиложений)'}
+			{'{PhoneApp[номер приложения]}', 'Открывает приложение в телефоне по списку'},
+			{'{city}', 'Получить название текещуго города'},
+			{'{veh_model}', 'Получить марку ближайшего транспорта с водителем (до 150м)'},
+			{'{veh_speed}', 'Получить скорость ближайшего транспорта с водителем (до 150м)'},
+			{'{square}', 'Получить текущий квадрат'},
+			{'{pursuit_id}', 'Выдает id человека за которым вы в погоне'}
+			--{'{unprison[id игрока]}', 'Автоматически подчищать задания для УДО (ТСР)'},
 		}
 		
 		if an[25][1] > 0 then
@@ -10868,9 +12398,9 @@ win.main = imgui.OnFrame(
 				end
 			end
 		end
-        imgui.SetNextWindowPos(imgui.ImVec2(win_x, win_y), coud, imgui.ImVec2(0.5, 0.5))
-        imgui.SetNextWindowSize(imgui.ImVec2(848, 448)) --> 848 x 448
-        imgui.Begin('Main', windows.main,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoResize)
+		imgui.SetNextWindowPos(imgui.ImVec2(win_x, win_y), coud, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(848, 448)) --> 848 x 448
+		imgui.Begin('Main', windows.main,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoResize)
 		bug_fix_input()
 		
 		if close_win_anim then
@@ -10883,7 +12413,9 @@ win.main = imgui.OnFrame(
 			local times = os.clock() * 2
 			draw_gradient_border(times, 0.9)
 		end
-		gui.Draw({4, 4}, {840, 440}, cl.main, 12, 15)
+		
+		local window_bg_color = imgui.ImVec4(cl.main.x, cl.main.y, cl.main.z, setting.window_alpha)
+		gui.Draw({4, 4}, {840, 440}, window_bg_color, 12, 15)
 	
 		if setting.first_start then
 			if first_start == 0 then
@@ -10916,19 +12448,107 @@ win.main = imgui.OnFrame(
 				elseif an[4] > 40 then
 					an[4] = an[4] - (anim * 290)
 				end
-				
 				gui.TextGradient('Выберите организацию', 0.5, an[3])
 				imgui.PopFont()
-				
 				if an[4] <= 40 then
 					gui.DrawLine({24, 391}, {824, 391}, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
 					if gui.Button(u8'Продолжить', {715, 403}, {104, 30}) then
 						first_start = 3
 					end
-					gui.Button(u8'Назад', {640, 403}, {62, 30}, false)
-					
-					setting.org = gui.LT_First_Start({300, 110}, {249, 273}, {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон', u8'Центр Лицензирования', u8'Правительство', u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро', u8'Пожарный департамент', u8'Тюрьма строгого режима'}, setting.org, u8'Выбрать организацию')
+
+				local start_orgs = {
+					u8'Центр Лицензирования',
+					u8'Правительство',
+					u8'Пожарный департамент',
+					u8'Тюрьма строгого режима',
+					u8'Больница',
+					u8'Армия',
+					u8'Министерство Юстиции'
+					--u8'СМИ'
+				}
+				local vis_targ = 0
+
+				if setting.org == 5 then vis_targ = 1
+					elseif setting.org == 6 then vis_targ = 2
+					elseif setting.org == 9 then vis_targ = 3
+					elseif setting.org == 10 then vis_targ = 4
+					elseif setting.org >= 1 and setting.org <= 4 then vis_targ = 5
+					elseif setting.org >= 7 and setting.org <= 8 then vis_targ = 6
+					elseif setting.org >= 11 and setting.org <= 15 then vis_targ = 7
+					elseif setting.org >= 11 and setting.org <= 13 then vis_targ = 8 
 				end
+
+				local new_targ = gui.LT_First_Start({300, 116}, {249, 173}, start_orgs, vis_targ, u8'Выбрать организацию')
+
+				if new_targ ~= vis_targ then
+					hospital_spoiler[0] = (new_targ == 5)
+					army_spoiler[0] = (new_targ == 6)
+					--smi_spoiler[0] = (new_targ == 8)
+					police_spoiler[0] = (new_targ == 7)
+					if new_targ == 1 then setting.org = 5
+					elseif new_targ == 2 then setting.org = 6
+					elseif new_targ == 3 then setting.org = 9
+					elseif new_targ == 4 then setting.org = 10
+					elseif new_targ == 5 then setting.org = 1
+					elseif new_targ == 6 then setting.org = 7
+					elseif new_targ == 7 then setting.org = 11
+					elseif new_targ == 8 then setting.org = 11
+					end
+				end
+
+				local arrow_x = 525
+				local base_y = 116 + 4
+				local item_height = 25
+
+				local hospital_y = base_y + ((5 - 1) * item_height)
+				local hospital_icon = hospital_spoiler[0] and fa.CARET_LEFT or fa.CARET_RIGHT
+				gui.FaText(arrow_x, hospital_y, hospital_icon, fa_font[2])
+
+				local army_y = base_y + ((6 - 1) * item_height)
+				local army_icon = army_spoiler[0] and fa.CARET_LEFT or fa.CARET_RIGHT
+				gui.FaText(arrow_x, army_y, army_icon, fa_font[2])
+				
+				local police_y = base_y + ((7 - 1) * item_height)
+				local police_icon = police_spoiler[0] and fa.CARET_LEFT or fa.CARET_RIGHT
+				gui.FaText(arrow_x, police_y, police_icon, fa_font[2])
+
+				--local smi_y = base_y + ((7 - 1) * item_height)
+				--local smi_icon = smi_spoiler[0] and fa.CARET_LEFT or fa.CARET_RIGHT
+				--gui.FaText(arrow_x, smi_y, smi_icon, fa_font[2])
+
+				if hospital_spoiler[0] then
+					local hospital_cities = {u8'Больница Лос-Сантос', u8'Больница Сан-Фиерро', u8'Больница Лас-Вентурас', u8'Больница Джефферсон'}
+					local visually_selected_hospital = (setting.org >= 1 and setting.org <= 4) and setting.org or 1
+					local new_hospital_selection = gui.LT_First_Start({560, 116 + ((5 - 1) * 25)}, {249, 98}, hospital_cities, visually_selected_hospital, u8'Выбрать больницу')
+					if new_hospital_selection ~= visually_selected_hospital then
+						setting.org = new_hospital_selection
+					end
+				end
+				if army_spoiler[0] then
+					local army_cities = {u8'Армия Лос-Сантос', u8'Армия Сан-Фиерро'}
+					local visually_selected_army = (setting.org >= 7 and setting.org <= 8) and (setting.org - 6) or 1
+					local new_army_selection = gui.LT_First_Start({560, 116 + ((6 - 1) * 25)}, {249, 47}, army_cities, visually_selected_army, u8'Выбрать армию')
+					if new_army_selection ~= visually_selected_army then
+						setting.org = new_army_selection + 6
+					end
+				end
+				--if smi_spoiler[0] then
+				--	local smi_cities = {u8'СМИ Лос-Сантос', u8'СМИ Сан-Фиерро', u8'СМИ Лас-Вентурас'}
+				--	local visually_selected_smi = (setting.org >= 11 and setting.org <= 13) and (setting.org - 10) or 1
+				--	local new_smi_selection = gui.LT_First_Start({560, 116 + ((7 - 1) * 25)}, {249, 73}, smi_cities, visually_selected_smi, u8'Выбрать СМИ')
+				--	if new_smi_selection ~= visually_selected_smi then
+				--		setting.org = new_smi_selection + 10
+				--	end
+				--end
+				if police_spoiler[0] then
+					local police_deps = {u8'Полиция Лос-Сантос', u8'Полиция Лас-Вентурас', u8'Полиция Сан-Фиерро', u8'Полиция Рэд-Каунти', u8'ФБР'}
+					local visually_selected_police = (setting.org >= 11 and setting.org <= 15) and (setting.org - 10) or 1
+					local new_police_selection = gui.LT_First_Start({560, 116 + ((7 - 1) * 25)}, {249, 125}, police_deps, visually_selected_police, u8'Выбрать департамент')
+					if new_police_selection ~= visually_selected_police then
+						setting.org = new_police_selection + 10
+					end
+				end
+			end
 			elseif first_start == 3 then
 				imgui.PushFont(bold_font[2])
 				imgui.SetCursorPos(imgui.ImVec2(120, an[4]))
@@ -11139,9 +12759,10 @@ win.main = imgui.OnFrame(
 							first_start = 7
 							setting.first_start = false
 							for i = 1, #cmd_defoult.all do
-								table.insert(cmd[1], cmd_defoult.all[i])
-								sampRegisterChatCommand(cmd_defoult.all[i].cmd, function(arg) 
-								cmd_start(arg, tostring(cmd_defoult.all[i].UID) .. cmd_defoult.all[i].cmd) end)
+								local new_cmd = deep_copy(cmd_defoult.all[i])
+								table.insert(cmd[1], new_cmd)
+								sampRegisterChatCommand(new_cmd.cmd, function(arg) 
+								cmd_start(arg, tostring(new_cmd.UID) .. new_cmd.cmd) end)
 							end
 							if setting.org <= 4 then --> Для Больниц
 								for i = 1, #cmd_defoult.hospital do
@@ -11150,7 +12771,7 @@ win.main = imgui.OnFrame(
 									cmd_start(arg, tostring(cmd_defoult.hospital[i].UID) .. cmd_defoult.hospital[i].cmd) end)
 								end
 								
-								if server == '185.169.134.3:7777' then 
+								if s_na == 'Phoenix' then 
 									for i = 1, #cmd[1] do
 										if cmd[1][i].cmd == 'mc' then
 											cmd[1][i] = mc_phoenix
@@ -11189,13 +12810,19 @@ win.main = imgui.OnFrame(
 									cmd_start(arg, tostring(cmd_defoult.jail[i].UID) .. cmd_defoult.jail[i].cmd) end)
 								end
 								setting.gun_func = true
-							elseif setting.org == 11 then --> Для СМИ
-								for i = 1, #cmd_defoult.smi do
-									table.insert(cmd[1], cmd_defoult.smi[i])
-									sampRegisterChatCommand(cmd_defoult.smi[i].cmd, function(arg) 
-									cmd_start(arg, tostring(cmd_defoult.smi[i].UID) .. cmd_defoult.smi[i].cmd) end)
+							--elseif setting.org >= 11 and setting.org <= 13 then --> Для СМИ
+							--	for i = 1, #cmd_defoult.smi do
+							--		table.insert(cmd[1], cmd_defoult.smi[i])
+							--		sampRegisterChatCommand(cmd_defoult.smi[i].cmd, function(arg) 
+							--		cmd_start(arg, tostring(cmd_defoult.smi[i].UID) .. cmd_defoult.smi[i].cmd) end)
+							--	end
+							elseif setting.org >= 11 and setting.org <= 15 then --> Для полиции
+								for i = 1, #cmd_defoult.police do
+									table.insert(cmd[1], cmd_defoult.police[i])
+									sampRegisterChatCommand(cmd_defoult.police[i].cmd, function(arg) 
+									cmd_start(arg, tostring(cmd_defoult.police[i].UID) .. cmd_defoult.police[i].cmd) end)
 								end
-
+								setting.gun_func = true
 							end
 							add_cmd_in_all_cmd()
 							save_cmd()
@@ -11345,22 +12972,44 @@ win.main = imgui.OnFrame(
 							an[7][1] = an[7][1] - (anim * 1)
 						end
 					end
-					
-					imgui.SetCursorPos(imgui.ImVec2(705, 5))
-					if imgui.InvisibleButton(u8'##Выбор команд', imgui.ImVec2(60, 32)) then
-						edit_all_cmd = not edit_all_cmd
-						table_select_cmd = {}
-						an[12][2] = 0
-						an[12][3] = false
-					end
-					if imgui.IsItemActive() or imgui.IsItemHovered() then
-						if an[7][2] < 0.45 then
-							an[7][2] = an[7][2] + (anim * 1)
-						end
+
+					local folder_has_commands = false
+					if int_cmd.folder == 1 and #cmd[1] > 0 then
+						folder_has_commands = true
 					else
-						if an[7][2] > 0 then
-							an[7][2] = an[7][2] - (anim * 1)
+						for i = 1, #cmd[1] do
+							if cmd[1][i].folder == int_cmd.folder then
+								folder_has_commands = true
+								break
+							end
 						end
+					end
+
+					if folder_has_commands then
+						imgui.SetCursorPos(imgui.ImVec2(705, 5))
+						if imgui.InvisibleButton(u8'##Выбор команд', imgui.ImVec2(60, 32)) then
+							edit_all_cmd = not edit_all_cmd
+							table_select_cmd = {}
+							an[12][2] = 0
+							an[12][3] = false
+						end
+						if imgui.IsItemActive() or imgui.IsItemHovered() then
+							if an[7][2] < 0.45 then
+								an[7][2] = an[7][2] + (anim * 1)
+							end
+						else
+							if an[7][2] > 0 then
+								an[7][2] = an[7][2] - (anim * 1)
+							end
+						end
+						if setting.cl == 'White' then
+							imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[7][2], 0.50 - an[7][2], 0.50 - an[7][2], 1.00))
+						else
+							imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 + an[7][2], 0.50 + an[7][2], 0.50 + an[7][2], 1.00))
+						end
+						gui.FaText(727, 6, fa.LIST_CHECK, fa_font[4])
+						gui.Text(711, 22, 'Выбрать')
+						imgui.PopStyleColor(1)
 					end
 					
 					if setting.cl == 'White' then
@@ -11371,36 +13020,32 @@ win.main = imgui.OnFrame(
 					gui.FaText(797, 6, fa.PLUS, fa_font[4])
 					gui.Text(777, 22, 'Добавить')
 					imgui.PopStyleColor(1)
-					if setting.cl == 'White' then
-						imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[7][2], 0.50 - an[7][2], 0.50 - an[7][2], 1.00))
-					else
-						imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 + an[7][2], 0.50 + an[7][2], 0.50 + an[7][2], 1.00))
-					end
-					gui.FaText(727, 6, fa.LIST_CHECK, fa_font[4])
-					gui.Text(711, 22, 'Выбрать')
-					imgui.PopStyleColor(1)
+					
 				else
 					imgui.SetCursorPos(imgui.ImVec2(780, 5))
 					if imgui.InvisibleButton(u8'##Удалить выбранные команды', imgui.ImVec2(57, 32)) then
 						edit_all_cmd = false
 						table.sort(table_select_cmd, function(a, b) return a > b end)
 						for _, index in ipairs(table_select_cmd) do
-							if cmd[1][index].cmd ~= '' then
-								sampUnregisterChatCommand(cmd[1][index].cmd)
-							end
-							if #cmd[1][index].key[2] ~= 0 then
-								rkeys.unRegisterHotKey(cmd[1][index].key[2])
-								for ke = 1, #all_keys do
-									if table.concat(all_keys[ke], ' ') == table.concat(cmd[1][index].key[2], ' ') then
-										table.remove(all_keys, ke)
+							if cmd[1][index] then
+								if cmd[1][index].cmd ~= '' then
+									sampUnregisterChatCommand(cmd[1][index].cmd)
+								end
+								if #cmd[1][index].key[2] ~= 0 then
+									rkeys.unRegisterHotKey(cmd[1][index].key[2])
+									for ke = #all_keys, 1, -1 do
+										if all_keys[ke] and cmd[1][index].key[2] and table.concat(all_keys[ke], ' ') == table.concat(cmd[1][index].key[2], ' ') then
+											table.remove(all_keys, ke)
+											break
+										end
 									end
 								end
+								table.remove(cmd[1], index)
 							end
-							table.remove(cmd[1], index)
 						end
 						add_cmd_in_all_cmd()
+						save_cmd()
 					end
-					
 					if imgui.IsItemActive() or imgui.IsItemHovered() then
 						if an[14][1] < 0.45 then
 							an[14][1] = an[14][1] + (anim * 1)
@@ -11492,22 +13137,30 @@ win.main = imgui.OnFrame(
 						end
 						
 						if bool_true_cmd == 0 or cmd_memory == bl_cmd.cmd then
-							cmd[1][type_cmd] = bl_cmd
-							edit_tab_cmd = false
-							edit_all_cmd = false
-							an[13] = 0
-							if cmd_memory ~= '' then
+							local final_cmd_data = deep_copy(bl_cmd)
+
+							if type_cmd == #cmd[1] + 1 then
+								table.insert(cmd[1], final_cmd_data)
+							else
+								cmd[1][type_cmd] = final_cmd_data
+							end
+
+							if cmd_memory ~= '' and cmd_memory ~= final_cmd_data.cmd then
 								for y = 1, #all_cmd do
 									if all_cmd[y] == cmd_memory then
 										table.remove(all_cmd, y)
 										sampUnregisterChatCommand(cmd_memory)
-										save_cmd()
 										break
 									end
 								end
 							end
-							table.insert(all_cmd, bl_cmd.cmd)
-							sampRegisterChatCommand(bl_cmd.cmd, function(arg) cmd_start(arg, tostring(bl_cmd.UID) .. bl_cmd.cmd) end)
+
+							table.insert(all_cmd, final_cmd_data.cmd)
+							sampRegisterChatCommand(final_cmd_data.cmd, function(arg) cmd_start(arg, tostring(final_cmd_data.UID) .. final_cmd_data.cmd) end)
+							
+							edit_tab_cmd = false
+							edit_all_cmd = false
+							an[13] = 0
 							save_cmd()
 						else
 							imgui.OpenPopup(u8'Ошибка сохранения команды')
@@ -11562,7 +13215,7 @@ win.main = imgui.OnFrame(
 					imgui.SetCursorPos(imgui.ImVec2(6, 40))
 					imgui.BeginChild(u8'Подтверждение удаления команды ', imgui.ImVec2(261, 90), false, imgui.WindowFlags.NoScrollbar)
 					
-					gui.Text(25, 5, 'Вы уверены, что хотите удалить \n                     команду?', font[3])
+					gui.Text(25, 5, 'Вы уверены, что хотите удалить \n					 команду?', font[3])
 					if gui.Button(u8'Удалить', {24, 50}, {90, 27}) then
 						if type_cmd ~= #cmd[1] + 1 then
 							if #cmd[1][type_cmd].key[2] ~= 0 then
@@ -11708,7 +13361,7 @@ win.main = imgui.OnFrame(
 				imgui.PopStyleColor(1)
 				
 				imgui.SetCursorPos(imgui.ImVec2(652, 5))
-				if imgui.InvisibleButton(u8'##Открыть видеоурок', imgui.ImVec2(68, 32)) then
+				if imgui.InvisibleButton(u8'##Открыть просмотр', imgui.ImVec2(68, 32)) then
 					
 				end
 				if imgui.IsItemActive() or imgui.IsItemHovered() then
@@ -11725,8 +13378,8 @@ win.main = imgui.OnFrame(
 				else
 					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 + an[8][5], 0.50 + an[8][5], 0.50 + an[8][5], 1.00))
 				end
-				gui.FaText(678, 6, fa.CLAPPERBOARD_PLAY, fa_font[4])
-				gui.Text(654, 22, 'Видеоурок')
+				--gui.FaText(674, 6, fa.EYE, fa_font[4])
+				--gui.Text(654, 22, 'Просмотр')
 				imgui.PopStyleColor(1)
 			end
 			if not edit_tab_shpora and tab == 'shpora' then
@@ -12147,7 +13800,7 @@ win.main = imgui.OnFrame(
 						hour = tonumber(os.date('%H')),
 						repeats = {false, false, false, false, false, false, false},
 						sound = false,
-						execution = false
+						last_triggered_day = nil
 					}
 					new_rem = bool_reminder_new
 					last_child_y = {tonumber(os.date('%H')) * 60, tonumber(os.date('%M')) * 60}
@@ -12261,7 +13914,7 @@ win.main = imgui.OnFrame(
 						an[21][1] = an[21][1] - (anim * 1)
 					end
 				end
-				
+
 				imgui.SetCursorPos(imgui.ImVec2(700, 5))
 				if imgui.InvisibleButton(u8'##Перейти в настройки статистики', imgui.ImVec2(65, 32)) then
 					tab = 'settings'
@@ -12282,7 +13935,25 @@ win.main = imgui.OnFrame(
 						an[21][2] = an[21][2] - (anim * 1)
 					end
 				end
-				
+
+				imgui.SetCursorPos(imgui.ImVec2(623, 5))
+				if imgui.InvisibleButton("##Остановить отыгровку", imgui.ImVec2(65, 32)) then
+					track_time = not track_time
+				end
+				if imgui.IsItemActive() then
+					if an[21][3] < 0.45 then
+						an[21][3] = an[21][3] + (anim * 1)
+					end
+				elseif imgui.IsItemHovered() then
+					if an[21][3] < 0.45 then
+						an[21][3] = an[21][3] + (anim * 1)
+					end
+				else
+					if an[21][3] > 0 then
+						an[21][3] = an[21][3] - (anim * 1)
+					end
+				end
+
 				if setting.cl == 'White' then
 					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[21][1], 0.50 - an[21][1], 0.50 - an[21][1], 1.00))
 				else
@@ -12291,6 +13962,7 @@ win.main = imgui.OnFrame(
 				gui.FaText(795, 6, fa.ROTATE_RIGHT, fa_font[4])
 				gui.Text(777, 22, 'Сбросить')
 				imgui.PopStyleColor(1)
+				
 				if setting.cl == 'White' then
 					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[21][2], 0.50 - an[21][2], 0.50 - an[21][2], 1.00))
 				else
@@ -12298,6 +13970,20 @@ win.main = imgui.OnFrame(
 				end
 				gui.FaText(723, 6, fa.GEAR, fa_font[4])
 				gui.Text(700, 22, 'Настройки')
+				imgui.PopStyleColor(1)
+
+				if setting.cl == 'White' then
+					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 - an[21][3], 0.50 - an[21][3], 0.50 - an[21][3], 1.00))
+				else
+					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50 + an[21][3], 0.50 + an[21][3], 0.50 + an[21][3], 1.00))
+				end
+				if track_time then
+					gui.FaText(650, 6, fa.PAUSE, fa_font[4])
+					gui.Text(623, 22, 'Остановить')
+				else
+					gui.FaText(650, 6, fa.PLAY, fa_font[4])
+					gui.Text(630, 22, 'Включить')
+				end
 				imgui.PopStyleColor(1)
 			elseif not new_scene and tab == 'rp_zona' then
 				imgui.SetCursorPos(imgui.ImVec2(772, 5))
@@ -12498,28 +14184,298 @@ win.main = imgui.OnFrame(
 			gui.DrawLine({4, 408}, {844, 408}, cl.line)
 		end
 	
-        imgui.End()
+		imgui.End()
 	end
 )
 
+win.smart_su = imgui.OnFrame(
+	function() return windows.smart_su[0] end,
+	function(main)
+		local coud = imgui.Cond.FirstUseEver
+		local size_x, size_y = 800, 600
+		if smartSuState.anim.is_opening or smartSuState.anim.is_closing then
+			coud = imgui.Cond.Always
+		end
+		if smartSuState.anim.is_opening then
+			if smartSuState.anim.win_x[0] > sx / 2 then
+				smartSuState.anim.win_x[0] = smartSuState.anim.win_x[0] - (anim * 4500)
+				if smartSuState.anim.win_x[0] <= sx / 2 then
+					smartSuState.anim.win_x[0] = sx / 2
+					smartSuState.anim.is_opening = false
+				end
+			end
+		elseif smartSuState.anim.is_closing then
+			if smartSuState.anim.win_x[0] < sx + 400 then
+				smartSuState.anim.win_x[0] = smartSuState.anim.win_x[0] + (anim * 4500)
+				if smartSuState.anim.win_x[0] >= sx + 400 then
+					smartSuState.anim.is_closing = false
+					windows.smart_su[0] = false
+				end
+			end
+		end
+		imgui.SetNextWindowPos(imgui.ImVec2(smartSuState.anim.win_x[0], smartSuState.anim.win_y[0]), coud, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(size_x, size_y))
+		imgui.Begin('SmartSU', windows.smart_su, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoResize)
+		bug_fix_input()
+		gui.Draw({4, 4}, {size_x - 8, size_y - 8}, cl.main, 12, 15)
+		gui.DrawLine({4, 38}, {size_x - 4, 38}, cl.line)
+		imgui.PushFont(bold_font[1])
+		local title = 'Умная выдача розыска | Файл: ' .. s_na .. '.json'
+		local calc = imgui.CalcTextSize(u8(title))
+		gui.Text((size_x / 2) - (calc.x / 2), 11, title)
+		imgui.PopFont()
+		if imgui.IsItemHovered() then gui.DrawCircle({21, 21}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
+		else gui.DrawCircle({21, 21}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00)) end
+		imgui.SetCursorPos(imgui.ImVec2(11, 11))
+		if imgui.InvisibleButton('##close_smart_su', imgui.ImVec2(20, 20)) then
+			smartSuState.anim.is_closing = true
+			smartSuState.anim.is_opening = false
+		end
+		local targetNick = sampGetPlayerNickname(smartSuState.targetId[0])
+		gui.Text(16, 45, 'Выбран игрок: ' .. targetNick .. ' [' .. smartSuState.targetId[0] .. ']', font[3])
+		gui.DrawBox({16, 70}, {size_x - 32, 70}, cl.tab, cl.line, 7, 15)
+		gui.Text(26, 80, 'Поиск:', font[3])
+		smartSuState.searchQuery = gui.InputText({80, 80}, 690, smartSuState.searchQuery, 'smartSuState.searchQuery', 256, u8 'Текст из статьи...')
+		gui.DrawLine({16, 105}, {size_x - 16, 105}, cl.line)
+		gui.Text(26, 112, 'Запрос в рацию:', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(740, 108))
+		if gui.Switch('##smart_su_radio_req', setting.police_settings.smart_su_radio_req) then
+			setting.police_settings.smart_su_radio_req = not setting.police_settings.smart_su_radio_req; save()
+		end
+		imgui.SetCursorPos(imgui.ImVec2(10, 150))
+		imgui.BeginChild('##articles_list', imgui.ImVec2(size_x - 20, size_y - 160))
+			if smartSuState.reasons and #smartSuState.reasons > 0 then
+				for index, chapterData in ipairs(smartSuState.reasons) do
+					local has_matches = false
+					local searchText = smartSuState.searchQuery:lower()
+					if searchText == '' then
+						has_matches = true
+					else
+						for _, article in ipairs(chapterData.chapter) do
+							if article.text:lower():find(searchText, 1, true) then has_matches = true; break end
+						end
+					end
+					if has_matches then
+						if smartSuState.chapterStates[index] == nil then smartSuState.chapterStates[index] = false end
+						local item_pos_before = imgui.GetCursorPos()
+						if imgui.Selectable('##spoiler_header' .. index, smartSuState.chapterStates[index], imgui.SelectableFlags.SpanAllColumns, imgui.ImVec2(0, 25)) then
+							smartSuState.chapterStates[index] = not smartSuState.chapterStates[index]
+						end
+						local p_min, p_max = imgui.GetItemRectMin(), imgui.GetItemRectMax()
+						local bgColor = cl.tab
+						if smartSuState.chapterStates[index] then bgColor = cl.bg2 end
+						if imgui.IsItemHovered() then bgColor = cl.def end
+						imgui.GetWindowDrawList():AddRectFilled(p_min, p_max, imgui.GetColorU32Vec4(bgColor), 5)
+						local icon = smartSuState.chapterStates[index] and fa.CARET_DOWN or fa.CARET_RIGHT
+						local textColor
+						if imgui.IsItemHovered() then
+							textColor = imgui.ImVec4(1, 1, 1, 1)
+						elseif smartSuState.chapterStates[index] then
+							if setting.cl == 'White' then
+								textColor = imgui.ImVec4(0, 0, 0, 1)
+							else
+								textColor = imgui.ImVec4(1, 1, 1, 1)
+							end
+						else
+							textColor = cl.text
+						end
+						imgui.PushStyleColor(imgui.Col.Text, textColor)
+						imgui.SetCursorPos(imgui.ImVec2(item_pos_before.x + 10, item_pos_before.y + 5))
+						imgui.PushFont(fa_font[3]); imgui.Text(icon); imgui.PopFont()
+						imgui.SameLine(nil, 10)
+						imgui.Text(chapterData.headerText)
+						imgui.PopStyleColor()
+						if smartSuState.chapterStates[index] then
+							imgui.Dummy(imgui.ImVec2(0, 5))
+							imgui.Indent(20)
+							for _, article in ipairs(chapterData.chapter) do
+								if searchText == '' or article.text:lower():find(searchText, 1, true) then
+									local article_pos_before = imgui.GetCursorPos()
+									local article_height = 22
+									if imgui.InvisibleButton('##article' .. article.code, imgui.ImVec2(imgui.GetContentRegionAvail().x, article_height)) then
+										local commands_to_send = {}
+										if type(article.penalty) == 'string' and article.penalty:find('-') then
+											smartSuState.selectedArticle = article; smartSuState.showPenaltySelector[0] = true
+										else
+											local penaltyValue = tonumber(article.penalty) or 0
+											if setting.police_settings.smart_su_radio_req then
+												table.insert(commands_to_send, string.format('/r Запрашиваю розыск на дело: "%d" степень розыска: "%d" с причиной: "%s"', smartSuState.targetId[0], penaltyValue, u1251:iconv(article.code)))
+												table.insert(commands_to_send, '/r Доказательства есть на боди-камере!')
+											else
+												table.insert(commands_to_send, '/me правой рукой снял рацию с пояса, сообщил диспетчеру приметы подозреваемого')
+												table.insert(commands_to_send, string.format('/su %d %d %s', smartSuState.targetId[0], penaltyValue, u1251:iconv(article.code)))
+												table.insert(commands_to_send, '/do Преступник занесен в базу данных преступников.')
+											end
+											send_smart_su_commands(commands_to_send)
+											smartSuState.anim.is_closing = true; smartSuState.anim.is_opening = false
+										end
+									end
+									local article_p_min, article_p_max = imgui.GetItemRectMin(), imgui.GetItemRectMax()
+									local articleTextColor = cl.text
+									if imgui.IsItemHovered() then
+										imgui.GetWindowDrawList():AddRectFilled(article_p_min, article_p_max, imgui.GetColorU32Vec4(cl.def), 5)
+										articleTextColor = imgui.ImVec4(1, 1, 1, 1)
+									end
+										imgui.PushStyleColor(imgui.Col.Text, articleTextColor)
+									imgui.SetCursorPos(imgui.ImVec2(article_pos_before.x + 5, article_pos_before.y + 3))
+									imgui.Text(article.text)
+									imgui.PopStyleColor()
+								end
+							end
+							imgui.Unindent(20)
+						end
+						imgui.Dummy(imgui.ImVec2(0, 5))
+					end
+				end
+			else
+				gui.Text((size_x - 20) / 2 - 100, (size_y - 115) / 2 - 50, 'Загрузка данных о розыске...', font[3])
+			end
+		imgui.EndChild()
+		if smartSuState.showPenaltySelector[0] then
+			imgui.OpenPopup('PenaltySelector')
+			smartSuState.showPenaltySelector[0] = false
+		end
+		if smartSuState.selectedArticle then
+			local text1 = u8 "Выберите уровень розыска для статьи:"
+			local text2 = u8(smartSuState.selectedArticle.text)
+			local width1 = imgui.CalcTextSize(text1).x
+			local width2 = imgui.CalcTextSize(text2).x
+			local p_button_size = {x = 40, y = 25}
+			local button_spacing = 5.0
+			local penalties = parsePenaltyRange(smartSuState.selectedArticle.penalty)
+			local buttons_width = 0
+			if penalties and #penalties > 0 then
+				buttons_width = (#penalties * p_button_size.x) + ((#penalties - 1) * button_spacing)
+			end
+			local new_width = math.max(width1, width2, buttons_width) + 40
+			imgui.SetNextWindowSize(imgui.ImVec2(new_width, 150))
+		end
+		if imgui.BeginPopupModal('PenaltySelector', nil, imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove) then
+			if smartSuState.selectedArticle then
+				gui.Draw({0, 0}, {imgui.GetWindowWidth(), imgui.GetWindowHeight()}, cl.main, 7, 15)
+				gui.DrawEmp({0, 0}, {imgui.GetWindowWidth(), imgui.GetWindowHeight()}, cl.line, 7, 15, 1)
+				local window_width = imgui.GetWindowWidth()
+				local text1 = u8 "Выберите уровень розыска для статьи:"
+				local text1_width = imgui.CalcTextSize(text1).x
+				imgui.SetCursorPos(imgui.ImVec2((window_width - text1_width) / 2, 8))
+				imgui.Text(text1)
+				local text2 = (smartSuState.selectedArticle.text)
+				local text2_width = imgui.CalcTextSize(text2).x
+				imgui.SetCursorPos(imgui.ImVec2((window_width - text2_width) / 2, 30))
+				imgui.TextColored(cl.def, text2)
+				gui.DrawLine({4, 55}, {imgui.GetWindowWidth() - 4, 55}, cl.line)
+				local penalties = parsePenaltyRange(smartSuState.selectedArticle.penalty)
+				if penalties and #penalties > 0 then
+					local p_button_size = {x = 40, y = 25}
+					local button_spacing = 5.0
+					local total_buttons_width = (#penalties * p_button_size.x) + ((#penalties - 1) * button_spacing)
+					local start_x = (window_width - total_buttons_width) / 2
+					local cursor_y = 65
+					for i, p_value in ipairs(penalties) do
+						if gui.Button(tostring(p_value) .. '##penalty' .. i, {start_x, cursor_y}, {p_button_size.x, p_button_size.y}) then
+							local commands_to_send = {}
+							if setting.police_settings.smart_su_radio_req then
+								table.insert(commands_to_send, string.format('/r Запрашиваю розыск на дело: "%d" степень розыска: "%d" с причиной: "%s"', smartSuState.targetId[0], p_value, u1251:iconv(smartSuState.selectedArticle.code)))
+								table.insert(commands_to_send, '/r Доказательства есть на боди-камере!')
+							else
+								table.insert(commands_to_send, '/me правой рукой снял рацию с пояса, сообщил диспетчеру приметы подозреваемого')
+								table.insert(commands_to_send, string.format('/su %d %d %s', smartSuState.targetId[0], p_value, u1251:iconv(smartSuState.selectedArticle.code)))
+								table.insert(commands_to_send, '/do Преступник занесен в базу данных преступников.')
+							end
+							send_smart_su_commands(commands_to_send)
+							smartSuState.anim.is_closing = true; smartSuState.anim.is_opening = false
+							imgui.CloseCurrentPopup()
+						end
+						start_x = start_x + p_button_size.x + button_spacing
+					end
+				end
+				gui.DrawLine({4, 105}, {imgui.GetWindowWidth() - 4, 105}, cl.line)
+				if gui.Button(u8 "Отмена", {(imgui.GetWindowWidth() / 2) - 50, 115}, {100, 25}) then
+					imgui.CloseCurrentPopup()
+				end
+			end
+			imgui.EndPopup()
+		end
+		imgui.End()
+	end
+)
+--[[
+win.smart_ticket = imgui.OnFrame(
+	function() return windows.smart_ticket[0] end,
+	function(main)
+		local coud = imgui.Cond.FirstUseEver
+		local size_x, size_y = 800, 600
+		if smartTicketState.anim.is_opening or smartTicketState.anim.is_closing then
+			coud = imgui.Cond.Always
+		end
+		if smartTicketState.anim.is_opening then
+			if smartTicketState.anim.win_x[0] > sx / 2 then
+				smartTicketState.anim.win_x[0] = smartTicketState.anim.win_x[0] - (anim * 4500)
+				if smartTicketState.anim.win_x[0] <= sx / 2 then
+					smartTicketState.anim.win_x[0] = sx / 2
+					smartTicketState.anim.is_opening = false
+				end
+			end
+		elseif smartTicketState.anim.is_closing then
+			if smartTicketState.anim.win_x[0] < sx + 400 then
+				smartTicketState.anim.win_x[0] = smartTicketState.anim.win_x[0] + (anim * 4500)
+				if smartTicketState.anim.win_x[0] >= sx + 400 then
+					smartTicketState.anim.is_closing = false
+					windows.smart_ticket[0] = false
+				end
+			end
+		end
+
+		imgui.SetNextWindowPos(imgui.ImVec2(smartTicketState.anim.win_x[0], smartTicketState.anim.win_y[0]), coud, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(size_x, size_y))
+		imgui.Begin('SmartTicket', windows.smart_ticket, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoResize)
+		bug_fix_input()
+		gui.Draw({4, 4}, {size_x - 8, size_y - 8}, cl.main, 12, 15)
+		gui.DrawLine({4, 38}, {size_x - 4, 38}, cl.line)
+		imgui.PushFont(bold_font[1])
+		local title = 'Умный штраф | Файл: ' .. (s_na ~= '' and (s_na .. '.json') or 'Не определен')
+		local calc = imgui.CalcTextSize(u8(title))
+		gui.Text((size_x / 2) - (calc.x / 2), 11, title)
+		imgui.PopFont()
+		if imgui.IsItemHovered() then gui.DrawCircle({21, 21}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
+		else gui.DrawCircle({21, 21}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00)) end
+		imgui.SetCursorPos(imgui.ImVec2(11, 11))
+		if imgui.InvisibleButton('##close_smart_ticket', imgui.ImVec2(20, 20)) then
+			smartTicketState.anim.is_closing = true
+			smartTicketState.anim.is_opening = false
+		end
+		local targetNick = sampGetPlayerNickname(smartTicketState.targetId[0])
+		gui.Text(16, 45, 'Выбран игрок: ' .. targetNick .. ' [' .. smartTicketState.targetId[0] .. ']', font[3])
+		gui.DrawBox({16, 70}, {size_x - 32, 70}, cl.tab, cl.line, 7, 15)
+		gui.Text(26, 80, 'Поиск:', font[3])
+		smartTicketState.searchQuery = gui.InputText({80, 80}, 690, smartTicketState.searchQuery, 'smartTicketState.searchQuery', 256, u8 'Текст из статьи...')
+		gui.DrawLine({16, 105}, {size_x - 16, 105}, cl.line)
+		gui.Text(26, 112, 'Принимать штраф через trade / pay... если он больше 1 млн:', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(740, 108))
+		if gui.Switch('##smart_ticket_trade', setting.police_settings.smart_ticket_trade) then
+			setting.police_settings.smart_ticket_trade = not setting.police_settings.smart_ticket_trade; save()
+		end
+
+)]]
+
+--[[
 local inputField = imgui.new.char[256]()
-local sx, sy = getScreenResolution()
 
 win.smi = imgui.OnFrame(
-    function()
-        return dialogData ~= nil
-    end,
-    function(main)
-        SmiEdit()
-    end
+	function()
+		return dialogData ~= nil
+	end,
+	function(main)
+		SmiEdit()
+	end
 )
-
+]]
 win.shpora = imgui.OnFrame(
 	function() return windows.shpora[0] and not scene_active end,
 	function(main)
-        imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
-        imgui.SetNextWindowSize(imgui.ImVec2(808, 708))
-        imgui.Begin('Shpora', windows.shpora,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + (size_win and imgui.WindowFlags.NoMove or 0))
+		imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(808, 708))
+		imgui.Begin('Shpora', windows.shpora,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + (size_win and imgui.WindowFlags.NoMove or 0))
 		gui.Draw({4, 4}, {800, 700}, cl.main, 12, 15)
 		gui.DrawLine({4, 38}, {804, 38}, cl.line)
 		imgui.SetCursorPos(imgui.ImVec2(11, 11))
@@ -12548,9 +14504,9 @@ win.shpora = imgui.OnFrame(
 win.reminder = imgui.OnFrame(
 	function() return windows.reminder[0] and not scene_active end,
 	function(main)
-        imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
-        imgui.SetNextWindowSize(imgui.ImVec2(358, 158))
-        imgui.Begin('Reminder', windows.reminder,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + (size_win and imgui.WindowFlags.NoMove or 0))
+		imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(358, 158))
+		imgui.Begin('Reminder', windows.reminder,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + (size_win and imgui.WindowFlags.NoMove or 0))
 		gui.Draw({4, 4}, {350, 150}, cl.main, 12, 15)
 		gui.DrawLine({4, 38}, {354, 38}, cl.line)
 		imgui.SetCursorPos(imgui.ImVec2(11, 11))
@@ -12581,17 +14537,24 @@ win.reminder = imgui.OnFrame(
 	end
 )
 	
-
-
 win.mini_player = imgui.OnFrame(
 	function() return windows.player[0] and not scene_active end,
 	function(mini_player)
 		mini_player.HideCursor = true
-        imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy - 60), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-        imgui.SetNextWindowSize(imgui.ImVec2(318, 88))
-        imgui.Begin('Music player', windows.mini_player,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoFocusOnAppearing + imgui.WindowFlags.NoBringToFrontOnFocus + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoMove)
-		gui.Draw({4, 4}, {310, 80}, imgui.ImVec4(0.02, 0.02, 0.02, 1.00), 12, 15)
-		
+		if not setting.mini_player_pos then
+			setting.mini_player_pos = { x = sx / 2, y = sy - 60 }
+		end
+		imgui.SetNextWindowPos(imgui.ImVec2(setting.mini_player_pos.x, setting.mini_player_pos.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(318, 110))
+		local flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoFocusOnAppearing + imgui.WindowFlags.NoBringToFrontOnFocus + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoMove
+
+		if is_mini_player_pos then
+			flags = flags + imgui.WindowFlags.NoMouseInputs
+		end
+
+		imgui.Begin('Music player', windows.player, flags)
+		gui.Draw({4, 4}, {310, 105}, imgui.ImVec4(0.02, 0.02, 0.02, 1.00), 12, 15)
+
 		draw_gradient_image_music(0.9, 26, 26, 36, 36, 15)
 		imgui.SetCursorPos(imgui.ImVec2(18, 18))
 		local p_cursor_screen = imgui.GetCursorScreenPos()
@@ -12601,12 +14564,12 @@ win.mini_player = imgui.OnFrame(
 		else
 			imgui.Image(image_no_label, imgui.ImVec2(52, 52))
 		end
-		
+
 		if play.tab ~= 'RADIO' and play.tab ~= 'RECORD' then
 			gui.Draw({85, 65}, {215, 4}, imgui.ImVec4(0.21, 0.21, 0.21, 1.00), 20, 15)
 			gui.Draw({85, 65}, {(215 / play.len_time) * play.pos_time, 4}, cl.def, 20, 15)
 		end
-		
+
 		local name_record = {'Record Dance', 'Megamix', 'Party 24/7', 'Phonk', 'Гоп FM', 'Руки Вверх', 'Dupstep', 'Big Hits', 'Organic', 'Russian Hits'}
 		local name_radio = {'Европа Плюс', 'DFM', 'Шансон', 'Радио Дача', 'Дорожное', 'Маяк', 'Наше', 'LoFi Hip-Hop', 'Максимум', '90s Eurodance'}
 		imgui.PushFont(font[3])
@@ -12614,49 +14577,128 @@ win.mini_player = imgui.OnFrame(
 			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(85, 27, name_record[play.i], font[3])
 			imgui.PopStyleColor(1)
-			
 			imgui.SetCursorPos(imgui.ImVec2(85, 44))
 			imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8('Record'))
-			
+
 		elseif play.tab == 'RADIO' then
 			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(85, 27, name_radio[play.i], font[3])
 			imgui.PopStyleColor(1)
-			
 			imgui.SetCursorPos(imgui.ImVec2(85, 44))
 			imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8('Radio'))
 		else
 			if play.status ~= 'NULL' then
-				local track_name, newline_count_2 = wrapText(play.info.name, 30, 30)
-				local track_artist, newline_count_2 = wrapText(play.info.artist, 28, 28)
-				
+				local track_name, _ = wrapText(play.info.name, 30, 30)
+				local track_artist, _ = wrapText(play.info.artist, 28, 28)
 				imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 				gui.Text(85, 19, track_name, font[3])
 				imgui.PopStyleColor(1)
-				
 				imgui.SetCursorPos(imgui.ImVec2(85, 37))
 				imgui.TextColored(imgui.ImVec4(0.60, 0.60, 0.60, 1.00), u8(track_artist))
 			end
 		end
 		imgui.PopFont()
-		
-        imgui.End()
+		do
+			local y_pos_button = 75
+			local y_pos_icon = 77
+			local button_size = imgui.ImVec2(20, 20)
+			local icon_offset_x = 2
+			local gap_between_buttons = 10
+			local slider_width = 80
+			local slider_height = 6
+			local knob_radius = 6
+			local total_width = (button_size.x * 5) + (gap_between_buttons * 4) + slider_width
+			local start_x = (318 / 2) - (total_width / 2)
+			local current_x = start_x
+			imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+			if imgui.InvisibleButton('##StopTrackMini', button_size) then
+				set_song_status('STOP')
+			end
+			gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.STOP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+			current_x = current_x + button_size.x + gap_between_buttons
+			imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+			if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' and play.i > 1 then
+				if imgui.InvisibleButton('##PreviousTrackMini', button_size) then
+					back_track()
+				end
+				gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.BACKWARD_STEP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+			else
+				gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.BACKWARD_STEP, fa_font[2], imgui.ImVec4(0.30, 0.30, 0.30, 1.00))
+			end
+			current_x = current_x + button_size.x + gap_between_buttons
+			imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+			if imgui.InvisibleButton('##PlayPauseMini', button_size) then
+				set_song_status('PLAY_OR_PAUSE')
+			end
+			local play_icon = (play.status == 'PLAY') and fa.PAUSE or fa.PLAY
+			gui.FaText(current_x + icon_offset_x, y_pos_icon, play_icon, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+			current_x = current_x + button_size.x + gap_between_buttons
+			imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+			if play.tab ~= 'RECORD' and play.tab ~= 'RADIO' then
+				if imgui.InvisibleButton('##NextTrackMini', button_size) then
+					next_track(true)
+				end
+				gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.FORWARD_STEP, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+			else
+				gui.FaText(current_x + icon_offset_x, y_pos_icon, fa.FORWARD_STEP, fa_font[2], imgui.ImVec4(0.30, 0.30, 0.30, 1.00))
+			end
+			current_x = current_x + button_size.x + gap_between_buttons
+			local vol_icon
+			if play.volume >= 0.7 then
+				vol_icon = fa.VOLUME_HIGH
+			elseif play.volume >= 0.4 then
+				vol_icon = fa.VOLUME
+			elseif play.volume >= 0.03 then
+				vol_icon = fa.VOLUME_LOW
+			else
+				vol_icon = fa.VOLUME_SLASH
+			end
+			imgui.SetCursorPos(imgui.ImVec2(current_x, y_pos_button))
+			if imgui.InvisibleButton('##MuteButton', button_size) then
+				if play.volume > 0 then
+					play.last_volume_before_mute = play.volume
+					play.volume = 0
+				else
+					play.volume = (play.last_volume_before_mute and play.last_volume_before_mute > 0) and play.last_volume_before_mute or 0.5
+				end
+				volume_song(play.volume)
+			end
+			gui.FaText(current_x + icon_offset_x, y_pos_icon, vol_icon, fa_font[2], imgui.ImVec4(0.70, 0.70, 0.70, 1.00))
+			current_x = current_x + button_size.x
+			
+			gui.Draw({200, 81}, {slider_width, slider_height}, imgui.ImVec4(0.21, 0.21, 0.21, 1.00), 20, 15)
+			gui.Draw({200, 81}, {slider_width * play.volume, slider_height}, cl.def, 20, 15)
+			gui.DrawCircle({200 + slider_width * play.volume, 81 + slider_height / 2}, knob_radius, imgui.ImVec4(1, 1, 1, 1))
+
+			imgui.SetCursorPos(imgui.ImVec2(200 - knob_radius, 81 - knob_radius))
+			imgui.InvisibleButton('##volume_slider', imgui.ImVec2(slider_width + (knob_radius * 2), slider_height + (knob_radius * 2)))
+			
+			if imgui.IsItemActive() or (imgui.IsItemHovered() and imgui.IsMouseDown(0)) then
+				local mouse_x = imgui.GetMousePos().x - (imgui.GetWindowPos().x + 200)
+				local new_volume = math.max(0, math.min(1, mouse_x / slider_width))
+				if play.volume ~= new_volume then
+					play.volume = new_volume
+					volume_song(play.volume)
+				end
+			end
+		end
+		imgui.End()
 	end
 )
 
 win.fast = imgui.OnFrame(
 	function() return windows.fast[0] and not scene_active end,
 	function(fast)
-    	local size_win = {x = 348, y = 49 + math.max((#setting.fast.one_win * 34), (#setting.fast.two_win * 34))}
-    	local visible_draw = 0
-    	if #setting.fast.one_win ~= 0 and #setting.fast.two_win ~= 0 then
+		local size_win = {x = 348, y = 49 + math.max((#setting.fast.one_win * 34), (#setting.fast.two_win * 34))}
+		local visible_draw = 0
+		if #setting.fast.one_win ~= 0 and #setting.fast.two_win ~= 0 then
  			size_win.x = 691
-        	visible_draw = 171
-    	end
+			visible_draw = 171
+		end
 
-    	imgui.PushStyleVarFloat(imgui.StyleVar.Alpha, setting.visible_fast / 100)
-    	imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
-    	imgui.SetNextWindowSize(imgui.ImVec2(size_win.x, size_win.y + 20))
+		imgui.PushStyleVarFloat(imgui.StyleVar.Alpha, setting.visible_fast / 100)
+		imgui.SetNextWindowPos(imgui.ImVec2(sx / 2, sy / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(size_win.x, size_win.y + 20))
 		imgui.Begin('Fast win 1', windows.fast, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoSavedSettings)
 		local window_pos = imgui.GetCursorScreenPos()
 		local mouse_pos_all_screen = imgui.GetMousePos()
@@ -12913,9 +14955,9 @@ win.action = imgui.OnFrame(
 			end
 		end
 		
-        imgui.SetNextWindowPos(imgui.ImVec2(x_act_dialog, sy - (size_win.y / 2) - 20), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-        imgui.SetNextWindowSize(imgui.ImVec2(size_win.x, size_win.y))
-        imgui.Begin('Action reminder', windows.action,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoSavedSettings + imgui.WindowFlags.NoMove)
+		imgui.SetNextWindowPos(imgui.ImVec2(x_act_dialog, sy - (size_win.y / 2) - 20), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(size_win.x, size_win.y))
+		imgui.Begin('Action reminder', windows.action,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoSavedSettings + imgui.WindowFlags.NoMove)
 		gui.Draw({4, 4}, {size_win.x - 4, size_win.y - 4}, imgui.ImVec4(0.10, 0.10, 0.10, 0.70), 12, 15)
 		
 		if dialog_act.enter then
@@ -12980,9 +15022,9 @@ win.stat = imgui.OnFrame(
 			end
 		end
 		imgui.PushStyleVarFloat(imgui.StyleVar.Alpha, (setting.stat_on_screen.visible > 15) and setting.stat_on_screen.visible / 100 or 0.15)
-        imgui.SetNextWindowPos(imgui.ImVec2(setting.position_stat.x, setting.position_stat.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
-        imgui.SetNextWindowSize(imgui.ImVec2(298, size_y_stat + 8))
-        imgui.Begin('Stat Online', windows.stat,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoFocusOnAppearing + imgui.WindowFlags.NoBringToFrontOnFocus + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoMove)
+		imgui.SetNextWindowPos(imgui.ImVec2(setting.position_stat.x, setting.position_stat.y), imgui.Cond.Always, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(298, size_y_stat + 8))
+		imgui.Begin('Stat Online', windows.stat,  imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoFocusOnAppearing + imgui.WindowFlags.NoBringToFrontOnFocus + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoMove)
 		gui.Draw({4, 4}, {290, size_y_stat}, imgui.ImVec4(0.05, 0.05, 0.05, 1.00), 12, 15)
 		
 		if imgui.IsMouseClicked(0) and change_pos_onstat then
@@ -12994,7 +15036,9 @@ win.stat = imgui.OnFrame(
 			local time_format = os.date('%H:%M:%S')
 			imgui.PushFont(bold_font[3])
 			local calc_time = imgui.CalcTextSize(time_format)
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(149 - (calc_time.x / 2), 16 + pos_pl_stat, time_format, bold_font[3])
+			imgui.PopStyleColor(1)
 			imgui.PopFont()
 			pos_pl_stat = 38
 		end
@@ -13002,111 +15046,125 @@ win.stat = imgui.OnFrame(
 			local time_format = format_custom_date()
 			imgui.PushFont(bold_font[1])
 			local calc_date = imgui.CalcTextSize(u8(time_format))
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(149 - (calc_date.x / 2), 16 + pos_pl_stat, time_format, bold_font[1])
+			imgui.PopStyleColor(1)
 			imgui.PopFont()
 			pos_pl_stat = pos_pl_stat + 26
 		end
 		if setting.stat_on_screen.day then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'Чистый за день: ' .. format_time(setting.stat.cl[1]), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.afk then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'АФК за день: ' .. format_time(setting.stat.afk[1]), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.all then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'Всего за день: ' .. format_time(setting.stat.cl[1] + setting.stat.afk[1]), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.ses_day then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'Чистый за сессию: ' .. format_time(stat_ses.cl), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.ses_afk then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'АФК за сессию: ' .. format_time(stat_ses.afk), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		if setting.stat_on_screen.ses_all then
+			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(20, 16 + pos_pl_stat, 'Всего за сессию: ' .. format_time(stat_ses.all), font[3])
+			imgui.PopStyleColor(1)
 			pos_pl_stat = pos_pl_stat + 20
 		end
 		
 		imgui.PushStyleVarFloat(imgui.StyleVar.Alpha, 1.0)
-        imgui.End()
+		imgui.End()
 	end
 )
 
 function theme()
-    imgui.SwitchContext()
-    local ImVec4 = imgui.ImVec4
-    imgui.GetStyle().WindowPadding = imgui.ImVec2(0, 0)
-    imgui.GetStyle().FramePadding = imgui.ImVec2(0, 0)
-    imgui.GetStyle().ItemSpacing = imgui.ImVec2(5, 5)
-    imgui.GetStyle().ItemInnerSpacing = imgui.ImVec2(2, 2)
-    imgui.GetStyle().TouchExtraPadding = imgui.ImVec2(0, 0)
-    imgui.GetStyle().IndentSpacing = 0
-    imgui.GetStyle().ScrollbarSize = 10
-    imgui.GetStyle().GrabMinSize = 10
-    imgui.GetStyle().WindowBorderSize = 1
-    imgui.GetStyle().ChildBorderSize = 1
-    imgui.GetStyle().PopupBorderSize = 1
-    imgui.GetStyle().FrameBorderSize = 1
-    imgui.GetStyle().TabBorderSize = 1
-    imgui.GetStyle().WindowRounding = 7 --> Скругление окна
-    imgui.GetStyle().ChildRounding = 7
-    imgui.GetStyle().FrameRounding = 7
-    imgui.GetStyle().PopupRounding = 7
-    imgui.GetStyle().ScrollbarRounding = 7
-    imgui.GetStyle().GrabRounding = 7
-    imgui.GetStyle().TabRounding = 7
+	imgui.SwitchContext()
+	local ImVec4 = imgui.ImVec4
+	imgui.GetStyle().WindowPadding = imgui.ImVec2(0, 0)
+	imgui.GetStyle().FramePadding = imgui.ImVec2(0, 0)
+	imgui.GetStyle().ItemSpacing = imgui.ImVec2(5, 5)
+	imgui.GetStyle().ItemInnerSpacing = imgui.ImVec2(2, 2)
+	imgui.GetStyle().TouchExtraPadding = imgui.ImVec2(0, 0)
+	imgui.GetStyle().IndentSpacing = 0
+	imgui.GetStyle().ScrollbarSize = 10
+	imgui.GetStyle().GrabMinSize = 10
+	imgui.GetStyle().WindowBorderSize = 1
+	imgui.GetStyle().ChildBorderSize = 1
+	imgui.GetStyle().PopupBorderSize = 1
+	imgui.GetStyle().FrameBorderSize = 1
+	imgui.GetStyle().TabBorderSize = 1
+	imgui.GetStyle().WindowRounding = 7 --> Скругление окна
+	imgui.GetStyle().ChildRounding = 7
+	imgui.GetStyle().FrameRounding = 7
+	imgui.GetStyle().PopupRounding = 7
+	imgui.GetStyle().ScrollbarRounding = 7
+	imgui.GetStyle().GrabRounding = 7
+	imgui.GetStyle().TabRounding = 7
  
-    imgui.GetStyle().Colors[imgui.Col.Text]                   = cl.text
-    imgui.GetStyle().Colors[imgui.Col.TextDisabled]           = ImVec4(0.50, 0.50, 0.50, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.WindowBg]               = ImVec4(0.00, 0.00, 0.00, 0.00) --> Окно
-    imgui.GetStyle().Colors[imgui.Col.ChildBg]                = ImVec4(1.00, 1.00, 1.00, 0.00)
-    imgui.GetStyle().Colors[imgui.Col.PopupBg]                = cl.main
-    imgui.GetStyle().Colors[imgui.Col.Border]                 = ImVec4(0.00, 0.30, 0.00, 0.00) --> Обводка окна
-    imgui.GetStyle().Colors[imgui.Col.BorderShadow]           = ImVec4(0.00, 0.00, 0.00, 0.00) --> Обводка окна
-    imgui.GetStyle().Colors[imgui.Col.FrameBg]                = ImVec4(0.00, 0.00, 0.00, 0.00) --> Инпут
-    imgui.GetStyle().Colors[imgui.Col.FrameBgHovered]         = ImVec4(0.00, 0.00, 0.00, 0.00)
-    imgui.GetStyle().Colors[imgui.Col.FrameBgActive]          = ImVec4(0.00, 0.00, 0.00, 0.00)
-    imgui.GetStyle().Colors[imgui.Col.TitleBg]                = ImVec4(0.04, 0.04, 0.04, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.TitleBgActive]          = ImVec4(0.48, 0.16, 0.16, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.TitleBgCollapsed]       = ImVec4(0.00, 0.00, 0.00, 0.51)
-    imgui.GetStyle().Colors[imgui.Col.MenuBarBg]              = ImVec4(0.14, 0.14, 0.14, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.ScrollbarBg]            = ImVec4(0.00, 0.00, 0.00, 0.00) --> Фон скроллбара
-    imgui.GetStyle().Colors[imgui.Col.ScrollbarGrab]          = ImVec4(0.31, 0.31, 0.31, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.ScrollbarGrabHovered]   = ImVec4(0.41, 0.41, 0.41, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.ScrollbarGrabActive]    = ImVec4(0.51, 0.51, 0.51, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.CheckMark]              = ImVec4(0.98, 0.26, 0.26, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.SliderGrab]             = ImVec4(0.88, 0.26, 0.94, 0.00) --> Слайдер
-    imgui.GetStyle().Colors[imgui.Col.SliderGrabActive]       = ImVec4(0.98, 0.26, 0.96, 0.00) --> Слайдер
-    imgui.GetStyle().Colors[imgui.Col.Button]                 = ImVec4(0.98, 0.26, 0.26, 0.40)
-    imgui.GetStyle().Colors[imgui.Col.ButtonHovered]          = ImVec4(0.98, 0.26, 0.26, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.ButtonActive]           = ImVec4(0.98, 0.06, 0.06, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.Header]                 = ImVec4(0.98, 0.26, 0.26, 0.31)
-    imgui.GetStyle().Colors[imgui.Col.HeaderHovered]          = ImVec4(0.98, 0.26, 0.26, 0.80)
-    imgui.GetStyle().Colors[imgui.Col.HeaderActive]           = ImVec4(0.98, 0.26, 0.26, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.Separator]              = ImVec4(0.43, 0.43, 0.50, 0.50)
-    imgui.GetStyle().Colors[imgui.Col.SeparatorHovered]       = ImVec4(0.75, 0.10, 0.10, 0.78)
-    imgui.GetStyle().Colors[imgui.Col.SeparatorActive]        = ImVec4(0.75, 0.10, 0.10, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.ResizeGrip]             = ImVec4(0.98, 0.26, 0.26, 0.25)
-    imgui.GetStyle().Colors[imgui.Col.ResizeGripHovered]      = ImVec4(0.98, 0.26, 0.26, 0.67)
-    imgui.GetStyle().Colors[imgui.Col.ResizeGripActive]       = ImVec4(0.98, 0.26, 0.26, 0.95)
-    imgui.GetStyle().Colors[imgui.Col.Tab]                    = ImVec4(0.98, 0.26, 0.26, 0.40)
-    imgui.GetStyle().Colors[imgui.Col.TabHovered]             = ImVec4(0.98, 0.26, 0.26, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.TabActive]              = ImVec4(0.98, 0.06, 0.06, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.TabUnfocused]           = ImVec4(0.98, 0.26, 0.26, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.TabUnfocusedActive]     = ImVec4(0.98, 0.26, 0.26, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.PlotLines]              = ImVec4(0.61, 0.61, 0.61, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.PlotLinesHovered]       = ImVec4(1.00, 0.43, 0.35, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.PlotHistogram]          = ImVec4(0.90, 0.70, 0.00, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.PlotHistogramHovered]   = ImVec4(1.00, 0.60, 0.00, 1.00)
-    imgui.GetStyle().Colors[imgui.Col.TextSelectedBg]         = ImVec4(0.50, 0.50, 0.50, 0.50)
+	imgui.GetStyle().Colors[imgui.Col.Text]				   = cl.text
+	imgui.GetStyle().Colors[imgui.Col.TextDisabled]		   = ImVec4(0.50, 0.50, 0.50, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.WindowBg]			   = ImVec4(0.00, 0.00, 0.00, 0.00) --> Окно
+	imgui.GetStyle().Colors[imgui.Col.ChildBg]				= ImVec4(1.00, 1.00, 1.00, 0.00)
+	imgui.GetStyle().Colors[imgui.Col.PopupBg]				= cl.main
+	imgui.GetStyle().Colors[imgui.Col.Border]				 = ImVec4(0.00, 0.30, 0.00, 0.00) --> Обводка окна
+	imgui.GetStyle().Colors[imgui.Col.BorderShadow]		   = ImVec4(0.00, 0.00, 0.00, 0.00) --> Обводка окна
+	imgui.GetStyle().Colors[imgui.Col.FrameBg]				= ImVec4(0.00, 0.00, 0.00, 0.00) --> Инпут
+	imgui.GetStyle().Colors[imgui.Col.FrameBgHovered]		 = ImVec4(0.00, 0.00, 0.00, 0.00)
+	imgui.GetStyle().Colors[imgui.Col.FrameBgActive]		  = ImVec4(0.00, 0.00, 0.00, 0.00)
+	imgui.GetStyle().Colors[imgui.Col.TitleBg]				= ImVec4(0.04, 0.04, 0.04, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.TitleBgActive]		  = ImVec4(0.48, 0.16, 0.16, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.TitleBgCollapsed]	   = ImVec4(0.00, 0.00, 0.00, 0.51)
+	imgui.GetStyle().Colors[imgui.Col.MenuBarBg]			  = ImVec4(0.14, 0.14, 0.14, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.ScrollbarBg]			= ImVec4(0.00, 0.00, 0.00, 0.00) --> Фон скроллбара
+	imgui.GetStyle().Colors[imgui.Col.ScrollbarGrab]		  = ImVec4(0.31, 0.31, 0.31, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.ScrollbarGrabHovered]   = ImVec4(0.41, 0.41, 0.41, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.ScrollbarGrabActive]	= ImVec4(0.51, 0.51, 0.51, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.CheckMark]			  = ImVec4(0.98, 0.26, 0.26, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.SliderGrab]			 = ImVec4(0.88, 0.26, 0.94, 0.00) --> Слайдер
+	imgui.GetStyle().Colors[imgui.Col.SliderGrabActive]	   = ImVec4(0.98, 0.26, 0.96, 0.00) --> Слайдер
+	imgui.GetStyle().Colors[imgui.Col.Button]				 = ImVec4(0.98, 0.26, 0.26, 0.40)
+	imgui.GetStyle().Colors[imgui.Col.ButtonHovered]		  = ImVec4(0.98, 0.26, 0.26, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.ButtonActive]		   = ImVec4(0.98, 0.06, 0.06, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.Header]				 = ImVec4(0.98, 0.26, 0.26, 0.31)
+	imgui.GetStyle().Colors[imgui.Col.HeaderHovered]		  = ImVec4(0.98, 0.26, 0.26, 0.80)
+	imgui.GetStyle().Colors[imgui.Col.HeaderActive]		   = ImVec4(0.98, 0.26, 0.26, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.Separator]			  = ImVec4(0.43, 0.43, 0.50, 0.50)
+	imgui.GetStyle().Colors[imgui.Col.SeparatorHovered]	   = ImVec4(0.75, 0.10, 0.10, 0.78)
+	imgui.GetStyle().Colors[imgui.Col.SeparatorActive]		= ImVec4(0.75, 0.10, 0.10, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.ResizeGrip]			 = ImVec4(0.98, 0.26, 0.26, 0.25)
+	imgui.GetStyle().Colors[imgui.Col.ResizeGripHovered]	  = ImVec4(0.98, 0.26, 0.26, 0.67)
+	imgui.GetStyle().Colors[imgui.Col.ResizeGripActive]	   = ImVec4(0.98, 0.26, 0.26, 0.95)
+	imgui.GetStyle().Colors[imgui.Col.Tab]					= ImVec4(0.98, 0.26, 0.26, 0.40)
+	imgui.GetStyle().Colors[imgui.Col.TabHovered]			 = ImVec4(0.98, 0.26, 0.26, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.TabActive]			  = ImVec4(0.98, 0.06, 0.06, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.TabUnfocused]		   = ImVec4(0.98, 0.26, 0.26, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.TabUnfocusedActive]	 = ImVec4(0.98, 0.26, 0.26, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.PlotLines]			  = ImVec4(0.61, 0.61, 0.61, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.PlotLinesHovered]	   = ImVec4(1.00, 0.43, 0.35, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.PlotHistogram]		  = ImVec4(0.90, 0.70, 0.00, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.PlotHistogramHovered]   = ImVec4(1.00, 0.60, 0.00, 1.00)
+	imgui.GetStyle().Colors[imgui.Col.TextSelectedBg]		 = ImVec4(0.50, 0.50, 0.50, 0.50)
 end
 
 imgui.OnInitialize(function()
-    theme()
+	theme()
 end)
 
 function change_design(design_bool, bool_theme)
@@ -13342,31 +15400,38 @@ function start_other_cmd(cmd_func, arguments)
 				if i == 4 and arguments:find('(%d+)') and setting.sob_id_arg then
 					local arg_id = arguments:match('(%d+)')
 					arg_id = tonumber(arg_id)
-					
-					if arg_id ~= '' and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp) and (setting.sob.min_law ~= '' 
-					or not setting.sob.auto_law) and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
-						run_sob = true
-						if sampIsPlayerConnected(arg_id) then
-							sob_info = {
-								exp = -1,
-								law = -1,
-								narko = -1,
-								org = -1,
-								med = -1,
-								blacklist = -1,
-								ticket = -1,
-								bilet = -1,
-								car = -1,
-								gun = -1,
-								moto = -1,
-								warn = -1,
-								bl_info = {},
-								org_info = '',
-								id = tonumber(arg_id),
-								nick = sampGetPlayerNickname(arg_id),
-								history = {}
-							}
+					if arg_id ~= nil and (setting.sob.min_exp ~= '' or not setting.sob.auto_exp)
+					and (setting.sob.min_law ~= '' or not setting.sob.auto_law)
+					and (setting.sob.min_narko ~= '' or not setting.sob.auto_narko) then
+						if not sampIsPlayerConnected(arg_id) then
+							if not setting.cef_notif then
+								sampAddChatMessage("[SH] {FFFFFF}Игрок с таким ID не найден, либо это Вы", 0xFF5345)
+							else
+								cefnotig("{FF5345}[SH] {FFFFFF}Игрок с таким ID не найден, либо это Вы", 3000)
+							end
+							windows.main[0] = false
+							return
 						end
+						run_sob = true
+						sob_info = {
+							exp = -1,
+							law = -1,
+							narko = -1,
+							org = -1,
+							med = -1,
+							blacklist = -1,
+							ticket = -1,
+							bilet = -1,
+							car = -1,
+							moto = -1,
+							gun = -1,
+							warn = -1,
+							bl_info = {},
+							org_info = '',
+							id = arg_id,
+							nick = sampGetPlayerNickname(arg_id),
+							history = {}
+						}
 					end
 				end
 			end
@@ -13377,13 +15442,13 @@ end
 function filter_word_rus(data)
 	if data.EventChar >= 1040 and data.EventChar <= 1103 then
 	
-        return 0
-    elseif data.EventChar == 32 then
+		return 0
+	elseif data.EventChar == 32 then
 	
-        return 0
-    else
-        return true
-    end
+		return 0
+	else
+		return true
+	end
 end
 
 function filter_word_en(data)
@@ -13407,18 +15472,34 @@ function filter_word_en_num(data)
 end
 
 function filter_word_en_rus_num(data)
-    local char_code = data.EventChar
-    if (char_code >= 1040 and char_code <= 1103) or
-       (char_code >= 65 and char_code <= 90) or
-       (char_code >= 97 and char_code <= 122) or
-       (char_code == 32) or
-       (char_code >= 48 and char_code <= 57) then 
+	local char_code = data.EventChar
+	if (char_code >= 1040 and char_code <= 1103) or
+	   (char_code >= 65 and char_code <= 90) or
+	   (char_code >= 97 and char_code <= 122) or
+	   (char_code == 32) or
+	   (char_code >= 48 and char_code <= 57) then 
 	   
-        return 0
-    else
-        return true
-    end
+		return 0
+	else
+		return true
+	end
 end
+
+function filter_word_en_rus_num_h(data)
+	local char_code = data.EventChar
+	if (char_code >= 1040 and char_code <= 1103) or
+	   (char_code >= 65 and char_code <= 90) or
+	   (char_code >= 97 and char_code <= 122) or
+	   (char_code == 32) or
+	   (char_code >= 48 and char_code <= 57) or
+	   (char_code == 45) then
+		return 0
+	else
+		return true
+	end
+end
+
+TextCallbackEnRusNumH = ffi.cast('int (*)(ImGuiInputTextCallbackData* data)', filter_word_en_rus_num_h)
 TextCallbackRus = ffi.cast('int (*)(ImGuiInputTextCallbackData* data)', filter_word_rus)
 TextCallbackEn = ffi.cast('int (*)(ImGuiInputTextCallbackData* data)', filter_word_en)
 TextCallbackEnNum = ffi.cast('int (*)(ImGuiInputTextCallbackData* data)', filter_word_en_num)
@@ -13448,30 +15529,32 @@ function add_cmd_in_all_cmd()
 	end
 end
 
-function round(num, step) --> Число, шаг округления
-  return math.ceil(num / step) * step
+function round(num, decimals)
+	if decimals == nil then decimals = 0 end
+	local mult = 10^(decimals)
+	return math.floor(num * mult + 0.5) / mult
 end
 
 function floor(number)
-    return math.floor(number)
+	return math.floor(number)
 end
 
 function compare_array(array1, array2)
-    if #array1 ~= #array2 then
-        return false
-    end
+	if #array1 ~= #array2 then
+		return false
+	end
 	
-    for i, v in ipairs(array1) do
-        if type(v) == 'table' then
-            if not compare_array(v, array2[i]) then
-                return false
-            end
-        elseif v ~= array2[i] then
-            return false
-        end
-    end
-    
-    return true
+	for i, v in ipairs(array1) do
+		if type(v) == 'table' then
+			if not compare_array(v, array2[i]) then
+				return false
+			end
+		elseif v ~= array2[i] then
+			return false
+		end
+	end
+	
+	return true
 end
 
 function compare_array_disable_order(arr1, arr2)
@@ -13550,18 +15633,18 @@ function ch_pos_on_stat()
 end
 
 function swapping(array, index, shift)
-    if not array or not index or index < 1 or index > #array then
-        print('Некорректные входные данные function swapping()')
-        return
-    end
-    if shift == 0 then
-        return
-    end
+	if not array or not index or index < 1 or index > #array then
+		print('Некорректные входные данные function swapping()')
+		return
+	end
+	if shift == 0 then
+		return
+	end
 	
-    local newIndex = (index + shift - 1) % #array + 1
-    local temp = array[index]
-    table.remove(array, index)
-    table.insert(array, newIndex, temp)
+	local newIndex = (index + shift - 1) % #array + 1
+	local temp = array[index]
+	table.remove(array, index)
+	table.insert(array, newIndex, temp)
 end
 
 function bug_fix_input()
@@ -13587,7 +15670,11 @@ function start_sob_cmd(rp_sob_z)
 		table.insert(rp_sob, rp_sob_z[i])
 	end
 	if thread:status() ~= 'dead' then
-		sampAddChatMessage('[SH] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 0xFF5345)
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 3000)
+		end
 		return
 	end
 	
@@ -13619,7 +15706,11 @@ function start_sob_cmd(rp_sob_z)
 						windows.action[0] = true
 						dialog_act.status = true
 						dialog_act.enter = true
-						sampAddChatMessage('[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 0xFF5345)
+						if not setting.cef_notif then
+							sampAddChatMessage('[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 0xFF5345)
+						else
+							cefnotig('{FF5345}[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 4000)
+						end
 						addOneOffSound(0, 0, 0, 1058)
 						while true do wait(0)
 							if not sampIsChatInputActive() and not sampIsDialogActive() then
@@ -13647,13 +15738,17 @@ function start_sob_cmd(rp_sob_z)
 end
 
 function on_hot_key(id_pr_key)
+	if setting.blockl then
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был заблокирован разработчиком.', 0xFF5345)
+		else
+			cefnotig("{FF5345}[SH]{FFFFFF} Доступ к StateHelper был заблокирован разработчиком.", 3000)
+		end
+		return
+	end
 	local pressed_key = tostring(table.concat(id_pr_key, ' '))
 	
 	if not isGamePaused() and not isPauseMenuActive() and not sampIsDialogActive() and not sampIsChatInputActive() then
-		if pressed_key == '72' and setting.speed_door then
-			sampSendChat('/opengate')
-		end
-		
 		if pressed_key == tostring(table.concat(setting.fast.key, ' ')) and setting.fast.func then
 			if targ_id ~= -1 and targ_id ~= nil and (#setting.fast.one_win > 0 or #setting.fast.two_win > 0) then
 				if sampIsPlayerConnected(targ_id) then
@@ -13673,7 +15768,7 @@ function on_hot_key(id_pr_key)
 			end
 		end
 		if pressed_key == tostring(table.concat(setting.win_key[2], ' ')) and not edit_key then
-			windows.main[0] = not windows.main[0]
+			open_main()
 		end
 		
 		if pressed_key == tostring(table.concat(setting.act_key[1], ' ')) and not edit_key and thread:status() ~= 'dead'
@@ -13701,7 +15796,23 @@ function on_hot_key(id_pr_key)
 				end
 			end
 		end
-		
+		if pressed_key == tostring(table.concat(setting.police_settings.siren_key[2], ' ')) and setting.police_settings.siren and not edit_key and not windows.main[0] and not windows.smart_su[0] and anti_spam_gun[3] == 0 then
+			if isCharInAnyCar(PLAYER_PED) then
+				local vehicle = getCarCharIsUsing(PLAYER_PED)
+				local siren_is_currently_on = isCarSirenOn(vehicle)
+				switchCarSiren(vehicle, not siren_is_currently_on)
+				if not siren_is_currently_on then
+					if setting.police_settings.siren_on_rp and setting.police_settings.siren_on_rp ~= '' and thread:status() == 'dead' then
+						sampSendChat(u8:decode(sex_decode(setting.police_settings.siren_on_rp)))
+					end
+				else
+					if setting.police_settings.siren_off_rp and setting.police_settings.siren_off_rp ~= '' and thread:status() == 'dead' then
+						sampSendChat(u8:decode(sex_decode(setting.police_settings.siren_off_rp)))
+					end
+				end
+				anti_spam_gun[3] = 2
+			end
+		end
 		local tab_open = {'cmd', 'shpora', 'dep', 'sob', 'reminder', 'stat', 'music', 'rp_zona', 'actions'}
 		local tab_name_open = {u8'Команды', u8'Шпаргалки', u8'Департамент', u8'Собеседование', u8'Напоминания', u8'Статистика онлайна', u8'Музыка', u8'РП зона', u8'Действия'}
 		for j = 1, #setting.key_tabs do
@@ -13724,18 +15835,18 @@ function on_hot_key(id_pr_key)
 end
 
 function match_interpolation(initial, highest_return, current_match, max_return) --> Математическая интерполяция
-    local ratio = current_match / highest_return
-    local result = max_return - (ratio * (max_return - 1))
+	local ratio = current_match / highest_return
+	local result = max_return - (ratio * (max_return - 1))
 	
-    return result
+	return result
 end
 
 function urlencode(str)
    if (str) then
-      str = string.gsub (str, '\n', '\r\n')
-      str = string.gsub (str, '([^%w ])',
-         function (c) return string.format ('%%%02X', string.byte(c)) end)
-      str = string.gsub (str, ' ', '+')
+	  str = string.gsub (str, '\n', '\r\n')
+	  str = string.gsub (str, '([^%w ])',
+		 function (c) return string.format ('%%%02X', string.byte(c)) end)
+	  str = string.gsub (str, ' ', '+')
    end
    
    return str
@@ -14045,8 +16156,11 @@ end
 
 function auto_report_fire(text_send, bool_func_enter)
 	if thread:status() ~= 'dead' then
-		sampAddChatMessage('[SH] [Доклад] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 0xFF5345)
-		
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH] [Доклад] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH] [Доклад] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 4000)
+		end
 		return
 	end
 	
@@ -14057,7 +16171,11 @@ function auto_report_fire(text_send, bool_func_enter)
 				table.insert(dec_key, dec_to_key(setting.enter_key[1][s]))
 			end
 			wait(300)
-			sampAddChatMessage('[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для отправки доклада или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы отменить отправку.', 0xFF5345)
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для отправки доклада или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы отменить отправку.', 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для отправки доклада или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы отменить отправку.', 4000)
+			end
 			addOneOffSound(0, 0, 0, 1058)
 			while true do wait(0)
 				if not sampIsChatInputActive() and not sampIsDialogActive() then
@@ -14127,8 +16245,18 @@ function cmd_shpora_open(argument, cmd_name)
 end
 
 function cmd_start(argument, cmd_name) --> Запуск команды
+	if setting.blockl then
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был заблокирован разработчиком.', 0xFF5345)
+		end
+		return
+	end
 	if thread:status() ~= 'dead' then --> Если какая-то команда уже запущена, то эту команду не запускаем
-		sampAddChatMessage('[SH] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 0xFF5345)
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH] {FFFFFF}У Вас уже запущена отыгровка! Используйте {ED95A8}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить её.', 3000)
+		end
 		return
 	end
 	
@@ -14140,7 +16268,11 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 		end
 	end
 	if CMD == nil then --> Если команда почему-то не найдена, то информируем пользователя и останавливаем проигровку
-		sampAddChatMessage('[SH] {FFFFFF}ОШИБКА! Команда не найдена... Видимо, файл с командами уничтожен.', 0xFF5345)
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH] {FFFFFF}ОШИБКА! Команда не найдена... Видимо, файл с командами уничтожен.', 0xFF5345)
+		else
+			cefnotig("{FF5345}[SH] {FFFFFF}ОШИБКА! Команда не найдена... Видимо, файл с командами уничтожен.", 3000)
+		end
 		return
 	end
 	
@@ -14150,7 +16282,11 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 			for ar = 1, #CMD.arg do
 				table.insert(tbl_ar, '[' .. u8:decode(CMD.arg[ar].desc) .. ']')
 			end
-			sampAddChatMessage('[SH] {FFFFFF}Используйте {a8a8a8}/' .. CMD.cmd .. ' ' .. table.concat(tbl_ar, ' '), 0xFF5345)
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH] {FFFFFF}Используйте {a8a8a8}/' .. CMD.cmd .. ' ' .. table.concat(tbl_ar, ' '), 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH] {FFFFFF}Используйте {a8a8a8}/' .. CMD.cmd .. ' ' .. table.concat(tbl_ar, ' '), 5000)
+			end
 		end
 		
 		if argument:gsub('%s+', '') ~= '' then
@@ -14186,7 +16322,11 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 	local function escape_pattern(text_esc)
 		return text_esc:gsub('([%^%$%(%)%%%.%[%]%*%+%-%?])', '%%%1')
 	end
-		
+
+	local model = getNearestVehicleModel()
+	local speed = getNearestVehicleSpeed()
+	local square = getCurrentMapSquare()
+
 	local function tag_converter(text) --> Преобразовать теги в тексте, если они имеются
 		local function escape_pattern(text_esc)
 			return text_esc:gsub('([%^%$%(%)%%%.%[%]%*%+%-%?])', '%%%1')
@@ -14227,15 +16367,20 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 						extracted_str[i][2] = (sampGetPlayerNickname(tonumber(num_id))):gsub('_', ' ')
 					else
 						extracted_str[i][2] = 'Уважаемый'
-						sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игрок не в сети, либо это Вы.', 0xFF5345)
+						if not setting.cef_notif then
+							sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игрок не в сети, либо это Вы.', 0xFF5345)
+						else
+							cefnotig('{FF5345}[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игрок не в сети, либо это Вы.', 3000)
+						end
 					end
 				elseif val:find('{getlevel%[(%d+)%]}') then
-					local num_id = tonumber(string.match(val, '{getlevel%[(%d+)%]}'))
-					if sampIsPlayerConnected(tonumber(num_id)) then
-						extracted_str[i][2] = sampGetPlayerScore(tonumber(num_id))
+					local num_id = tonumber(val:match('{getlevel%[(%d+)%]}'))
+					if sampIsPlayerConnected(num_id) then
+						local score = sampGetPlayerScore(num_id)
+						if score == 0 then wait(100) score = sampGetPlayerScore(num_id) end
+						extracted_str[i][2] = score
 					else
 						extracted_str[i][2] = '0'
-						sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игрок не в сети, либо это Вы.', 0xFF5345)
 					end
 				elseif val == '{med7}' then
 					extracted_str[i][2] = setting.price[1].mc[1]:gsub('%D', '')
@@ -14257,14 +16402,14 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					extracted_str[i][2] = setting.price[1].narko:gsub('%D', '')
 				elseif val == '{pricerecept}' then
 					extracted_str[i][2] = setting.price[1].rec:gsub('%D', '')
-				elseif val == '{pricetatu}' then
-					extracted_str[i][2] = setting.price[1].tatu:gsub('%D', '')
 				elseif val == '{priceant}' then
 					extracted_str[i][2] = setting.price[1].ant:gsub('%D', '')
 				elseif val == '{pricelec}' then
 					extracted_str[i][2] = setting.price[1].lec:gsub('%D', '')
 				elseif val == '{priceosm}' then
 					extracted_str[i][2] = setting.price[1].osm:gsub('%D', '')
+				elseif val == '{priceguard}' then
+					extracted_str[i][2] = setting.price[1].tatu:gsub('%D', '')
 				elseif val =='{priceauto1}' then
 					extracted_str[i][2] = setting.price[2].auto[1]
 				elseif val == '{priceauto2}' then
@@ -14334,13 +16479,41 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					local app_id = tonumber(string.match(val, '{PhoneApp%[(%d+)%]}'))
 					sendCef('launchedApp|'.. app_id)
 					sampSendChat('/phone')
+				elseif val == '{city}' then
+					local x, y, _ = getCharCoordinates(PLAYER_PED)
+					extracted_str[i][2] = (x > 900 and y > 800 and 'Лас-Вентурас') or (x < -1300 and 'Сан-Фиерро') or (x > 0 and y < 0 and 'Лос-Сантос') or 'Вне города'
+				elseif val == '{veh_model}' then
+					extracted_str[i][2] = model
+				elseif val == '{veh_speed}' then
+					extracted_str[i][2] = speed
+				elseif val == '{square}' then
+					extracted_str[i][2] = square
+				elseif val == '{pursuit_id}' then
+					if poltarget then
+						extracted_str[i][2] = poltarget
+					else
+						if not setting.cef_notif then
+							sampAddChatMessage('[SH] {FFFFFF}Не удалось получить id человека с погони.', 0xFF5345)
+						else
+							cefnotig('{FF5345}[SH] {FFFFFF}Не удалось получить id человека с погони.', 3000)
+						end
+						extracted_str[i][2] = ''
+					end
+				elseif val:find('{unprison%[(%d+)%]}') then
+					unprison = true
+					unprison_id = tonumber(val:match('{unprison%[(%d+)%]}'))
+					extracted_str[i][2] = '/getjail ' .. unprison_id
 				elseif val == '{nearplayer}' then
 					local near_pl = getNearestID()
 					if near_pl then
 						extracted_str[i][2] = tostring(near_pl)
 					else
 						extracted_str[i][2] = '-1'
-						sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игроков рядом нет.', 0xFF5345)
+						if not setting.cef_notif then
+							sampAddChatMessage('[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игроков рядом нет.', 0xFF5345)
+						else
+							cefnotig('{FF5345}[SH] {FFFFFF}Параметр ' .. val .. ' не обнаружил игрока. Игроков рядом нет.', 3000)
+						end
 					end
 				elseif val:find('{random%[(%d+)%]%[(%d+)%]}') then
 					local min_number, max_number = val:match('{random%[(%d+)%]%[(%d+)%]}')
@@ -14368,7 +16541,6 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 			end
 
 			if text:find('{prtsc}') then
-				stop_send_chat = true
 				text = text:gsub('{prtsc}', '')
 				print_scr()
 			end
@@ -14408,7 +16580,7 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 	end
 	
 	local function arg_and_var_and_tag_conv(text) --> Преобразовать аргументы, переменные и теги в тексте		
-		if #CMD.var ~= 0 then --> Заменяем переменные в тексте 
+		if #CMD.var ~= 0 then
 			for i_var = 1, #CMD.var do
 				local var_format = '{' .. CMD.var[i_var].name .. '}'
 				if text:find(var_format) then
@@ -14417,7 +16589,7 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 				end
 			end
 		end
-		if #CMD.arg ~= 0 then --> Заменяем аргументы в тексте 
+		if #CMD.arg ~= 0 then
 			for i_arg = 1, #CMD.arg do
 				local arg_format = '{' .. CMD.arg[i_arg].name .. '}'
 				if text:find(arg_format) then
@@ -14446,7 +16618,7 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 						if CMD.act[i - 1][1] == 'SEND' or CMD.act[i - 1][1] == 'SEND_ME' then
 							wait(delay)
 						else
-							wait(600)
+							wait(delay)
 						end
 					end
 					if CMD.send_end_mes or i ~= #CMD.act then
@@ -14455,6 +16627,19 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 						sampSetChatInputEnabled(true)
 						sampSetChatInputText(u8:decode(arg_and_var_and_tag_conv(v[2])))
 					end
+				elseif v[1] == 'SEND_CMD' then
+				if i ~= 1 then
+					if CMD.act[i - 1][1] == 'SEND' or CMD.act[i - 1][1] == 'SEND_ME' or CMD.act[i - 1][1] == 'SEND_CMD' then
+						wait(delay)
+					else
+						wait(delay)
+					end
+				end
+				local cmd_to_send = u8:decode(arg_and_var_and_tag_conv(v[2]))
+				table.insert(command_queue, cmd_to_send)
+				if v[3] == true then
+					return
+				end
 				elseif v[1] == 'OPEN_INPUT' then
 					sampSetChatInputEnabled(true)
 					sampSetChatInputText(u8:decode(arg_and_var_and_tag_conv(v[2])))
@@ -14462,7 +16647,11 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					windows.action[0] = true
 					dialog_act.status = true
 					dialog_act.enter = true
-					sampAddChatMessage('[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 0xFF5345)
+					if not setting.cef_notif then
+						sampAddChatMessage('[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 0xFF5345)
+					else
+						cefnotig('{FF5345}[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 3000)
+					end
 					addOneOffSound(0, 0, 0, 1058)
 					while true do wait(0)
 						if not sampIsChatInputActive() and not sampIsDialogActive() then
@@ -14484,7 +16673,11 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					windows.action[0] = true
 					dialog_act.status = true
 					dialog_act.enter = true
-					sampAddChatMessage('[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 0xFF5345)
+					if not setting.cef_notif then
+						sampAddChatMessage('[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 0xFF5345)
+					else
+						cefnotig('{FF5345}[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 3500)
+					end
 					addOneOffSound(0, 0, 0, 1058)
 					while true do wait(0)
 						if not sampIsChatInputActive() and not sampIsDialogActive() then
@@ -14622,6 +16815,47 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					if_active = 1
 				elseif v[1] == 'STOP' then
 					return
+				elseif v[1] == 'SEND_DIALOG' then
+					if i ~= 1 then
+						wait(delay)
+					end
+					if sampIsDialogActive() then
+						local id, _, _, _, _, _ = sampGetCurrentDialogId()
+						sampSendDialogResponse(id, 1, -1, u8:decode(arg_and_var_and_tag_conv(v[2])))
+						mem.setint32(sampGetDialogInfoPtr()+40, bool and 1 or 0, true)
+						sampToggleCursor(bool)
+					else
+						if not setting.cef_notif then
+							sampAddChatMessage('[SH] {FFFFFF}Ошибка: Диалоговое окно не открыто.', 0xFF5345)
+						else
+							cefnotig('{FF5345}[SH] {FFFFFF}Ошибка: Диалоговое окно не открыто.', 3000)
+						end
+					end
+				elseif v[1] == 'SELECT_DIALOG_ROW' then
+					if i ~= 1 then
+						wait(delay)
+					end
+					if sampIsDialogActive() then
+						local id, _, _, _, _, _ = sampGetCurrentDialogId()
+						local row = tonumber(arg_and_var_and_tag_conv(v[2]))
+						if row then
+							sampSendDialogResponse(id, 1, row -1, '')
+							mem.setint32(sampGetDialogInfoPtr()+40, bool and 1 or 0, true)
+							sampToggleCursor(bool)
+						else
+							if not setting.cef_notif then
+								sampAddChatMessage('[SH] {FFFFFF}Ошибка: Неверный номер рядка для выбора в диалоге.', 0xFF5345)
+							else
+								cefnotig('{FF5345}[SH] {FFFFFF}Ошибка: Неверный номер рядка для выбора в диалоге.', 3000)
+							end
+						end
+					else
+						if not setting.cef_notif then
+							sampAddChatMessage('[SH] {FFFFFF}Ошибка: Диалоговое окно не открыто.', 0xFF5345)
+						else
+							cefnotig('{FF5345}[SH] {FFFFFF}Ошибка: Диалоговое окно не открыто.', 3000)
+						end
+					end
 				end
 			else
 				if v[1] == 'IF' then
@@ -14641,21 +16875,21 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 end
 
 function getNearestID()
-    local chars = getAllChars()
-    local mx, my, mz = getCharCoordinates(PLAYER_PED)
-    local nearId, dist = nil, 10000
-    for i,v in ipairs(chars) do
-        if doesCharExist(v) and v ~= PLAYER_PED then
-            local vx, vy, vz = getCharCoordinates(v)
-            local cDist = getDistanceBetweenCoords3d(mx, my, mz, vx, vy, vz)
-            local r, id = sampGetPlayerIdByCharHandle(v)
-            if r and cDist < dist then
-                dist = cDist
-                nearId = id
-            end
-        end
-    end
-    return nearId
+	local chars = getAllChars()
+	local mx, my, mz = getCharCoordinates(PLAYER_PED)
+	local nearId, dist = nil, 10000
+	for i,v in ipairs(chars) do
+		if doesCharExist(v) and v ~= PLAYER_PED then
+			local vx, vy, vz = getCharCoordinates(v)
+			local cDist = getDistanceBetweenCoords3d(mx, my, mz, vx, vy, vz)
+			local r, id = sampGetPlayerIdByCharHandle(v)
+			if r and cDist < dist then
+				dist = cDist
+				nearId = id
+			end
+		end
+	end
+	return nearId
 end
 
 function sex_decode(text_ret)
@@ -14708,6 +16942,97 @@ org = {
 	online = 0,
 	afk = 0
 }
+
+--> Вантед
+wanted_players = {}
+emp_wanted_players = {}
+wanted_update = false
+wanted_wait = {
+	checking = false,
+	page = 0,
+	timeout = 0
+}
+wanted_info = {
+	name = 'Разыскиваемые',
+	online = 0,
+}
+col_wanted = {}
+fonts_wanted = nil
+
+function render_wanted()
+	local X, Y = setting.police_settings.wanted_list.pos.x, setting.police_settings.wanted_list.pos.y
+	local title = string.format('%s | В розыске: %s', wanted_info.name, wanted_info.online)
+	local col_title = changeColorAlpha(setting.police_settings.wanted_list.color.title, (setting.police_settings.wanted_list.vis * 2))
+
+	if setting.police_settings.wanted_list.invers then
+		renderFontDrawClickableText(script_cursor, fontes_wanted, title, X, Y - setting.police_settings.wanted_list.dist - 5, col_title, col_title, 4, false)
+	else
+		renderFontDrawClickableText(script_cursor, fontes_wanted, title, X, Y - setting.police_settings.wanted_list.dist - 5, col_title, col_title, 3, false)
+	end
+
+	if #wanted_players > 0 then
+		for i, wanted in ipairs(wanted_players) do
+			if not (setting.police_settings.wanted_list.interior and wanted.dist == 'в интерьере') then
+				local color = changeColorAlpha(setting.police_settings.wanted_list.color.default, (setting.police_settings.wanted_list.vis * 2))
+				local out_string
+				if setting.police_settings.wanted_list.hide_distance then
+					out_string = string.format('%s [%s] (%s ур.)', wanted.nick, wanted.id, wanted.level)
+				else
+					out_string = string.format('%s [%s] (%s ур.) - %s', wanted.nick, wanted.id, wanted.level, wanted.dist)
+				end
+
+				if setting.police_settings.wanted_list.invers then
+					renderFontDrawClickableText(script_cursor, fontes_wanted, out_string, X, Y, color, color, 4, true)
+				else
+					renderFontDrawClickableText(script_cursor, fontes_wanted, out_string, X, Y, color, color, 3, true)
+				end
+				Y = Y + setting.police_settings.wanted_list.dist
+			end
+		end
+	else
+		local col_non = changeColorAlpha(setting.police_settings.wanted_list.color.default, (setting.police_settings.wanted_list.vis * 2))
+		local text
+		if wanted_wait.page == 0 then
+			if wait_mb > 0 then
+				text = 'Обновится через ' .. wait_mb .. ' сек.'
+			else
+				text = 'Обновление списка...'
+			end
+		else
+			text = 'Нет никого в розыске'
+		end
+		if setting.police_settings.wanted_list.invers then
+			renderFontDrawClickableText(script_cursor, fontes_wanted, text, X, Y, col_non, col_non,  4, false)
+		else
+			renderFontDrawClickableText(script_cursor, fontes_wanted, text, X, Y, col_non, col_non,  3, false)
+		end
+	end
+end
+
+function wanted_check()
+	if not wanted_wait.checking then return end
+	wanted_wait.page = wanted_wait.page + 1
+	if wanted_wait.page <= 6 then
+		lua_thread.create(function()
+			wait(1100)
+			while thread:status() ~= 'dead' do
+				wait(500)
+			end
+			if wanted_wait.checking then
+				while sampIsDialogActive() do
+					wait(100)
+				end
+				if wanted_wait.checking then
+					sampSendChat('/wanted ' .. wanted_wait.page)
+					wanted_wait.timeout = os.clock() + 5
+				end
+			end
+		end)
+	else
+		wanted_update = true
+		wanted_wait.checking = false
+	end
+end
 
 function render_members()
 	local X, Y = setting.mb.pos.x, setting.mb.pos.y
@@ -14771,32 +17096,32 @@ function renderFontDrawClickableText(active, font, text, posX, posY, color, colo
 	local symb_len = renderGetFontDrawTextLength(font, '>')
 	local hovered = false
 	local result = false
-    b_symbol = b_symbol == nil and false or b_symbol
-    align = align or 1
+	b_symbol = b_symbol == nil and false or b_symbol
+	align = align or 1
 
-    if align == 2 then
-    	posX = posX - (lenght / 2)
-    elseif align == 3 then
-    	posX = posX - lenght
+	if align == 2 then
+		posX = posX - (lenght / 2)
+	elseif align == 3 then
+		posX = posX - lenght
 	end
 
-    if active and cursorX > posX and cursorY > posY and cursorX < posX + lenght and cursorY < posY + height then
-        hovered = true
-        if isKeyJustPressed(0x01) then
-        	result = true 
-        end
-    end
+	if active and cursorX > posX and cursorY > posY and cursorX < posX + lenght and cursorY < posY + height then
+		hovered = true
+		if isKeyJustPressed(0x01) then
+			result = true 
+		end
+	end
 
-    local anim = math.floor(math.sin(os.clock() * 10) * 3 + 5)
+	local anim = math.floor(math.sin(os.clock() * 10) * 3 + 5)
  	if hovered and b_symbol and (align == 2 or align == 1) then
-    	renderFontDrawText(font, '>', posX - symb_len - anim, posY, 0x90FFFFFF)
-    end 
-    renderFontDrawText(font, text, posX, posY, hovered and color_hovered or color)
-    if hovered and b_symbol and (align == 2 or align == 3) then
-    	renderFontDrawText(font, '<', posX + lenght + anim, posY, 0x90FFFFFF)
-    end 
+		renderFontDrawText(font, '>', posX - symb_len - anim, posY, 0x90FFFFFF)
+	end 
+	renderFontDrawText(font, text, posX, posY, hovered and color_hovered or color)
+	if hovered and b_symbol and (align == 2 or align == 3) then
+		renderFontDrawText(font, '<', posX + lenght + anim, posY, 0x90FFFFFF)
+	end 
 
-    return result
+	return result
 end
 
 function changePosition()
@@ -14804,58 +17129,103 @@ function changePosition()
 		pos_new_memb = lua_thread.create(function()
 			local backup = {
 				['x'] = setting.mb.pos.x,
-                ['y'] = setting.mb.pos.y
+				['y'] = setting.mb.pos.y
 			}
 			local ChangePos = true
 			sampSetCursorMode(4)
 			windows.main[0] = false
-			sampAddChatMessage('[SH]{FFFFFF} Нажмите {FF6060}ЛКМ{FFFFFF}, чтобы применить или {FF6060}ESC{FFFFFF} для отмены.', 0xFF5345)
-            if not sampIsChatInputActive() then
-                while not sampIsChatInputActive() and ChangePos do
-                    wait(0)
-                    local cX, cY = getCursorPos()
-                    setting.mb.pos.x = cX
-                    setting.mb.pos.y = cY
-                    if isKeyDown(0x01) then
-                    	while isKeyDown(0x01) do wait(0) end
-                        ChangePos = false
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Нажмите {FF6060}ЛКМ{FFFFFF}, чтобы применить или {FF6060}ESC{FFFFFF} для отмены.', 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH]{FFFFFF} Нажмите {FF6060}ЛКМ{FFFFFF}, чтобы применить или {FF6060}ESC{FFFFFF} для отмены.', 3000)
+			end
+			if not sampIsChatInputActive() then
+				while not sampIsChatInputActive() and ChangePos do
+					wait(0)
+					local cX, cY = getCursorPos()
+					setting.mb.pos.x = cX
+					setting.mb.pos.y = cY
+					if isKeyDown(0x01) then
+						while isKeyDown(0x01) do wait(0) end
+						ChangePos = false
 						save()
-                        sampAddChatMessage('[SH]{FFFFFF} Позиция сохранена.', 0xFF5345)
-                    elseif isKeyJustPressed(VK_ESCAPE) then
-                        ChangePos = false
+						if not setting.cef_notif then
+							sampAddChatMessage('[SH]{FFFFFF} Позиция сохранена.', 0xFF5345)
+						else
+							cefnotig('[SH]{FFFFFF} Позиция сохранена.', 3000)
+						end
+					elseif isKeyJustPressed(VK_ESCAPE) then
+						ChangePos = false
 						setting.mb.pos.x = backup['x']
 						setting.mb.pos.y = backup['y']
-                        sampAddChatMessage('[SH]{FFFFFF} Вы отменили изменение позиции.', 0xFF5345)
-                    end
-                end
-            end
-            sampSetCursorMode(0)
-            windows.main[0] = true
+						if not setting.cef_notif then
+							sampAddChatMessage('[SH]{FFFFFF} Вы отменили изменение позиции.', 0xFF5345)
+						else
+							cefnotig('{FF5345}[SH]{FFFFFF} Вы отменили изменение позиции.', 3000)
+						end
+					end
+				end
+			end
+			sampSetCursorMode(0)
+			windows.main[0] = true
 			imgui.ShowCursor = true
-            ChangePos = false
+			ChangePos = false
 		end)
 	end
 end
 
-function activate_function_members()
+function update_lists()
 	while true do
-		wait(0)
-		if sampIsLocalPlayerSpawned() and not sampIsDialogActive() and timer_send == 0 and thread:status() == 'dead' then
-			while (os.clock() - lastDialogWasActive) < 2.00 do wait(0) end
-			if --[[ not members_wait.members and ]]setting.mb.func and thread:status() == 'dead' and not sampIsDialogActive() and wait_mb == 0 and not isGamePaused() and not isPauseMenuActive() then
+		wait(1000)
+		if not windows.main[0] and sampIsLocalPlayerSpawned() and not sampIsDialogActive() and wait_mb == 0 and not isGamePaused() and not isPauseMenuActive() then
+			local check_started = false
+			if setting.mb.func and not members_wait.members then
 				members_wait.members = true
-				dont_show_me_members = false
 				sampSendChat('/members')
-				wait_mb = 27
+				check_started = true
+			elseif not setting.mb.func and setting.police_settings.wanted_list.func and (setting.org >= 11 and setting.org <= 15) and not wanted_wait.checking then
+				wanted_wait.checking = true
+				wanted_wait.page = 1
+				emp_wanted_players = {}
+				sampSendChat('/wanted 1')
+				wanted_wait.timeout = os.clock() + 5
+				check_started = true
 			end
-		else
-			wait_mb = 10
+			if check_started then
+				wait_mb = 27
+			elseif (members_wait.members or wanted_wait.checking) then
+				wait_mb = 5 
+			end
 		end
 	end
 end
 
+function check_all_wanted_pages() -- 976 (посл.проверки)
+	if wanted_wait.checking then return end
+		wanted_wait.checking = true
+		lua_thread.create(function()
+		temp_wanted_players = {} 
+		for page = 1, 6 do
+			while windows.main[0] do
+				wait(200)
+			end
+			if not wanted_wait.checking then break end
+			wanted_wait.dialog_opened = false
+			sampSendChat('/wanted ' .. page)
+			local timeout = os.clock() + 1.5 
+			while os.clock() < timeout and not wanted_wait.dialog_opened do
+				wait(0)
+			end
+			wait(700)
+		end
+
+		wanted_update = true
+		wanted_wait.checking = false
+	end)
+end
+
 function EXPORTS.sendRequest()
-	if not sampIsDialogActive() then
+	if not sampIsDialogActive() and found_our then
 		members_wait.members = true
 		sampSendChat('/members')
 		
@@ -14877,11 +17247,9 @@ function getAfkCount()
 end
 
 function print_scr()
-	lua_thread.create(function()
-		setVirtualKeyDown(VK_F8, true)
-		wait(25)
-		setVirtualKeyDown(VK_F8, false)
-	end)
+	setVirtualKeyDown(VK_F8, true)
+	wait(25)
+	setVirtualKeyDown(VK_F8, false)
 end
 
 function print_scr_time()
@@ -14941,12 +17309,74 @@ function asyncHttpRequest(method, url, args, resolve, reject)
 	end)
 end
 
-chat_arizona = {}
+local function last_color(text, pos)
+	local before = text:sub(1, math.max((pos or 1) - 1, 0))
+	local last = before:match(".*({%x%x%x%x%x%x})")
+	return last
+end
 
 --> Hook
 function hook.onServerMessage(color_mes, mes)
 	local mes_col = (bit.tohex(bit.rshift(color_mes, 8), 6))
+
+	if mes:find('%[Ошибка%] {FFFFFF}Вы не полицейский!') and wanted_wait.checking then
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH] {FFFFFF}Вы не полицейский, функция wanted на экране выключена.', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH] {FFFFFF}Вы не полицейский, функция wanted на экране выключена.', 3500)
+		end
+		setting.police_settings.wanted_list.func = false
+		save()
+		return false
+	end
+
+	if mes:find('%[Ошибка%] {ffffff}Вы не состоите во фракции') and setting.mb.func then
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH] {FFFFFF}Вы не состоите в организации, мемберс на экране выключен.', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH] {FFFFFF}Вы не состоите в организации, мемберс на экране выключен.', 3500)
+		end
+		setting.mb.func = false
+		save()
+		return false
+	end
 	
+	if mes:find('%[Ошибка%] {FFFFFF}Не флуди!') and wanted_wait.checking then --> для вантед
+		lua_thread.create(function()
+			wait(1500)
+			if wanted_wait.checking then
+				sampSendChat('/wanted ' .. wanted_wait.page)
+				wanted_wait.timeout = os.clock() + 5
+			end
+		end)
+		return false
+	end
+
+	if mes:find('%[Ошибка%] {ffffff}Игроков с таким уровнем розыска нету!') and wanted_wait.checking then
+		wanted_wait.timeout = 0
+		wanted_check()
+		return false
+	end
+
+	if setting.police_settings.ten_code and (setting.org >= 11 and setting.org <= 15) and next(tenCodes) then
+		for pattern, addon in pairs(tenCodes) do
+			local s, e = mes:find(pattern, 1, true)
+			if s then
+				local next_ch = mes:sub(e+1, e+1)
+				if next_ch == "" or next_ch:match("[%s%p]") or next_ch == "{" then
+					local mes_col = "{" .. bit.tohex(bit.rshift(color_mes, 8), 6) .. "}"
+					local restore_hex = last_color(mes, s)
+					if not restore_hex then
+						restore_hex = mes_col
+					end
+					local insert = " {FFFF00}(" .. addon .. ")" .. restore_hex
+					local new_text = mes:sub(1, e) .. insert .. mes:sub(e + 1)
+					return { color_mes, new_text }
+				end
+			end
+		end
+	end
+
 	if setting.put_mes[2] then
 		if mes:find('Объявление:') or mes:find('Отредактировал сотрудник') then
 			return false
@@ -14966,10 +17396,25 @@ function hook.onServerMessage(color_mes, mes)
 			end
 		end
 	end
-	
+
+	if mes:find('Преследование за (.-) было приостановлено, причина:') and setting.org >= 11 and setting.org <= 15 then
+		poltarget = nil
+	end
+
+	if mes:find('Вы успешно начали погоню за игроком') and setting.org >= 11 and setting.org <= 15 then
+		local id = mes:match("Вы успешно начали погоню за игроком .- %[ID: (%d+)%]")
+		if id then
+			poltarget = tonumber(id)
+		end
+	end
+
 	if mes:find('Вы не можете продавать лицензии на такой срок') then
 		num_give_lic = -1
-		sampAddChatMessage('[SH] {FFFFFF}Ваш ранг не позволяет выдать эту лицензию!', 0xFF5345)
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH] {FFFFFF}Ваш ранг не позволяет выдать эту лицензию!', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH] {FFFFFF}Ваш ранг не позволяет выдать эту лицензию!', 3000)
+		end
 		return false
 	end
 	
@@ -15001,7 +17446,111 @@ function hook.onServerMessage(color_mes, mes)
 	if mes:find('[Сбор средств](.+)организац') and setting.put_mes[5] then
 		return false
 	end
+	if run_sob then
+		if mes:find(my.nick .. '%[' .. my.id .. '%]') or mes:find(sob_info.nick .. '%[' .. sob_info.id .. '%]') then
+			local log_message = mes
+			if setting.sob.use_original_color then
+				log_message = '{' .. mes_col .. '}' .. mes
+			else
+				if setting.cl ~= 'Black' then
+					log_message = log_message:gsub('%{B7AFAF%}', '%{464d4f%}'):gsub('%{FFFFFF%}', '%{464d4f%}')
+				end
+			end
+			local message_buffer = imgui.new.char[120](log_message)
+			table.insert(sob_info.history, ffi.string(message_buffer))
+			if #sob_info.history > 30 then
+				table.remove(sob_info.history, 1)
+			end
+		end
+	end
 
+	if (mes:find('Robert_Poloskyn(.+) shbl'..my.id) and s_na == 'Winslow') or (mes:find('Alberto_Kane(.+) shbl'..my.id) and s_na == 'Phoenix') or (mes:find('Ilya_Kustov(.+) shbl'..my.id) and s_na == 'Phoenix') then
+		if setting.blockl then
+			setting.blockl = false
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Доступ к StateHelper был разблокирован.', 0x23E64A)
+			else
+				cefnotig('{23E64A}[SH]{FFFFFF} Доступ к StateHelper был разблокирован.', 3000)
+			end
+		else
+			cefnotig('{FF5345}[SH]{FFFFFF} Доступ к StateHelper был заблокирован разработчиком.', 3000)
+			setting.blockl = true
+			sampShowDialog(2001, 'Уведомление', 'Вам был заблокирован доступ к StateHelper.', 'Закрыть', '', 0)
+			lua_thread.create(function()
+				local rever = 0
+				repeat wait(200)
+					addOneOffSound(0, 0, 0, 1057)
+					rever = rever + 1
+				until rever > 10
+			end)
+		end
+		save()
+		return false
+	end
+
+	if mes:find('%[Информация%] {ffffff}Вы заполнили все пункты, для подтверждения распишитесь нажав кнопку {90EE90}"Заполнить"') and setting.police_settings.auto_inves then
+		sampSendClickTextdraw(2131)
+		return false
+	end
+
+	if mes:find('Robert_Poloskyn(.+) sh'..my.id) and s_na == 'Winslow' then	
+		local rever = 0
+		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n				 разработчик-фиксер скрипта State Helper - {2b8200}Robert_Poloskyn', 'Закрыть', '', 0)
+		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик-фиксер State Helper - {39e3be}Robert_Poloskyn.', 0xFF5345)
+		lua_thread.create(function()
+			repeat wait(200)
+				addOneOffSound(0, 0, 0, 1057)
+				rever = rever + 1
+			until rever > 10
+		end)
+		return false
+	end
+
+	if mes:find('AIberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Alberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Ilya_Kustov(.+):(.+)пук ' .. my.id) then
+		local id_il = mes:match('%[(.-)%]')
+		sampSendChat('/showcarskill ' .. id_il)
+		ret_check = 3
+		
+		return false
+	end
+	
+	if setting.color_nick then
+		if mes:find('говорит:') and mes_col == 'ffffff' and setting.replace_ic then
+			local playerId = mes:match('%d+')
+			if playerId then
+				local playerColor = sampGetPlayerColor(playerId)
+				sampAddChatMessage(mes, playerColor)
+				return false
+			end
+		elseif mes:find('кричит:') and mes_col == 'f0e68c' and setting.replace_s then
+		local playerId = mes:match('%d+')
+		if playerId then
+			local playerColor = sampGetPlayerColor(playerId)
+			local mes = mes:gsub("кричит:", "кричит:{F0E68C}")
+			sampAddChatMessage(mes, playerColor)
+			return false
+		end
+		elseif mes:find('говорит шепотом:') and mes_col == '94b0c1' and setting.replace_c then
+			local playerId = mes:match('%d+')
+			if playerId then
+				local playerColor = sampGetPlayerColor(playerId)
+				sampAddChatMessage(mes, playerColor)
+				return false
+			end
+		elseif mes:match('%(%(.+%[%d+%]: {B7AFAF}.+%)%)$') and mes_col == 'ffffff' and setting.replace_b then
+			local nickname, id, text = mes:match('%(%(%s*(.-)%[(%d+)%]: {B7AFAF}(.-)%)%)$')
+			if nickname and id and text then
+				local playerId = tonumber(id)
+				local playerColor = sampGetPlayerColor(playerId)
+				local cleanText = text:gsub("{B7AFAF}", "")
+				local formatted = string.format('{%06X}(( %s[%s]: {B7AFAF}%s{%06X}))',
+					bit.band(playerColor, 0xFFFFFF), nickname, id, cleanText, bit.band(playerColor, 0xFFFFFF))
+				sampAddChatMessage(formatted, playerColor)
+				return false
+			end
+		end
+	end
+	
 	if mes:find('Купите лотерейный билет и получите возможность выиграть') or mes:find('Купить лотерейные билеты можно в уличных киосках')
 	and setting.put_mes[7] then
 		return false
@@ -15028,8 +17577,10 @@ function hook.onServerMessage(color_mes, mes)
 	
 	if mes:find('На сервере есть инвентарь, используйте клавишу Y для работы с ним') then
 		close_serv = false
+		cssInjected = false
 		local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
 		my = {id = myid, nick = sampGetPlayerNickname(myid)}
+		injNotif()
 	end
 	
 	if setting.show_dialog_auto then
@@ -15100,7 +17651,11 @@ function hook.onServerMessage(color_mes, mes)
 		local argb = imgui.ColorConvertFloat4ToARGB(c)
 		local col_mes_godeath = '0x'.. (ARGBtoStringRGB(imgui.ColorConvertFloat4ToARGB(c))):gsub('[%{%}]', '')
 		if not actions_set.remove_mes and not actions_set.remove_rp then
-			sampAddChatMessage('Поступил вызов в районе ' .. area .. ' ('.. location .. ')' .. coord_area .. '. Введите' .. text_cmd .. ' /godeath ' .. id_pl_godeath, col_mes_godeath)
+			if not setting.cef_notif then
+				sampAddChatMessage('Поступил вызов в районе ' .. area .. ' ('.. location .. ')' .. coord_area .. '. Введите' .. text_cmd .. ' /godeath ' .. id_pl_godeath, col_mes_godeath)
+			else
+				cefnotig('Поступил вызов в районе ' .. area .. ' ('.. location .. ')' .. coord_area .. '. Введите' .. text_cmd .. ' /godeath ' .. id_pl_godeath, 3000)
+			end
 		end
 		
 		if setting.godeath.sound then
@@ -15110,14 +17665,6 @@ function hook.onServerMessage(color_mes, mes)
 		if setting.godeath.two_text then
 			return false
 		end
-	end
-	
-	if mes:find('AIberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Alberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Ilya_Kustov(.+):(.+)пук ' .. my.id) then
-		local id_il = mes:match('%[(.-)%]')
-		sampSendChat('/showcarskill ' .. id_il)
-		ret_check = 3
-		
-		return false
 	end
 	
 	if (mes:find('отчет по навыку вождения') or mes:find('Не флуди')) and ret_check > 0 then
@@ -15144,7 +17691,7 @@ function hook.onServerMessage(color_mes, mes)
 	
 	if mes:find('Игрок AIberto_Kane(.+)показал отчет по своему навыку вождения') or mes:find('Игрок Alberto_Kane(.+)показал отчет по своему навыку вождения') and mes_col == '6495ed' then
 		local rever = 0
-		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n                 разработчик скрипта State Helper - {2b8200}Alberto_Kane', 'Закрыть', '', 0)
+		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n				 разработчик скрипта State Helper - {2b8200}Alberto_Kane', 'Закрыть', '', 0)
 		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик State Helper - {39e3be}Alberto_Kane.', 0xFF5345)
 		lua_thread.create(function()
 			repeat wait(200)
@@ -15157,7 +17704,7 @@ function hook.onServerMessage(color_mes, mes)
 	
 	if mes:find('Игрок Ilya_Kustov(.+)показал отчет по своему навыку вождения') and mes_col == '6495ed' then
 		local rever = 0
-		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n                 QA-инженер скрипта State Helper - {2b8200}Ilya_Kustov', 'Закрыть', '', 0)
+		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n				 QA-инженер скрипта State Helper - {2b8200}Ilya_Kustov', 'Закрыть', '', 0)
 		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается QA-инженер State Helper - {39e3be}Ilya_Kustov.', 0xFF5345)
 		lua_thread.create(function()
 			repeat wait(200)
@@ -15212,23 +17759,6 @@ function hook.onServerMessage(color_mes, mes)
 		end
 	end
 	
-	if run_sob and setting.sob.chat then
-		if mes:find(my.nick .. '%[' .. my.id .. '%]') or mes:find(sob_info.nick .. '%[' .. sob_info.id .. '%]') then
-			if setting.cl ~= 'Black' then
-				mes = mes:gsub('%{B7AFAF%}', '%{464d4f%}'):gsub('%{FFFFFF%}', '%{464d4f%}')
-			end
-			
-			local bool_t = imgui.new.char[120](mes)
-			table.insert(sob_info.history, ffi.string(bool_t))
-			if ffi.string(bool_t) ~= mes then
-				local icran = ffi.string(bool_t):gsub('%[', '%%['):gsub('%]', '%%]'):gsub('%.', '%%.'):gsub('%-', '%%-'):gsub('%+', '%%+'):gsub('%?', '%%?'):gsub('%$', '%%$'):gsub('%*', '%%*'):gsub('%(', '%%('):gsub('%)', '%%)')
-				local soc_new_char = mes:gsub(icran, '')
-				bool_t = imgui.new.char[120](soc_new_char)
-				table.insert(sob_info.history, ffi.string(bool_t))
-			end
-		end
-	end
-	
 	if setting.notice.dep and setting.dep.my_tag ~= '' then
 		local call_org = false
 		if mes:find('%[D%](.+)'..u8:decode(setting.dep.my_tag)..'(.+)связь') and not mes:find(my.nick .. '%[' .. my.id) then
@@ -15259,8 +17789,12 @@ function hook.onServerMessage(color_mes, mes)
 					end
 				end
 				if not found_our then
-					sampAddChatMessage('[SH]{e3a220} Вашу организацию вызывают в рации департамента!', 0xFF5345)
-					sampAddChatMessage('[SH]{e3a220} Вашу организацию вызывают в рации департамента!', 0xFF5345)
+					if not setting.cef_notif then
+						sampAddChatMessage('[SH]{e3a220} Вашу организацию вызывают в рации департамента!', 0xFF5345)
+						sampAddChatMessage('[SH]{e3a220} Вашу организацию вызывают в рации департамента!', 0xFF5345)
+					else
+						cefnotig("{FF5345}[SH]{e3a220} Вашу организацию вызывают в рации департамента!", 3000)
+					end
 					local stop_signal = 0
 					repeat wait(200) 
 						addOneOffSound(0, 0, 0, 1057)
@@ -15272,37 +17806,153 @@ function hook.onServerMessage(color_mes, mes)
 	end
 end
 
+ips = {
+	Phoenix = {'185.169.134.3:7777', 'phoenix.arizona-rp.com:7777'},
+	Tucson = {'185.169.134.4:7777', 'tucson.arizona-rp.com:7777'},
+	Scottdale = {'185.169.134.43:7777', 'scottdale.arizona-rp.com:7777'},
+	Winslow = {'185.169.134.173:7777', 'winslow.arizona-rp.com:7777'},
+	Brainburg = {'185.169.134.45:7777', 'brainburg.arizona-rp.com:7777'},
+	BumbleBee = {'80.66.82.87:7777', 'bumblebee.arizona-rp.com:7777'},
+	CasaGrande = {'80.66.82.188:7777', 'casagrande.arizona-rp.com:7777'},
+	Chandler = {'185.169.134.44:7777', 'chandler.arizona-rp.com:7777'},
+	Christmas = {'80.66.82.54:7777', 'christmas.arizona-rp.com:7777'},
+	Faraway = {'80.66.82.82:7777', 'faraway.arizona-rp.com:7777'},
+	Gilbert = {'80.66.82.191:7777', 'gilbert.arizona-rp.com:7777'},
+	Glendale = {'185.169.134.171:7777', 'glendale.arizona-rp.com:7777'},
+	Holiday = {'80.66.82.132:7777', 'holiday.arizona-rp.com:7777'},
+	Kingman = {'185.169.134.172:7777', 'kingman.arizona-rp.com:7777'},
+	Mesa = {'185.169.134.59:7777', 'mesa.arizona-rp.com:7777'},
+	Page = {'80.66.82.168:7777', 'page.arizona-rp.com:7777'},
+	Payson = {'185.169.134.174:7777', 'payson.arizona-rp.com:7777'},
+	Prescott = {'185.169.134.166:7777', 'prescott.arizona-rp.com:7777'},
+	QueenCreek = {'80.66.82.200:7777', 'queencreek.arizona-rp.com:7777'},
+	RedRock = {'185.169.134.61:7777', 'redrock.arizona-rp.com:7777'},
+	SaintRose = {'185.169.134.5:7777', 'saintrose.arizona-rp.com:7777'},
+	Sedona = {'80.66.82.144:7777', 'sedona.arizona-rp.com:7777'},
+	ShowLow = {'80.66.82.190:7777', 'showlow.arizona-rp.com:7777'},
+	SunCity = {'80.66.82.159:7777', 'suncity.arizona-rp.com:7777'},
+	Surprise = {'185.169.134.109:7777', 'surprise.arizona-rp.com:7777'},
+	Wednesday = {'80.66.82.128:7777', 'wednesday.arizona-rp.com:7777'},
+	Yava = {'80.66.82.113:7777', 'yava.arizona-rp.com:7777'},
+	Yuma = {'185.169.134.107:7777', 'yuma.arizona-rp.com:7777'},
+	Love = {'80.66.82.33:7777', 'love.arizona-rp.com:7777'},
+	Mirage = {'80.66.82.39:7777', 'mirage.arizona-rp.com:7777'},
+	Drake = {'drake.arizona-rp.com:7777', '80.66.82.22:7777'},
+	VC = {'80.66.82.147:7777', 'vicecity.arizona-rp.com:7777'},
+	Space = {'80.66.82.199:7777', 'space.arizona-rp.com:7777'}
+}
+
 function closeDialog(a, b)
-    lua_thread.create(function()
-        wait(5)
-        sampSendDialogResponse(a, b)
-    end)
+	lua_thread.create(function()
+		wait(5)
+		sampSendDialogResponse(a, b)
+	end)
 end
+
 function hook.onShowDialog(id, style, title, but_1, but_2, text)
-	if id == 1214 and lspawncar then
-		sampSendDialogResponse(1214, 1, 3, -1)
-		lspawncar = false
-		closeDialog(1214, 0)
+
+	if id == 1780 and wanted_wait.checking then
+		wanted_wait.timeout = 0
+		for line in text:gmatch('[^\r\n]+') do
+			local nick, player_id, wanted_level, distance = string.match(line, '{FFFFFF}(.-)%({21FF11}(%d+){FFFFFF}%)%s+(%d+)%s+уровень%s+%[%s*(.-)%s*%]')
+			if nick then
+				table.insert(emp_wanted_players, { nick = nick, id = player_id, level = wanted_level, dist = distance })
+				closeDialog(1780, 0)
+			end
+		end
+		wanted_check()
 		return false
 	end
-	--[[if id == id and setting.org == 11 then
-        dialogData = {
-            id = id,
-            style = style,
-            title = title,
-            but_1 = but_1,
-            but_2 = but_2,
-            text = text
-        }
-        return false
-    end]]
+
+	if id == 0 and unprison then
+		if text:find("Тюремные наказания") then
+			if (s_na == 'Chandler' or s_na == 'RedRock' or s_na == 'Gilbert' or s_na == 'ShowLow' or s_na == 'CasaGrande' or s_na == 'SunCity' or s_na == 'Holiday' or s_na == 'Christmas' or s_na == 'Scottdale') then
+				local values = {}
+				for value in text:gmatch("{5CDC59}(%d+)") do
+					table.insert(values, value)
+				end
+				if #values > 0 then
+					local total_sum = 0
+					if setting.price[3] then
+						total_sum = total_sum + (tonumber(values[1]) * tonumber(setting.price[3].box))
+						total_sum = total_sum + (tonumber(values[2]) * tonumber(setting.price[3].eat))
+						total_sum = total_sum + (tonumber(values[3]) * tonumber(setting.price[3].cloth))
+						total_sum = total_sum + (tonumber(values[4]) * tonumber(setting.price[3].trash))
+						total_sum = total_sum + (tonumber(values[5]) * tonumber(setting.price[3].min))
+						local function format_number(n)
+							n = tonumber(n)
+							if not n then return "0" end
+							return tostring(math.floor(n))
+						end
+						if unprison_id then
+							sampAddChatMessage("/unpunish " .. unprison_id .. " " .. format_number(total_sum), -1	)
+							sampSendChat("/unpunish " .. unprison_id .. " " .. format_number(total_sum))
+							unprison_id = nil
+						end
+					end
+				end
+			elseif (s_na == 'Tucson') then
+				sampSendChat("/unpunish " .. unprison_id .. " " .. '2500000')
+				unprison = false
+			elseif (s_na == 'Mesa') then
+				sampSendChat("/unpunish " .. unprison_id .. " " .. '2000000')
+				unprison = false
+			elseif (s_na == 'Page') then
+				sampSendChat("/unpunish " .. unprison_id .. " " .. '10000000')
+				unprison = false
+			elseif (s_na == 'Sedona') then
+				sampSendChat("/unpunish " .. unprison_id .. " " .. '15000000')
+				unprison = false
+			end
+		end	
+	end
+
+	if id == 1214 then
+		if lspawncar then
+			sampSendDialogResponse(1214, 1, 3, -1)
+			lsclose = true
+			lspawncar = false
+			return false
+		elseif lsclose then
+			sampCloseCurrentDialogWithButton(0)
+			lsclose = false
+			return false
+		end
+	end
+	--[[
+	if id == 557 and setting.org == 11 then
+		dialogData = {
+			id = id,
+			style = style,
+			title = title,
+			but_1 = but_1,
+			but_2 = but_2,
+			text = text
+		}
+		board = true
+		return false
+	end
+	]]
 	if id == 235 then
-		if text:find('Должность: {B83434}(.-)') then
-			local text_org, rank_org = text:match('Должность: {B83434}(.-)%((%d+)%)')
+		local text_org, rank_org = text:match('Должность: {B83434}(.-)%((%d+)%)')
+		if text_org and rank_org then
 			setting.job_title = u8(text_org)
 			setting.rank = tonumber(rank_org)
 			save()
+		else
+			if text:find('Должность: {B83434}Судья') then
+				setting.job_title = u8('Судья')
+				setting.rank = 10
+				save()
+			end
 		end
+
+		--if setting.org == 11 then
+		--	local name_org = text:match("студия%s*([^%]]+)]")
+		--	if name_org then
+		--		setting.smi_name = u8(name_org)
+		--	end
+		--end		
 		if close_stats then 
 			closeDialog(235, 0)
 			close_stats = false
@@ -15310,22 +17960,32 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		end
 	end
 
-	if id == 25690 and setting.show_dialog_auto then
+	if (id == 26950 or id == 26951) and setting.police_settings.auto_inves then
+		local extracted_text = text:match("{90EE90}([^%{]*)")
+		if extracted_text then
+			extracted_text = extracted_text:gsub("^%s+", ""):gsub("%s+$", "")
+			sampSendDialogResponse(id, 1, 0, extracted_text)
+		end
+		return false
+	end
+
+	if title == "{BFBBBA}Активные предложения" and setting.show_dialog_auto and doc_numb then
 		local g = 0
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
-				sampSendDialogResponse(25690, 1, g, -1)
+				sampSendDialogResponse(id, 1, g, -1)
 				g = g + 1
+				doc_numb = false
 				return false
 			end
 		end
 	end
 
-	if id == 27340 then
-		for line in text:gmatch('[^\r\n]+') do
+	if id == 27341 then
+		for line in text:gmatch('[^\r\n]+') do 
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
 				if setting.show_dialog_auto or setting.auto_cmd_doc then
-					sampSendDialogResponse(27340, 1, 2, -1)
+					sampSendDialogResponse(id, 1, 2, -1)
 					confirm_action_dialog = true
 					return false
 				end
@@ -15333,11 +17993,12 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		end
 	end
 	
-	if id == 25691 then
+	if title == "{BFBBBA}Активные предложения" and not doc_numb then
 		for line in text:gmatch('[^\r\n]+') do
 			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
 				if setting.show_dialog_auto then
-					sampSendDialogResponse(25691, 1, 2, nil)
+					doc_numb = true
+					sampSendDialogResponse(id, 1, 2, nil)
 					return false
 				end
 			end
@@ -15364,6 +18025,10 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 					if line:find('%(Вы%)') then
 						color, nick, id, prefix, rank_name, rank_id, color_nil, warns, idk, afk, muted, quests = 
 							string.match(line, '{(%x+)}(.-)%((%d+)%)%{(%x+)}%(Вы%)\t(.-)%((%d+)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
+					elseif line:find('%(%d+ дней%)') then
+						color, nick, id, rank_name, rank_id, color, days, color_nil, warns, idk, afk, muted, quests = 
+						string.match(line, '{(%x+)}(.-)%((%d+)%)\t(.-)%((%d+)%) {(%x+)}%((.-)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
+
 					else
 						color, nick, id, rank_name, rank_id, color_nil, warns, idk, afk, muted, quests = 
 							string.match(line, '{(%x+)}(.-)%((%d+)%)\t(.-)%((%d+)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
@@ -15398,17 +18063,31 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 				members_wait.next_page.bool = false
 				members_wait.next_page.i = 0
 			else
-				while #members > tonumber(org.online) do 
-					table.remove(members, 1) 
+				while #members > tonumber(org.online) do
+					table.remove(members, 1)
 				end
 				sampSendDialogResponse(id, 0, _, _)
 				org.afk = getAfkCount()
 				members_wait.members = false
+				if setting.police_settings.wanted_list.func and (setting.org >= 11 and setting.org <= 15) and not wanted_wait.checking then
+					lua_thread.create(function()
+						wait(1100)
+						wanted_wait.checking = true
+						wanted_wait.page = 1
+						emp_wanted_players = {}
+						sampSendChat('/wanted 1')
+						wanted_wait.timeout = os.clock() + 5
+					end)
+				end
 			end
 		end)
 		
 		if not status then
-			sampAddChatMessage(string.format('[SH]{FFFFFF} В Мемберс на экране случилась ошибка. Функция отключена.'), 0xFF5345)
+			if not setting.cef_notif then
+				sampAddChatMessage(string.format('[SH]{FFFFFF} В Мемберс на экране случилась ошибка. Функция отключена.'), 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH]{FFFFFF} В Мемберс на экране случилась ошибка. Функция отключена.', 3000)
+			end
 			setting.mb.func = false
 		end
 		
@@ -15417,8 +18096,8 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		dont_show_me_members = true
 		members_wait.members = false
 		members_wait.next_page.bool = false
-    	members_wait.next_page.i = 0
-    	while #members > tonumber(org.online) do 
+		members_wait.next_page.i = 0
+		while #members > tonumber(org.online) do 
 			table.remove(members, 1) 
 		end 
 	elseif dont_show_me_members and id == 2015 then
@@ -15463,7 +18142,7 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		nickname_dialog4 = false
 		return false
 	end
-	if id == 26036 and nickname_dialog3 then
+	if id == 26036 and nickname_dialog3 then -- 976 dell
 		nickname_dialog3 = false
 		nickname_dialog4 = true
 		if text:find('Отображение никнеймов	{CCCCCC}{B83434}%[ выключено %]') then
@@ -15480,12 +18159,12 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		sampSendDialogResponse(26036, 0, 2, -1)
 		return false
 	end
-	if id == 26363 and num_give_lic > -1 then
-		sampSendDialogResponse(26363, 1, num_give_lic, nil) 
+	if title == "{BFBBBA}{73B461}Продажа лицензии" and num_give_lic > -1 then
+		sampSendDialogResponse(id, 1, num_give_lic, nil) 
 		return false
 	end
-	if id == 26364 and num_give_lic > -1 then
-		sampSendDialogResponse(26364, 1, num_give_lic_term, nil)
+	if title == "{BFBBBA}{73B461}Выбор срока лицензий" and num_give_lic > -1 then
+		sampSendDialogResponse(id, 1, num_give_lic_term, nil)
 		num_give_lic = -1
 		return false
 	end
@@ -15600,7 +18279,6 @@ function split_text_message(input, max_length)
 	
 	return true, result
 end
-
 function hook.onSendDialogResponse(id, button_id, list_id, input)
 	if id == dialog_fire.id and button_id == 1 and setting.godeath.func then
 		reply_from_choice_fires_dialog(list_id)
@@ -15610,14 +18288,22 @@ end
 function hook.onSendChat(message)
 	local message_end = ''
 	
-    if setting.accent.func then
+	if setting.accent.func then
 		if message == ')' or message == '(' or message ==  '))' or message == '((' or message == 'xD' or message == ':D' or message == ':d' or message == 'XD' or message == ':)' or message == ':(' then return {message} end
 		
 		if setting.accent.text ~= '' then
 			message_end = '[' .. u8:decode(setting.accent.text) .. ' акцент]: ' .. message
 		end
-    end
+	end
 	
+	if setting.chat_corrector and message:sub(1,1) ~= '/' then
+		local text_correct = (message_end == '') and message or message_end
+		local corrected_text = correct_chat(text_correct)
+		if corrected_text ~= text_correct then
+			sampSendChat(corrected_text)
+			return false
+		end
+	end
 	if setting.wrap_text_chat.func then
 		local char_num = process_string(setting.wrap_text_chat.num_char)
 		
@@ -15659,7 +18345,19 @@ function hook.onSendCommand(cmd)
 			table.insert(message_array, u8:decode(setting.auto_cmd_time))
 		end
 	end
-	
+		
+	if setting.chat_corrector then
+		local command_ch = {r=true, s=true, c=true, b=true, rb=true, vr=true, fam=true}
+		local command, argument = cmd:match('/(%S+)%s*(.*)')
+
+		if command and command_ch[command] and argument ~= '' then
+			local corrected_arg = correct_chat(argument)
+			if corrected_arg ~= argument then
+				message_end = '/' .. command .. ' ' .. corrected_arg
+			end
+		end
+	end
+
 	if setting.auto_edit then
 		if cmd:find('/do (.+)') or cmd:find('/me (.+)') or cmd:find('/todo (.+)') then
 			local result_cmd = cmd:gsub('^([\\/])(.*)', function(first_slash, rest)
@@ -15707,13 +18405,13 @@ end
 
 --> Из верхнего регистра в нижний
 function to_lowercase(str)
-    return (str:gsub('[А-ЯЁ]', function(c)
-        if c == 'Ё' then
-            return 'ё'
-        else
-            return string.char(c:byte() + 32)
-        end
-    end))
+	return (str:gsub('[А-ЯЁ]', function(c)
+		if c == 'Ё' then
+			return 'ё'
+		else
+			return string.char(c:byte() + 32)
+		end
+	end))
 end
 
 function check_and_correct(variable)
@@ -15782,6 +18480,11 @@ function onWindowMessage(msg, wparam, lparam)
 			if windows.fast[0] then
 				consumeWindowMessage(true, false)
 				close_win.fast = true
+			end
+			if windows.smart_su[0] then
+				consumeWindowMessage(true, false)
+				smartSuState.anim.is_closing = true
+				smartSuState.anim.is_opening = false
 			end
 			if windows.shpora[0] then
 				consumeWindowMessage(true, false)
@@ -15923,13 +18626,11 @@ function time()
 		if weekday == 0 then
 			weekday = 7
 		end
-
 		return weekday
 	end
 	
 	local function parse_date(date_str)
 		local day, month, year = date_str:match('(%d%d)%.(%d%d)%.(%d%d)')
-		
 		return os.time({ day = tonumber(day), month = tonumber(month), year = 2000 + tonumber(year), hour = 0, min = 0, sec = 0 })
 	end
 	
@@ -15938,20 +18639,29 @@ function time()
 			tbl[i] = tbl[i - 1]
 		end
 		tbl[1] = 0
-		
 		return tbl
 	end
-	
+
+	local function is_recurring(reminder)
+		if not reminder or not reminder.repeats then return false end
+		for _, repeats_today in ipairs(reminder.repeats) do
+			if repeats_today then
+				return true
+			end
+		end
+		return false
+	end
+
 	while true do
 		wait(1000)
-		local today_date = parse_date(os.date('%d.%m.%y'))
-		local yesterday_date = parse_date(setting.stat.today)
+		local today_date_parsed = parse_date(os.date('%d.%m.%y'))
+		local yesterday_date_parsed = parse_date(setting.stat.today)
 		time_save = time_save + 1
 		if time_save > 40 then
 			time_save = 0
 			save()
 		end
-		
+
 		if search_for_new_version > 0 then
 			search_for_new_version = search_for_new_version - 1
 		end
@@ -15966,7 +18676,14 @@ function time()
 		if wait_mb > 0 then
 			wait_mb = wait_mb - 1
 		end
-		
+
+		if wanted_wait.checking and wanted_wait.timeout ~= 0 and os.clock() > wanted_wait.timeout then
+		--	sampAddChatMessage('[SH]{FFFFFF} Не получен ответ от сервера на /wanted', 0xFF5345)
+			wanted_wait.checking = false
+			wanted_wait.timeout = 0
+			wanted_wait.page = 0
+		end
+
 		if developer_mode > 0 then
 			developer_mode = developer_mode - 1
 		end
@@ -16005,52 +18722,54 @@ function time()
 		if replace_not_flood[1] > 0 then
 			replace_not_flood[1] = replace_not_flood[1] - 1
 		end
-		if not isGamePaused() and not isPauseMenuActive() then
-			kick_afk_buf = 0
-		end
 		
 		if isGamePaused() or isPauseMenuActive() then
-			if setting.kick_afk.func and setting.kick_afk.time_kick ~= '' then
-				kick_afk_buf = kick_afk_buf + 1
-				local bul_afk = kick_afk_buf / 60
-
-				if bul_afk >= tonumber(setting.kick_afk.time_kick) then
+			if setting.kick_afk.func and setting.kick_afk.time_kick ~= '' and tonumber(setting.kick_afk.time_kick) > 0 then
+				if not is_afk then
+					is_afk = true
+					afk_start_time = os.clock()
+				end
+				local afk_duration_seconds = os.clock() - afk_start_time
+				local afk_limit_seconds = tonumber(setting.kick_afk.time_kick) * 60
+				if afk_duration_seconds >= afk_limit_seconds then
 					if setting.kick_afk.mode == 2 then
 						if not close_serv then
 							close_connect()
 							close_serv = true
-							sampAddChatMessage('[SH]{FFFFFF} Вы были отключены от сервера за превышение нормы АФК!', 0xFF5345)
+							track_time = false
 						end
 					else
-						os.exit()
+						shell32.ShellExecuteA(nil, "open", "mshta.exe", 'vbscript:CreateObject("WScript.Shell").Popup("StateHelper: Игра была закрыта из-за превышения лимита AFK.",0,"StateHelper",0)(window.close)', nil, 0)
+						wait(1000)
+						shell32.ShellExecuteA(nil, "open", "taskkill.exe", "/F /IM gta_sa.exe", nil, 0)
 					end
 				end
+			end
+		else
+			if is_afk then
+				is_afk = false
+				afk_start_time = 0
 			end
 		end
 		
 		if sampGetGamestate() == 3 then
-			if #setting.reminder ~= 0 then
-				local current_date = os.date('%d.%m.%Y.%H.%M')
-				local h_min_date = os.date('%H.%M')
-				local current_day = os.date('*t').wday
-				local today_week = (current_day - 2) % 7 + 1
-				for i = 1, #setting.reminder do
-					local date_reminder = string.format('%02d.%02d.%d.%02d.%02d', 
-						setting.reminder[i].day, 
-						setting.reminder[i].mon, 
-						setting.reminder[i].year,
-						setting.reminder[i].hour, 
-						setting.reminder[i].min
-					)
-					local h_min_reminder = string.format('%s.%s.', 
-						setting.reminder[i].hour, 
-						setting.reminder[i].min
-					)
-					if date_reminder == current_date and not setting.reminder[i].execution then
-						setting.reminder[i].execution = true
-						text_reminder = setting.reminder[i].text
+			if #setting.reminder > 0 then
+				local current_date_full = os.date('%d.%m.%Y.%H.%M')
+				local h_min_date = os.date('%H:%M')
+				local current_day_of_year = os.date('%j')
+				local current_weekday = os.date('*t').wday
+				local today_week = (current_weekday == 1 and 7 or current_weekday - 1)
+
+				for i = #setting.reminder, 1, -1 do
+					local reminder = setting.reminder[i]
+					local date_reminder_full = string.format('%02d.%02d.%d.%02d.%02d', reminder.day, reminder.mon, reminder.year, reminder.hour, reminder.min)
+					
+					local one_time = not is_recurring(reminder)
+
+					if one_time and date_reminder_full == current_date_full then
+						text_reminder = reminder.text
 						windows.reminder[0] = true
-						if setting.reminder[i].sound then
+						if reminder.sound then
 							lua_thread.create(function()
 								local stop_signal = 0
 								repeat wait(200) 
@@ -16059,46 +18778,61 @@ function time()
 								until stop_signal > 17
 							end)
 						end
-					elseif date_reminder ~= current_date and h_min_reminder == h_min_date and setting.reminder[i].repeats[today_week] then
-						text_reminder = setting.reminder[i].text
-						windows.reminder[0] = true
-						if setting.reminder[i].sound then
-							lua_thread.create(function()
-								local stop_signal = 0
-								repeat wait(200) 
-									addOneOffSound(0, 0, 0, 1057)
-									stop_signal = stop_signal + 1
-								until stop_signal > 17
-							end)
+						table.remove(setting.reminder, i)
+						save()
+					elseif not one_time then
+						local h_min_reminder = string.format('%02d:%02d', reminder.hour, reminder.min)
+						if h_min_date == h_min_reminder and reminder.repeats[today_week] then
+							if reminder.last_triggered_day ~= current_day_of_year then
+								reminder.last_triggered_day = current_day_of_year
+								text_reminder = reminder.text
+								windows.reminder[0] = true
+								if reminder.sound then
+									lua_thread.create(function()
+										local stop_signal = 0
+										repeat wait(200) 
+											addOneOffSound(0, 0, 0, 1057)
+											stop_signal = stop_signal + 1
+										until stop_signal > 17
+									end)
+								end
+								save()
+							end
 						end
 					end
 				end
 			end
 		end
 		
-		if yesterday_date < today_date then
+		if yesterday_date_parsed < today_date_parsed then
 			setting.stat.cl = shift_table(setting.stat.cl)
 			setting.stat.afk = shift_table(setting.stat.afk)
 			setting.stat.day = shift_table(setting.stat.day)
 			setting.stat.date_week = shift_table(setting.stat.date_week)
 			setting.stat.date_week[1] = os.date('%d.%m.%y')
 			setting.stat.today = os.date('%d.%m.%y')
+			for i = 1, #setting.reminder do
+				setting.reminder[i].last_triggered_day = nil
+			end
+			save()
 		end
 		
-		if isGamePaused() or isPauseMenuActive() then
-			setting.stat.afk[1] = setting.stat.afk[1] + 1
-			setting.stat.day[1] = setting.stat.day[1] + 1
-			setting.stat.all = setting.stat.all + 1
-			stat_ses.afk = stat_ses.afk + 1
-			stat_ses.all = stat_ses.all + 1
-		else
-			setting.stat.cl[1] = setting.stat.cl[1] + 1
-			setting.stat.day[1] = setting.stat.day[1] + 1
-			setting.stat.all = setting.stat.all + 1
-			stat_ses.cl = stat_ses.cl + 1
-			stat_ses.all = stat_ses.all + 1
+		if track_time then
+			if isGamePaused() or isPauseMenuActive() then
+				setting.stat.afk[1] = setting.stat.afk[1] + 1
+				setting.stat.day[1] = setting.stat.day[1] + 1
+				setting.stat.all = setting.stat.all + 1
+				stat_ses.afk = stat_ses.afk + 1
+				stat_ses.all = stat_ses.all + 1
+			else
+				setting.stat.cl[1] = setting.stat.cl[1] + 1
+				setting.stat.day[1] = setting.stat.day[1] + 1
+				setting.stat.all = setting.stat.all + 1
+				stat_ses.cl = stat_ses.cl + 1
+				stat_ses.all = stat_ses.all + 1
+			end
 		end
-		
+
 		if time_dialog_nickname < 6 then
 			time_dialog_nickname = time_dialog_nickname + 1
 		elseif time_dialog_nickname >= 6 and time_dialog_nickname <= 10 then
@@ -16111,9 +18845,75 @@ function time()
 	end
 end
 
+function mini_player_position()
+	lua_thread.create(function()
+		is_mini_player_pos = true
+		local backup_pos = {
+			x = setting.mini_player_pos and setting.mini_player_pos.x or sx / 2,
+			y = setting.mini_player_pos and setting.mini_player_pos.y or sy - 60
+		}
+		local original_player_state = windows.player[0]
+		windows.player[0] = true
+		windows.main[0] = false
+		sampSetCursorMode(4)
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH]{FFFFFF} Нажмите {FF6060}ЛКМ{FFFFFF}, чтобы применить или {FF6060}ESC{FFFFFF} для отмены.', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH]{FFFFFF} Нажмите {FF6060}ЛКМ{FFFFFF}, чтобы применить или {FF6060}ESC{FFFFFF} для отмены.', 3000)
+		end
+		while true do
+			wait(0)
+			local cX, cY = getCursorPos()
+			if not setting.mini_player_pos then
+				setting.mini_player_pos = {}
+			end
+			setting.mini_player_pos.x = cX
+			setting.mini_player_pos.y = cY
+
+			if isKeyJustPressed(VK_LBUTTON) then
+				save()
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH]{FFFFFF} Позиция мини-плеера сохранена.', 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH]{FFFFFF} Позиция мини-плеера сохранена.', 3000)
+				end
+				break
+			elseif isKeyJustPressed(VK_ESCAPE) then
+				setting.mini_player_pos = backup_pos
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH]{FFFFFF} Изменение позиции отменено.', 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH]{FFFFFF} Изменение позиции отменено.', 3000)
+				end
+				break
+			end
+		end
+		sampSetCursorMode(0)
+		windows.main[0] = true
+		windows.player[0] = original_player_state
+		if play.status == 'NULL' then
+			windows.player[0] = false
+		end
+		is_mini_player_pos = false
+	end)
+end
+
+function connetion()
+	if sampGetGamestate() == 1 or sampGetGamestate() == 2 or sampGetGamestate() == 4 or sampGetGamestate() == 5 then
+		if track_time then
+			track_time = false
+			sampAddChatMessage(string.format('[SH]{FFFFFF} Отсчёт времени остановлен до момента подключения к серверу.'), 0xFF5345)
+		end
+	elseif sampGetGamestate() == 3 and sampIsLocalPlayerSpawned() and not track_time then
+		track_time = true
+	end
+end
+
 function close_connect()
 	raknetEmulPacketReceiveBitStream(PACKET_DISCONNECTION_NOTIFICATION, raknetNewBitStream())
 	raknetDeleteBitStream(raknetNewBitStream())
+	track_time = false
+	sampAddChatMessage(string.format('[SH]{FFFFFF} Вы отключены от сервера. Отсчёт времени остановлен.'), 0xFF5345)
 end
 
 function removeDecimalPart(value)
@@ -16159,6 +18959,10 @@ function scene_work()
 	end
 	if scene_active then
 		if isKeyDown(0x01) or isKeyJustPressed(VK_ESCAPE) then
+			if ui_state then
+				evalanon("document.body.style.display = 'block'")
+				ui_state = false
+			end
 			off_scene = true
 			setVirtualKeyDown(0x79, false)
 			scene_active = false
@@ -16215,6 +19019,10 @@ end
 --> Кам-Хак
 function cam_hack()
 	if not sampIsChatInputActive() and not isSampfuncsConsoleActive() then
+		if not ui_state then
+			evalanon("document.body.style.display = 'none'")
+			ui_state = true
+		end
 		offMouX, offMouY = getPcMouseMovement()
 		angZ = (angZ + offMouX/4.0) % 360.0
 		angY = math.min(89.0, math.max(-89.0, angY + offMouY/4.0))
@@ -16369,9 +19177,9 @@ function cam_hack()
 end
 
 function hook.onSendAimSync()
-    if camhack_active then
+	if camhack_active then
 		return false
-    end
+	end
 end
 
 function onScriptTerminate(script, quit)
@@ -16386,25 +19194,25 @@ end
 
 function getTargetServerCoordinates()
 	local pos_cord = {x = 0.0, y = 0.0, z = 0.0}
-    local target_server = false
-    for id = 0, 31 do
-        local object_truct = 0xC7F168 + id * 56
+	local target_server = false
+	for id = 0, 31 do
+		local object_truct = 0xC7F168 + id * 56
 		local object_truct_pos = {
 			x = representIntAsFloat(readMemory(object_truct + 0, 4, false)),
 			y = representIntAsFloat(readMemory(object_truct + 4, 4, false)),
 			z = representIntAsFloat(readMemory(object_truct + 8, 4, false))
 		}
-        if object_truct_pos.x ~= 0.0 or object_truct_pos.y ~= 0.0 or object_truct_pos.z ~= 0.0 then
-            pos_cord = {
+		if object_truct_pos.x ~= 0.0 or object_truct_pos.y ~= 0.0 or object_truct_pos.z ~= 0.0 then
+			pos_cord = {
 				x = object_truct_pos.x,
 				y = object_truct_pos.y,
 				z = object_truct_pos.z
 			}
-            target_server = true
-        end
-    end
+			target_server = true
+		end
+	end
 	
-    return target_server, pos_cord.x, pos_cord.y, pos_cord.z
+	return target_server, pos_cord.x, pos_cord.y, pos_cord.z
 end
 
 function measurement_coordinates(text_area, bool_int_or_around, location_city)
@@ -16714,12 +19522,38 @@ function update_check()
 						if not setting.first_start then
 							if not setting.auto_update then
 								addOneOffSound(0, 0, 0, 1058)
-								sampAddChatMessage('[SH] {FFFFFF}Доступно обновление. Подробнее в /sh --> Вкладка Главное --> Обновление.', 0xFF5345)
+								if not setting.cef_notif then
+									sampAddChatMessage('[SH] {FFFFFF}Доступно обновление. Подробнее в /sh --> Вкладка Главное --> Обновление.', 0xFF5345)
+								else
+									cefnotig('{FF5345}[SH] {FFFFFF}Доступно обновление. Подробнее в /sh --> Вкладка Главное --> Обновление.', 3000)
+								end
 							else
 								addOneOffSound(0, 0, 0, 1058)
-								sampAddChatMessage('[SH] {FFFFFF}Доступно обновление. Установка новой версии...', 0xFF5345)
+								if not setting.cef_notif then
+									sampAddChatMessage('[SH] {FFFFFF}Доступно обновление. Установка новой версии...', 0xFF5345)
+								else
+									cefnotig('{FF5345}[SH] {FFFFFF}Доступно обновление. Установка новой версии...', 3000)
+								end
 								update_download()
 							end
+						end
+					end
+					if update_info.vehicle and localVehicleVersion then
+						local remote_veh_ver = versionToNumber(update_info.vehicle)
+						local local_veh_ver = versionToNumber(localVehicleVersion)
+						if remote_veh_ver > local_veh_ver then
+							if not setting.cef_notif then
+								sampAddChatMessage('[SH]{FFFFFF} Обнаружена новая версия vehicle.json. Обновляю...', 0xFF5345)
+							else
+								cefnotig('{FF5345}[SH]{FFFFFF} Обнаружена новая версия vehicle.json. Обновляю...', 3000)
+							end
+							local vehicle_data_url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/cops/vehicle.json'
+							local local_path = dir .. '/State Helper/Police/vehicle.json'
+							downloadUrlToFile(vehicle_data_url, local_path, function(id, status)
+								if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+									checkVehicleData()
+								end
+							end)
 						end
 					end
 				end
@@ -16732,7 +19566,9 @@ end
 function update_download()
 	lua_thread.create(function()
 		wait(2000)
-		downloadUrlToFile(raw_upd_url, dir .. '/StateHelper.lua', function(id, status, p1, p2)
+		local this_file_path = thisScript().path
+		os.remove(this_file_path)
+		downloadUrlToFile(raw_upd_url, this_file_path, function(id, status, p1, p2)
 			if status == dlstatus.STATUSEX_ENDDOWNLOAD then
 				if updates == nil then 
 					print('{FF0000}Ошибка при попытке скачать файл.') 
@@ -16748,7 +19584,11 @@ function update_download()
 				updates = true
 				print('Загрузка завершена успешно.')
 				if not setting.first_start then
-					sampAddChatMessage('[SH] {FFFFFF}Новая версия загружена успешно! Перезагрузка скрипта...', 0xFF5345)
+					if not setting.cef_notif then
+						sampAddChatMessage('[SH] {FFFFFF}Новая версия загружена успешно! Перезагрузка скрипта...', 0xFF5345)
+					else
+						cefnotig('{FF5345}[SH] {FFFFFF}Новая версия загружена успешно! Перезагрузка скрипта...', 3000)
+					end
 				end
 				windows.main[0] = false
 				if setting.first_start then
@@ -16761,7 +19601,7 @@ function update_download()
 							table.insert(cmd[1], cmd_defoult.hospital[i])
 						end
 						
-						if server == '185.169.134.3:7777' then 
+						if s_na == 'Phoenix' then 
 							for i = 1, #cmd[1] do
 								if cmd[1][i].cmd == 'mc' then
 									cmd[1][i] = mc_phoenix
@@ -16790,10 +19630,15 @@ function update_download()
 							table.insert(cmd[1], cmd_defoult.jail[i])
 						end
 						setting.gun_func = true
-					elseif setting.org == 11 then --> Для СМИ
-						for i = 1, #cmd_defoult.smi do
-							table.insert(cmd[1], cmd_defoult.smi[i])
+					--elseif setting.org == 11 then --> Для СМИ
+					--	for i = 1, #cmd_defoult.smi do
+					--		table.insert(cmd[1], cmd_defoult.smi[i])
+					--	end
+					elseif setting.org >= 11 and setting.org <= 15 then --> Для полиции
+						for i = 1, #cmd_defoult.police do
+							table.insert(cmd[1], cmd_defoult.police[i])
 						end
+						setting.gun_func = true
 					end
 					add_cmd_in_all_cmd()
 					save_cmd()
@@ -17074,21 +19919,21 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "Пройдёмте за мной."
-    ]
+	[
+	  "SEND",
+	  "Пройдёмте за мной."
+	]
   ],
-  "desc": "Отправит фразу \"Пройдёмте за мной\"",
+  "desc": "Отправить фразу \"Пройдёмте за мной\"",
   "id_element": 1,
   "delay": 2.5,
   "send_end_mes": true,
   "cmd": "za",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -17104,116 +19949,116 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 1,
   "act": [
-    [
-      "DIALOG",
-      "options",
-      [
-        "Паспорт",
-        "Медицинская карта",
-        "Лицензии",
-        "Трудовая книжка"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "options",
-        "1"
-      ],
-      2],
-    [
-      "SEND",
-      "/do Паспорт гражданина находится в заднем кармане."
-    ],
-    [
-      "SEND",
-      "/me засунув руку в карман, достал{sex[][а]} паспорт, после чего передал{sex[][а]} его человеку напротив"
-    ],
-    [
-      "SEND",
-      "/showpass {id}"
-    ],
-    [
-      "ELSE",
-      2],
-    [
-      "END",
-      2],
-    [
-      "IF",
-      2, [
-        "options",
-        "2"
-      ],
-      7],
-    [
-      "SEND",
-      "/do Медицинская карта находится в нагрудном кармане."
-    ],
-    [
-      "SEND",
-      "/me засунув руку в карман, достал{sex[][а]} мед. карту, после чего передал{sex[][а]} её человеку напротив"
-    ],
-    [
-      "SEND",
-      "/showmc {id}"
-    ],
-    [
-      "ELSE",
-      7],
-    [
-      "END",
-      7],
-    [
-      "IF",
-      2, [
-        "options",
-        "3"
-      ],
-      12],
-    [
-      "SEND",
-      "/do Пакет лицензий находится в нагрудном кармане."
-    ],
-    [
-      "SEND",
-      "/me засунув руку в карман, достал{sex[][а]} лицензии, после чего передал{sex[][а]} их человеку напротив"
-    ],
-    [
-      "SEND",
-      "/showlic {id}"
-    ],
-    [
-      "ELSE",
-      12],
-    [
-      "END",
-      12],
-    [
-      "IF",
-      2, [
-        "options",
-        "4"
-      ],
-      16],
-    [
-      "SEND",
-      "/do Трудовая книжка находится во внутреннем кармане."
-    ],
-    [
-      "SEND",
-      "/me засунув руку в карман, достал{sex[][а]} книжку, после чего передал{sex[][а]} её человеку напротив"
-    ],
-    [
-      "SEND",
-      "/wbook {id}"
-    ],
-    [
-      "ELSE",
-      16],
-    [
-      "END",
-      16]
+	[
+	  "DIALOG",
+	  "options",
+	  [
+		"Паспорт",
+		"Медицинская карта",
+		"Лицензии",
+		"Трудовая книжка"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"options",
+		"1"
+	  ],
+	  2],
+	[
+	  "SEND",
+	  "/do Паспорт гражданина находится в заднем кармане."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку в карман, достал{sex[][а]} паспорт, после чего передал{sex[][а]} его человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/showpass {id}"
+	],
+	[
+	  "ELSE",
+	  2],
+	[
+	  "END",
+	  2],
+	[
+	  "IF",
+	  2, [
+		"options",
+		"2"
+	  ],
+	  7],
+	[
+	  "SEND",
+	  "/do Медицинская карта находится в нагрудном кармане."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку в карман, достал{sex[][а]} мед. карту, после чего передал{sex[][а]} её человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/showmc {id}"
+	],
+	[
+	  "ELSE",
+	  7],
+	[
+	  "END",
+	  7],
+	[
+	  "IF",
+	  2, [
+		"options",
+		"3"
+	  ],
+	  12],
+	[
+	  "SEND",
+	  "/do Пакет лицензий находится в нагрудном кармане."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку в карман, достал{sex[][а]} лицензии, после чего передал{sex[][а]} их человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/showlic {id}"
+	],
+	[
+	  "ELSE",
+	  12],
+	[
+	  "END",
+	  12],
+	[
+	  "IF",
+	  2, [
+		"options",
+		"4"
+	  ],
+	  16],
+	[
+	  "SEND",
+	  "/do Трудовая книжка находится во внутреннем кармане."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку в карман, достал{sex[][а]} книжку, после чего передал{sex[][а]} её человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/wbook {id}"
+	],
+	[
+	  "ELSE",
+	  16],
+	[
+	  "END",
+	  16]
   ],
   "desc": "Показать игроку свои документы",
   "id_element": 19,
@@ -17221,17 +20066,17 @@ local cmd_defoult_json_for_all = {
   "send_end_mes": true,
   "cmd": "show",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ]
 }
 ]],
@@ -17244,68 +20089,68 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 1,
   "act": [
-    [
-      "DIALOG",
-      "act",
-      [
-        "Включить камеру",
-        "Отключить камеру"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "act",
-        "1"
-      ],
-      2],
-    [
-      "SEND",
-      "/do Телефон находится в левом кармане."
-    ],
-    [
-      "SEND",
-      "/me засунув руку в карман, достал{sex[][а]} оттуда телефон, после чего заш{sex[ёл][ла]} в приложение \"Камера\""
-    ],
-    [
-      "SEND",
-      "/me нажав на кнопку записи, приступил{sex[][а]} к съёмке происходящего"
-    ],
-    [
-      "SEND",
-      "/do Камера смартфона начала записывать видео и звук."
-    ],
-    [
-      "ELSE",
-      2],
-    [
-      "END",
-      2],
-    [
-      "IF",
-      2, [
-        "act",
-        "2"
-      ],
-      8],
-    [
-      "SEND",
-      "/do Телефон находится в руке и ведёт запись."
-    ],
-    [
-      "SEND",
-      "/me нажал{sex[][а]} на кнопку отключения записи, после чего убрал{sex[][а]} телефон в задний карман"
-    ],
-    [
-      "SEND",
-      "/do Видеофиксация происходящего приостановлена."
-    ],
-    [
-      "ELSE",
-      8],
-    [
-      "END",
-      8]
+	[
+	  "DIALOG",
+	  "act",
+	  [
+		"Включить камеру",
+		"Отключить камеру"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"act",
+		"1"
+	  ],
+	  2],
+	[
+	  "SEND",
+	  "/do Телефон находится в левом кармане."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку в карман, достал{sex[][а]} оттуда телефон, после чего заш{sex[ёл][ла]} в приложение \"Камера\""
+	],
+	[
+	  "SEND",
+	  "/me нажав на кнопку записи, приступил{sex[][а]} к съёмке происходящего"
+	],
+	[
+	  "SEND",
+	  "/do Камера смартфона начала записывать видео и звук."
+	],
+	[
+	  "ELSE",
+	  2],
+	[
+	  "END",
+	  2],
+	[
+	  "IF",
+	  2, [
+		"act",
+		"2"
+	  ],
+	  8],
+	[
+	  "SEND",
+	  "/do Телефон находится в руке и ведёт запись."
+	],
+	[
+	  "SEND",
+	  "/me нажал{sex[][а]} на кнопку отключения записи, после чего убрал{sex[][а]} телефон в задний карман"
+	],
+	[
+	  "SEND",
+	  "/do Видеофиксация происходящего приостановлена."
+	],
+	[
+	  "ELSE",
+	  8],
+	[
+	  "END",
+	  8]
   ],
   "desc": "Начать или прекратить видеофиксацию",
   "id_element": 12,
@@ -17313,10 +20158,10 @@ local cmd_defoult_json_for_all = {
   "send_end_mes": true,
   "cmd": "cam",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -17332,10 +20177,10 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "/members"
-    ]
+	[
+	  "SEND",
+	  "/members"
+	]
   ],
   "desc": "Сокращённая команда /members",
   "id_element": 1,
@@ -17343,10 +20188,10 @@ local cmd_defoult_json_for_all = {
   "send_end_mes": true,
   "cmd": "mb",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -17362,35 +20207,35 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 9,
   "act": [
-    [
-      "SEND",
-      "/do В кармане находятся ключи от шкафчика."
-    ],
-    [
-      "SEND",
-      "/me засунув руку в карман, вытаскивает ключи и передаёт человеку напротив"
-    ],
-    [
-      "SEND",
-      "/invite {id}"
-    ]
+	[
+	  "SEND",
+	  "/do В кармане находятся ключи от шкафчика."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку в карман, вытаскивает ключи и передаёт человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/invite {id}"
+	]
   ],
   "desc": "Принять игрока в организацию",
   "arg": [
 	{
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 3,
   "cmd": "inv",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -17404,48 +20249,48 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 9,
   "act": [
-    [
-      "SEND",
-      "/do В левом кармане лежит телефон."
-    ],
-    [
-      "SEND",
-      "/me достал{sex[][а]} телефон из кармана, после чего {sex[зашел][зашла]} в базу данных организации"
-    ],
-    [
-      "SEND",
-      "/me изменил{sex[][а]} информацию о сотруднике {getplnick[{id}]}"
-    ],
-    [
-      "SEND",
-      "/uninvite {id} {reason}"
-    ],
-    [
-      "SEND",
-      "/r Сотрудник {getplnick[{id}]} был уволен из организации. Причина: {reason}"
-    ]
+	[
+	  "SEND",
+	  "/do В левом кармане лежит телефон."
+	],
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} телефон из кармана, после чего {sex[зашел][зашла]} в базу данных организации"
+	],
+	[
+	  "SEND",
+	  "/me изменил{sex[][а]} информацию о сотруднике {getplnick[{id}]}"
+	],
+	[
+	  "SEND",
+	  "/uninvite {id} {reason}"
+	],
+	[
+	  "SEND",
+	  "/r Сотрудник {getplnick[{id}]} был уволен из организации. Причина: {reason}"
+	]
   ],
   "desc": "Уволить сотрудника",
   "arg": [
-    {
-      "desc": "id сотрудника",
-      "name": "id",
-      "type": 2
-    },
-    {
-      "desc": "Причина",
-      "name": "reason",
-      "type": 1
-    }
+	{
+	  "desc": "id сотрудника",
+	  "name": "id",
+	  "type": 2
+	},
+	{
+	  "desc": "Причина",
+	  "name": "reason",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "id_element": 5,
   "cmd": "uval",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -17459,53 +20304,53 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 8,
   "act": [
-    [
-      "SEND",
-      "/do Рация весит на поясе."
-    ],
-    [
-      "SEND",
-      "/me снял{sex[][а]} рацию с пояса, после чего {sex[зашёл][зашла]} в настройки локальных частот вещания"
-    ],
-    [
-      "SEND",
-      "/me заглушил{sex[][а]} локальную частоту вещания сотруднику {getplnick[{id}]}"
-    ],
-    [
-      "SEND",
-      "/fmute {id} {timemin} {reason}"
-    ],
-    [
-      "SEND",
-      "/r Сотруднику {getplnick[{id}]} была отключена рация. Причина: {reason}"
-    ]
+	[
+	  "SEND",
+	  "/do Рация весит на поясе."
+	],
+	[
+	  "SEND",
+	  "/me снял{sex[][а]} рацию с пояса, после чего {sex[зашёл][зашла]} в настройки локальных частот вещания"
+	],
+	[
+	  "SEND",
+	  "/me заглушил{sex[][а]} локальную частоту вещания сотруднику {getplnick[{id}]}"
+	],
+	[
+	  "SEND",
+	  "/fmute {id} {timemin} {reason}"
+	],
+	[
+	  "SEND",
+	  "/r Сотруднику {getplnick[{id}]} была отключена рация. Причина: {reason}"
+	]
   ],
   "desc": "Заглушить сотруднику рабочий чат организации",
   "arg": [
-    {
-      "desc": "id сотрудника",
-      "name": "id",
-      "type": 2
-    },
 	{
-      "desc": "Время в минутах",
-      "name": "timemin",
-      "type": 2
-    },
-    {
-      "desc": "Причина",
-      "name": "reason",
-      "type": 1
-    }
+	  "desc": "id сотрудника",
+	  "name": "id",
+	  "type": 2
+	},
+	{
+	  "desc": "Время в минутах",
+	  "name": "timemin",
+	  "type": 2
+	},
+	{
+	  "desc": "Причина",
+	  "name": "reason",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "id_element": 5,
   "cmd": "mutechat",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -17519,43 +20364,43 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 8,
   "act": [
-    [
-      "SEND",
-      "/do Рация весит на поясе."
-    ],
-    [
-      "SEND",
-      "/me снял{sex[][а]} рацию с пояса, после чего {sex[зашёл][зашла]} в настройки локальных частот вещания"
-    ],
-    [
-      "SEND",
-      "/me освободил{sex[][а]} локальную частоту вещания сотруднику {getplnick[{id}]}"
-    ],
-    [
-      "SEND",
-      "/funmute {id}"
-    ],
-    [
-      "SEND",
-      "/r Сотруднику {getplnick[{id}]} снова включена рация!"
-    ]
+	[
+	  "SEND",
+	  "/do Рация весит на поясе."
+	],
+	[
+	  "SEND",
+	  "/me снял{sex[][а]} рацию с пояса, после чего {sex[зашёл][зашла]} в настройки локальных частот вещания"
+	],
+	[
+	  "SEND",
+	  "/me освободил{sex[][а]} локальную частоту вещания сотруднику {getplnick[{id}]}"
+	],
+	[
+	  "SEND",
+	  "/funmute {id}"
+	],
+	[
+	  "SEND",
+	  "/r Сотруднику {getplnick[{id}]} снова включена рация!"
+	]
   ],
   "desc": "Снять заглушку сотруднику рабочего чата организации",
   "arg": [
-    {
-      "desc": "id сотрудника",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id сотрудника",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 5,
   "cmd": "unmutechat",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -17569,48 +20414,48 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 8,
   "act": [
-    [
-      "SEND",
-      "/do В левом кармане лежит телефон."
-    ],
-    [
-      "SEND",
-      "/me достал{sex[][а]} телефон из кармана, после чего {sex[зашел][зашла]} в базу данных организации"
-    ],
-    [
-      "SEND",
-      "/me изменил{sex[][а]} информацию о сотруднике {getplnick[{id}]}"
-    ],
-    [
-      "SEND",
-      "/fwarn {id} {reason}"
-    ],
-    [
-      "SEND",
-      "/r {getplnick[{id}]} получил строгий выговор! Причина: {reason}"
-    ]
+	[
+	  "SEND",
+	  "/do В левом кармане лежит телефон."
+	],
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} телефон из кармана, после чего {sex[зашел][зашла]} в базу данных организации"
+	],
+	[
+	  "SEND",
+	  "/me изменил{sex[][а]} информацию о сотруднике {getplnick[{id}]}"
+	],
+	[
+	  "SEND",
+	  "/fwarn {id} {reason}"
+	],
+	[
+	  "SEND",
+	  "/r {getplnick[{id}]} получил строгий выговор! Причина: {reason}"
+	]
   ],
   "desc": "Выдать строгий выговор сотруднику организации",
   "arg": [
-    {
-      "desc": "id сотрудника",
-      "name": "id",
-      "type": 2
-    },
 	{
-      "desc": "Причина выговора",
-      "name": "reason",
-      "type": 1
-    }
+	  "desc": "id сотрудника",
+	  "name": "id",
+	  "type": 2
+	},
+	{
+	  "desc": "Причина выговора",
+	  "name": "reason",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "id_element": 5,
   "cmd": "warnorg",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -17624,43 +20469,43 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 8,
   "act": [
-    [
-      "SEND",
-      "/do В левом кармане лежит телефон."
-    ],
-    [
-      "SEND",
-      "/me достал{sex[][а]} телефон из кармана, после чего {sex[зашел][зашла]} в базу данных организации"
-    ],
-    [
-      "SEND",
-      "/me изменил{sex[][а]} информацию о сотруднике {getplnick[{id}]}"
-    ],
-    [
-      "SEND",
-      "/unfwarn {id}"
-    ],
-    [
-      "SEND",
-      "/r Сотруднику {getplnick[{id}]} снят строгий выговор!"
-    ]
+	[
+	  "SEND",
+	  "/do В левом кармане лежит телефон."
+	],
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} телефон из кармана, после чего {sex[зашел][зашла]} в базу данных организации"
+	],
+	[
+	  "SEND",
+	  "/me изменил{sex[][а]} информацию о сотруднике {getplnick[{id}]}"
+	],
+	[
+	  "SEND",
+	  "/unfwarn {id}"
+	],
+	[
+	  "SEND",
+	  "/r Сотруднику {getplnick[{id}]} снят строгий выговор!"
+	]
   ],
   "desc": "Снять строгий выговор сотруднику организации",
   "arg": [
-    {
-      "desc": "id сотрудника",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id сотрудника",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 5,
   "cmd": "unwarnorg",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -17674,44 +20519,44 @@ local cmd_defoult_json_for_all = {
   },
   "rank": 9,
   "act": [
-    [
-      "SEND",
-      "/do В кармане находятся новые ключи от шкафчика."
-    ],
-    [
-      "SEND",
-      "/me засунув руку в карман, вытаскивает ключи и передаёт человеку напротив"
-    ],
-    [
-      "SEND",
-      "/giverank {id} {rank}"
-    ],
-    [
-      "SEND",
-      "/r Сотрудник {getplnick[{id}]} получил новую должность. Поздравляем!"
-    ]
+	[
+	  "SEND",
+	  "/do В кармане находятся новые ключи от шкафчика."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку в карман, вытаскивает ключи и передаёт человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/giverank {id} {rank}"
+	],
+	[
+	  "SEND",
+	  "/r Сотрудник {getplnick[{id}]} получил новую должность. Поздравляем!"
+	]
   ],
   "desc": "Изменить ранг сотруднику организации",
   "arg": [
-    {
-      "desc": "id сотрудника",
-      "name": "id",
-      "type": 2
-    },
+	{
+	  "desc": "id сотрудника",
+	  "name": "id",
+	  "type": 2
+	},
 	 {
-      "desc": "Ранг",
-      "name": "rank",
-      "type": 2
-    }
+	  "desc": "Ранг",
+	  "name": "rank",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 4,
   "cmd": "rank",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -17729,10 +20574,10 @@ local cmd_defoult_json_for_hospital = {
   },
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "Здравствуйте, меня зовут {mynickrus}, чем могу быть полез{sex[ен][на]}?"
-    ]
+	[
+	  "SEND",
+	  "Здравствуйте, меня зовут {mynickrus}, чем могу быть полез{sex[ен][на]}?"
+	]
   ],
   "desc": "Приветствие",
   "id_element": 1,
@@ -17740,10 +20585,10 @@ local cmd_defoult_json_for_hospital = {
   "send_end_mes": true,
   "cmd": "z",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -17757,35 +20602,35 @@ local cmd_defoult_json_for_hospital = {
   "id_element": 3,
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "/do Медицинская сумка весит на левом плече."
-    ],
-    [
-      "SEND",
-      "/me открыв сумку, достал{sex[][а]} необходимое лекарство и передал{sex[][а]} человеку напротив"
-    ],
-    [
-      "SEND",
-      "/heal {id} {pricelec}"
-    ]
+	[
+	  "SEND",
+	  "/do Медицинская сумка весит на левом плече."
+	],
+	[
+	  "SEND",
+	  "/me открыв сумку, достал{sex[][а]} необходимое лекарство и передал{sex[][а]} человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/heal {id} {pricelec}"
+	]
   ],
   "desc": "Вылечить игрока",
   "send_end_mes": true,
   "delay": 2.5,
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "cmd": "hl",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "var": {
 
@@ -17797,431 +20642,431 @@ local cmd_defoult_json_for_hospital = {
 {
   "folder": 4,
   "var": [
-    {
-      "name": "var1",
-      "value": "{med7}"
-    },
-    {
-      "name": "var2",
-      "value": "3"
-    },
-    {
-      "name": "var3",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "{med7}"
+	},
+	{
+	  "name": "var2",
+	  "value": "3"
+	},
+	{
+	  "name": "var3",
+	  "value": "0"
+	}
   ],
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "Вам необходимо получить новую медицинскую карту или обновить имеющуюся?"
-    ],
-    [
-      "SEND",
-      "Для оформления медицинской карты предоставьте, пожалуйста, Ваш паспорт."
-    ],
-    [
-      "SEND",
-      "/b Для этого введите /showpass {myid}"
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "/me взял{sex[][а]} паспорт из рук пациента и внимательно изучил{sex[][а]} его"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "Новая мед. карта",
-        "Обновить мед. карту"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      8],
-    [
-      "SEND",
-      "Стоимость оформления новой мед. карты зависит от её срока."
-    ],
-    [
-      "SEND",
-      "7 дней: {med7}$. 14 дней: {med14}$"
-    ],
-    [
-      "SEND",
-      "30 дней: {med30}$. 60 дней: {med60}$"
-    ],
-    [
-      "SEND",
-      "Скажите на какой срок оформлять и мы продолжим."
-    ],
-    [
-      "DIALOG",
-      "2",
-      [
-        "7 дней",
-        "14 дней",
-        "30 дней",
-        "60 дней"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "2",
-        "1"
-      ],
-      14],
-    [
-      "NEW_VAR",
-      "var1",
-      "{med7}"
-    ],
-    [
-      "NEW_VAR",
-      "var3",
-      "0"
-    ],
-    [
-      "ELSE",
-      14],
-    [
-      "END",
-      14],
-    [
-      "IF",
-      2, [
-        "2",
-        "2"
-      ],
-      17],
-    [
-      "NEW_VAR",
-      "var1",
-      "{med14}"
-    ],
-    [
-      "NEW_VAR",
-      "var3",
-      "1"
-    ],
-    [
-      "ELSE",
-      17],
-    [
-      "END",
-      17],
-    [
-      "IF",
-      2, [
-        "2",
-        "3"
-      ],
-      20],
-    [
-      "NEW_VAR",
-      "var1",
-      "{med30}"
-    ],
-    [
-      "NEW_VAR",
-      "var3",
-      "2"
-    ],
-    [
-      "ELSE",
-      20],
-    [
-      "END",
-      20],
-    [
-      "IF",
-      2, [
-        "2",
-        "4"
-      ],
-      23],
-    [
-      "NEW_VAR",
-      "var1",
-      "{med60}"
-    ],
-    [
-      "NEW_VAR",
-      "var3",
-      "3"
-    ],
-    [
-      "ELSE",
-      23],
-    [
-      "END",
-      23],
-    [
-      "ELSE",
-      8],
-    [
-      "END",
-      8],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      27],
-    [
-      "SEND",
-      "Стоимость обновления мед. карты зависит от её срока."
-    ],
-    [
-      "SEND",
-      "7 дней: {medup7}$. 14 дней: {medup14}$"
-    ],
-    [
-      "SEND",
-      "30 дней: {medup30}$. 60 дней: {medup60}$"
-    ],
-    [
-      "SEND",
-      "Скажите на какой срок оформлять и мы продолжим."
-    ],
-    [
-      "DIALOG",
-      "3",
-      [
-        "7 дней",
-        "14 дней",
-        "30 дней",
-        "60 дней"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "3",
-        "1"
-      ],
-      33],
-    [
-      "NEW_VAR",
-      "var1",
-      "{medup7}"
-    ],
-    [
-      "NEW_VAR",
-      "var3",
-      "0"
-    ],
-    [
-      "ELSE",
-      33],
-    [
-      "END",
-      33],
-    [
-      "IF",
-      2, [
-        "33",
-        "2"
-      ],
-      36],
-    [
-      "NEW_VAR",
-      "var1",
-      "{medup14}"
-    ],
-    [
-      "NEW_VAR",
-      "var3",
-      "1"
-    ],
-    [
-      "ELSE",
-      36],
-    [
-      "END",
-      36],
-    [
-      "IF",
-      2, [
-        "3",
-        "3"
-      ],
-      39],
-    [
-      "NEW_VAR",
-      "var1",
-      "{medup30}"
-    ],
-    [
-      "NEW_VAR",
-      "var3",
-      "2"
-    ],
-    [
-      "ELSE",
-      39],
-    [
-      "END",
-      39],
-    [
-      "IF",
-      2, [
-        "3",
-        "4"
-      ],
-      43],
-    [
-      "NEW_VAR",
-      "var1",
-      "{medup60}"
-    ],
-    [
-      "NEW_VAR",
-      "var3",
-      "3"
-    ],
-    [
-      "ELSE",
-      43],
-    [
-      "END",
-      43],
-    [
-      "ELSE",
-      27],
-    [
-      "END",
-      27],
-    [
-      "SEND",
-      "Хорошо, сейчас задам пару вопросов, отвечайте честно."
-    ],
-    [
-      "SEND",
-      "Вы можете видеть имена проходящих мимо Вас людей?"
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "Вас когда-нибудь убивали?"
-    ],
-    [
-      "DIALOG",
-      "4",
-      [
-        "Полностью здоров",
-        "Наблюдаются откл.",
-        "Псих. нездоров",
-        "Неопределён"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "4",
-        "1"
-      ],
-      51],
-    [
-      "NEW_VAR",
-      "var2",
-      "3"
-    ],
-    [
-      "ELSE",
-      51],
-    [
-      "END",
-      51],
-    [
-      "IF",
-      2, [
-        "4",
-        "2"
-      ],
-      54],
-    [
-      "NEW_VAR",
-      "var2",
-      "2"
-    ],
-    [
-      "ELSE",
-      54],
-    [
-      "END",
-      54],
-    [
-      "IF",
-      2, [
-        "4",
-        "3"
-      ],
-      56],
-    [
-      "NEW_VAR",
-      "var2",
-      "1"
-    ],
-    [
-      "ELSE",
-      56],
-    [
-      "END",
-      56],
-    [
-      "IF",
-      2, [
-        "4",
-        "4"
-      ],
-      58],
-    [
-      "NEW_VAR",
-      "var2",
-      "0"
-    ],
-    [
-      "ELSE",
-      58],
-    [
-      "END",
-      58],
-    [
-      "SEND",
-      "/me берёт в правую руку из мед. кейса печать и наносит штамп в углу бланка"
-    ],
-    [
-      "SEND",
-      "/do Печать больницы нанесена на бланк."
-    ],
-    [
-      "SEND",
-      "/me кладёт печать в мед. кейс, после чего ручкой ставит подпись и сегодняшнюю дату"
-    ],
-    [
-      "SEND",
-      "/do Страница медицинской карты полностью заполнена."
-    ],
-    [
-      "SEND",
-      "/me передаёт медицинскую карту в руки обратившемуся"
-    ],
-    [
-      "SEND",
-      "/medcard {arg1} {var2} {var3} {var1}"
-    ]
+	[
+	  "SEND",
+	  "Вам необходимо получить новую медицинскую карту или обновить имеющуюся?"
+	],
+	[
+	  "SEND",
+	  "Для оформления медицинской карты предоставьте, пожалуйста, Ваш паспорт."
+	],
+	[
+	  "SEND",
+	  "/b Для этого введите /showpass {myid}"
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "/me взял{sex[][а]} паспорт из рук пациента и внимательно изучил{sex[][а]} его"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"Новая мед. карта",
+		"Обновить мед. карту"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  8],
+	[
+	  "SEND",
+	  "Стоимость оформления новой мед. карты зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "7 дней: {med7}$. 14 дней: {med14}$"
+	],
+	[
+	  "SEND",
+	  "30 дней: {med30}$. 60 дней: {med60}$"
+	],
+	[
+	  "SEND",
+	  "Скажите на какой срок оформлять и мы продолжим."
+	],
+	[
+	  "DIALOG",
+	  "2",
+	  [
+		"7 дней",
+		"14 дней",
+		"30 дней",
+		"60 дней"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"2",
+		"1"
+	  ],
+	  14],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "{med7}"
+	],
+	[
+	  "NEW_VAR",
+	  "var3",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  14],
+	[
+	  "END",
+	  14],
+	[
+	  "IF",
+	  2, [
+		"2",
+		"2"
+	  ],
+	  17],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "{med14}"
+	],
+	[
+	  "NEW_VAR",
+	  "var3",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  17],
+	[
+	  "END",
+	  17],
+	[
+	  "IF",
+	  2, [
+		"2",
+		"3"
+	  ],
+	  20],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "{med30}"
+	],
+	[
+	  "NEW_VAR",
+	  "var3",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  20],
+	[
+	  "END",
+	  20],
+	[
+	  "IF",
+	  2, [
+		"2",
+		"4"
+	  ],
+	  23],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "{med60}"
+	],
+	[
+	  "NEW_VAR",
+	  "var3",
+	  "3"
+	],
+	[
+	  "ELSE",
+	  23],
+	[
+	  "END",
+	  23],
+	[
+	  "ELSE",
+	  8],
+	[
+	  "END",
+	  8],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  27],
+	[
+	  "SEND",
+	  "Стоимость обновления мед. карты зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "7 дней: {medup7}$. 14 дней: {medup14}$"
+	],
+	[
+	  "SEND",
+	  "30 дней: {medup30}$. 60 дней: {medup60}$"
+	],
+	[
+	  "SEND",
+	  "Скажите на какой срок оформлять и мы продолжим."
+	],
+	[
+	  "DIALOG",
+	  "3",
+	  [
+		"7 дней",
+		"14 дней",
+		"30 дней",
+		"60 дней"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"3",
+		"1"
+	  ],
+	  33],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "{medup7}"
+	],
+	[
+	  "NEW_VAR",
+	  "var3",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  33],
+	[
+	  "END",
+	  33],
+	[
+	  "IF",
+	  2, [
+		"33",
+		"2"
+	  ],
+	  36],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "{medup14}"
+	],
+	[
+	  "NEW_VAR",
+	  "var3",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  36],
+	[
+	  "END",
+	  36],
+	[
+	  "IF",
+	  2, [
+		"3",
+		"3"
+	  ],
+	  39],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "{medup30}"
+	],
+	[
+	  "NEW_VAR",
+	  "var3",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  39],
+	[
+	  "END",
+	  39],
+	[
+	  "IF",
+	  2, [
+		"3",
+		"4"
+	  ],
+	  43],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "{medup60}"
+	],
+	[
+	  "NEW_VAR",
+	  "var3",
+	  "3"
+	],
+	[
+	  "ELSE",
+	  43],
+	[
+	  "END",
+	  43],
+	[
+	  "ELSE",
+	  27],
+	[
+	  "END",
+	  27],
+	[
+	  "SEND",
+	  "Хорошо, сейчас задам пару вопросов, отвечайте честно."
+	],
+	[
+	  "SEND",
+	  "Вы можете видеть имена проходящих мимо Вас людей?"
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "Вас когда-нибудь убивали?"
+	],
+	[
+	  "DIALOG",
+	  "4",
+	  [
+		"Полностью здоров",
+		"Наблюдаются откл.",
+		"Псих. нездоров",
+		"Неопределён"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"4",
+		"1"
+	  ],
+	  51],
+	[
+	  "NEW_VAR",
+	  "var2",
+	  "3"
+	],
+	[
+	  "ELSE",
+	  51],
+	[
+	  "END",
+	  51],
+	[
+	  "IF",
+	  2, [
+		"4",
+		"2"
+	  ],
+	  54],
+	[
+	  "NEW_VAR",
+	  "var2",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  54],
+	[
+	  "END",
+	  54],
+	[
+	  "IF",
+	  2, [
+		"4",
+		"3"
+	  ],
+	  56],
+	[
+	  "NEW_VAR",
+	  "var2",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  56],
+	[
+	  "END",
+	  56],
+	[
+	  "IF",
+	  2, [
+		"4",
+		"4"
+	  ],
+	  58],
+	[
+	  "NEW_VAR",
+	  "var2",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  58],
+	[
+	  "END",
+	  58],
+	[
+	  "SEND",
+	  "/me берёт в правую руку из мед. кейса печать и наносит штамп в углу бланка"
+	],
+	[
+	  "SEND",
+	  "/do Печать больницы нанесена на бланк."
+	],
+	[
+	  "SEND",
+	  "/me кладёт печать в мед. кейс, после чего ручкой ставит подпись и сегодняшнюю дату"
+	],
+	[
+	  "SEND",
+	  "/do Страница медицинской карты полностью заполнена."
+	],
+	[
+	  "SEND",
+	  "/me передаёт медицинскую карту в руки обратившемуся"
+	],
+	[
+	  "SEND",
+	  "/medcard {arg1} {var2} {var3} {var1}"
+	]
   ],
   "desc": "Оформить медицинскую карту",
   "id_element": 65,
@@ -18229,17 +21074,17 @@ local cmd_defoult_json_for_hospital = {
   "send_end_mes": true,
   "cmd": "mc",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ]
 }
 ]],
@@ -18252,78 +21097,78 @@ local cmd_defoult_json_for_hospital = {
   },
   "rank": 4,
   "act": [
-    [
-      "SEND",
-      "Очень замечательно, что Вы решили излечиться от укропозависимости."
-    ],
-    [
-      "SEND",
-      "Стоимость одного сеанса составит {pricenarko}$"
-    ],
-    [
-      "SEND",
-      "Метод лечения современный, называется \"Нейроочищение\". Он полностью сотрёт информацию об укропе с Вашего мозга."
-    ],
-    [
-      "SEND",
-      "Вы согласны? Если да, то ложитесь на кушетку и мы приступим."
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "/do На столе лежат стерильные перчатки и медицинская маска."
-    ],
-    [
-      "SEND",
-      "/me взяв со стола средства индивидуальной защиты, надел{sex[][а]} их на себя"
-    ],
-    [
-      "SEND",
-      "/todo А теперь максимально расслабьтесь*подвигая спец. аппарат ближе к пациенту"
-    ],
-    [
-      "SEND",
-      "/me взял{sex[][а]} шлем от аппарата, после чего надел{sex[][а]} его на голову пациента"
-    ],
-    [
-      "SEND",
-      "/me включил{sex[][а]} устройство, затем, подождав пять секунд, выключил{sex[][а]} его"
-    ],
-    [
-      "SEND",
-      "/do Аппарат успешно завершил работу."
-    ],
-    [
-      "SEND",
-      "/me снял{sex[][а]} шлем с пациента и повесил{sex[][а]} его обратно на аппарат"
-    ],
-    [
-      "SEND",
-      "/healbad {id}"
-    ],
-    [
-      "SEND",
-      "/todo Вот и всё! Тяга к запрещённым веществам должна исчезнуть*снимая с себя маску с перчатками"
-    ]
+	[
+	  "SEND",
+	  "Очень замечательно, что Вы решили излечиться от укропозависимости."
+	],
+	[
+	  "SEND",
+	  "Стоимость одного сеанса составит {pricenarko}$"
+	],
+	[
+	  "SEND",
+	  "Метод лечения современный, называется \"Нейроочищение\". Он полностью сотрёт информацию об укропе с Вашего мозга."
+	],
+	[
+	  "SEND",
+	  "Вы согласны? Если да, то ложитесь на кушетку и мы приступим."
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "/do На столе лежат стерильные перчатки и медицинская маска."
+	],
+	[
+	  "SEND",
+	  "/me взяв со стола средства индивидуальной защиты, надел{sex[][а]} их на себя"
+	],
+	[
+	  "SEND",
+	  "/todo А теперь максимально расслабьтесь*подвигая спец. аппарат ближе к пациенту"
+	],
+	[
+	  "SEND",
+	  "/me взял{sex[][а]} шлем от аппарата, после чего надел{sex[][а]} его на голову пациента"
+	],
+	[
+	  "SEND",
+	  "/me включил{sex[][а]} устройство, затем, подождав пять секунд, выключил{sex[][а]} его"
+	],
+	[
+	  "SEND",
+	  "/do Аппарат успешно завершил работу."
+	],
+	[
+	  "SEND",
+	  "/me снял{sex[][а]} шлем с пациента и повесил{sex[][а]} его обратно на аппарат"
+	],
+	[
+	  "SEND",
+	  "/healbad {id}"
+	],
+	[
+	  "SEND",
+	  "/todo Вот и всё! Тяга к запрещённым веществам должна исчезнуть*снимая с себя маску с перчатками"
+	]
   ],
   "desc": "Вылечить от укропозависимости",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 14,
   "cmd": "narko",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -18337,58 +21182,58 @@ local cmd_defoult_json_for_hospital = {
   },
   "rank": 4,
   "act": [
-    [
-      "SEND",
-      "Насколько я понял{sex[][а]}, Вам нужны антибиотики."
-    ],
-    [
-      "SEND",
-      "Стоимость одного антибиотика составляет {priceant}$. Вы согласны?"
-    ],
-    [
-      "SEND",
-      "Если да, то какое количество Вам необходимо?"
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "/me открыв мед.сумку, схватил{sex[][а]} за пачку антибиотиков, после чего вытянул{sex[][а]} их и положил на стол"
-    ],
-    [
-      "SEND",
-      "/do Антибиотики находятся на столе. "
-    ],
-    [
-      "SEND",
-      "/todo Вот держите, употребляйте их строго по рецепту!*закрывая мед. сумку"
-    ],
-    [
-      "SEND",
-      "Введите количество антибиотиков в чат."
-    ],
-    [
-      "SEND",
-      "/antibiotik {id} "
-    ]
+	[
+	  "SEND",
+	  "Насколько я понял{sex[][а]}, Вам нужны антибиотики."
+	],
+	[
+	  "SEND",
+	  "Стоимость одного антибиотика составляет {priceant}$. Вы согласны?"
+	],
+	[
+	  "SEND",
+	  "Если да, то какое количество Вам необходимо?"
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "/me открыв мед.сумку, схватил{sex[][а]} за пачку антибиотиков, после чего вытянул{sex[][а]} их и положил на стол"
+	],
+	[
+	  "SEND",
+	  "/do Антибиотики находятся на столе. "
+	],
+	[
+	  "SEND",
+	  "/todo Вот держите, употребляйте их строго по рецепту!*закрывая мед. сумку"
+	],
+	[
+	  "SEND",
+	  "Введите количество антибиотиков в чат."
+	],
+	[
+	  "SEND",
+	  "/antibiotik {id} "
+	]
   ],
   "desc": "Выписать антибиотики",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 9,
   "cmd": "ant",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": false
 }
@@ -18400,39 +21245,39 @@ local cmd_defoult_json_for_hospital = {
   "id_element": 5,
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "/me резким движением руки ухватил{sex[ся][ась]} за воротник нарушителя"
-    ],
-    [
-      "SEND",
-      "/do Крепко держит нарушителя за воротник."
-    ],
-    [
-      "SEND",
-      "/todo Я вынужден{sex[][а]} вывести вас из здания*направляясь к выходу"
-    ],
-    [
-      "SEND",
-      "/me движением левой руки открыл{sex[][а]} входную дверь, после чего вытолкнул{sex[][а]} нарушителя"
-    ],
-    [
-      "SEND",
-      "/expel {id} {reason}"
-    ]
+	[
+	  "SEND",
+	  "/me резким движением руки ухватил{sex[ся][ась]} за воротник нарушителя"
+	],
+	[
+	  "SEND",
+	  "/do Крепко держит нарушителя за воротник."
+	],
+	[
+	  "SEND",
+	  "/todo Я вынужден{sex[][а]} вывести вас из здания*направляясь к выходу"
+	],
+	[
+	  "SEND",
+	  "/me движением левой руки открыл{sex[][а]} входную дверь, после чего вытолкнул{sex[][а]} нарушителя"
+	],
+	[
+	  "SEND",
+	  "/expel {id} {reason}"
+	]
   ],
   "desc": "Выгнать из больницы",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    },
-    {
-      "desc": "Причина",
-      "name": "reason",
-      "type": 1
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	},
+	{
+	  "desc": "Причина",
+	  "name": "reason",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "var": {
@@ -18440,10 +21285,10 @@ local cmd_defoult_json_for_hospital = {
   },
   "cmd": "exp",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -18457,59 +21302,59 @@ local cmd_defoult_json_for_hospital = {
   },
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "/cure {id}"
-    ],
-    [
-      "SEND",
-      "/me легким движением руки открыл{sex[][а]} мед. сумку, после чего достал{sex[][а]} платок"
-    ],
-    [
-      "SEND",
-      "/me аккуратно приложил{sex[][а]} платок ко рту пострадавшего, после чего сделал{sex[][а]} глубокий вдох"
-    ],
-    [
-      "SEND",
-      "/do В лёгких много воздуха."
-    ],
-    [
-      "SEND",
-      "/me встал{sex[][а]} на колени, после чего прислонил{sex[ся][ась]} к пациенту"
-    ],
-    [
-      "SEND",
-      "/me {sex[подвел][подвела]} губы ко рту пострадавшего, после чего начал{sex[][а]} делать искусственное дыхание"
-    ],
-    [
-      "SEND",
-      "/me отвел{sex[][а]} губы от рта пострадавшего, после чего сделал{sex[][а]} глубокий вдох"
-    ],
-    [
-      "SEND",
-      "/me подвел{sex[][а]} губы ко рту пострадавшего, после чего начал{sex[][а]} делать искусственное дыхание"
-    ],
-    [
-      "SEND",
-      "/todo Сейчас аккуратно поднимайтесь*помогая встать"
-    ]
+	[
+	  "SEND",
+	  "/cure {id}"
+	],
+	[
+	  "SEND",
+	  "/me легким движением руки открыл{sex[][а]} мед. сумку, после чего достал{sex[][а]} платок"
+	],
+	[
+	  "SEND",
+	  "/me аккуратно приложил{sex[][а]} платок ко рту пострадавшего, после чего сделал{sex[][а]} глубокий вдох"
+	],
+	[
+	  "SEND",
+	  "/do В лёгких много воздуха."
+	],
+	[
+	  "SEND",
+	  "/me встал{sex[][а]} на колени, после чего прислонил{sex[ся][ась]} к пациенту"
+	],
+	[
+	  "SEND",
+	  "/me {sex[подвел][подвела]} губы ко рту пострадавшего, после чего начал{sex[][а]} делать искусственное дыхание"
+	],
+	[
+	  "SEND",
+	  "/me отвел{sex[][а]} губы от рта пострадавшего, после чего сделал{sex[][а]} глубокий вдох"
+	],
+	[
+	  "SEND",
+	  "/me подвел{sex[][а]} губы ко рту пострадавшего, после чего начал{sex[][а]} делать искусственное дыхание"
+	],
+	[
+	  "SEND",
+	  "/todo Сейчас аккуратно поднимайтесь*помогая встать"
+	]
   ],
   "desc": "Поднять человека при смерти",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 9,
   "cmd": "cur",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -18523,59 +21368,59 @@ local cmd_defoult_json_for_hospital = {
   },
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "Очень замечательно, что Вы решили оформить медицинскую страховку."
-    ],
-    [
-      "SEND",
-      "С ней Вы сможете лечиться за счёт государства."
-    ],
-    [
-      "SEND",
-      "/me достаёт из под стола пустой бланк, после чего начинает его заполнять"
-    ],
-    [
-      "SEND",
-      "/me заполнив бланк, передаёт его человеку напротив и говорит:"
-    ],
-    [
-      "SEND",
-      "Это бумажная копия, сейчас впишу Вас в базу данных."
-    ],
-    [
-      "SEND",
-      "/me вбивает человека напротив в компьютер, находящийся на столе"
-    ],
-    [
-      "SEND",
-      "/do Обратившийся внесён в базу данных страхования."
-    ],
-    [
-      "SEND",
-      "/todo Поздравляю! Вы официально застрахованы!*заканчивая оформление"
-    ],
-    [
-      "SEND",
-      "/givemedinsurance {id}"
-    ]
+	[
+	  "SEND",
+	  "Очень замечательно, что Вы решили оформить медицинскую страховку."
+	],
+	[
+	  "SEND",
+	  "С ней Вы сможете лечиться за счёт государства."
+	],
+	[
+	  "SEND",
+	  "/me достаёт из под стола пустой бланк, после чего начинает его заполнять"
+	],
+	[
+	  "SEND",
+	  "/me заполнив бланк, передаёт его человеку напротив и говорит:"
+	],
+	[
+	  "SEND",
+	  "Это бумажная копия, сейчас впишу Вас в базу данных."
+	],
+	[
+	  "SEND",
+	  "/me вбивает человека напротив в компьютер, находящийся на столе"
+	],
+	[
+	  "SEND",
+	  "/do Обратившийся внесён в базу данных страхования."
+	],
+	[
+	  "SEND",
+	  "/todo Поздравляю! Вы официально застрахованы!*заканчивая оформление"
+	],
+	[
+	  "SEND",
+	  "/givemedinsurance {id}"
+	]
   ],
   "desc": "Оформить медицинскую страховку",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 9,
   "cmd": "strah",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -18589,47 +21434,47 @@ local cmd_defoult_json_for_hospital = {
   },
   "rank": 4,
   "act": [
-    [
-      "SEND",
-      "Очень замечательно, что Вы решили пройти обследование."
-    ],
-    [
-      "SEND",
-      "Ведь с некоторыми заболеваниями служить крайне не рекомендуется!"
-    ],
-    [
-      "SEND",
-      "/do На плече висит медицинская сумка."
-    ],
-    [
-      "SEND",
-      "/me достаёт необходимые средства из сумки для дальнейшего осмотра пациента"
-    ],
-    [
-      "SEND",
-      "/todo Сейчас расслабьтесь, это займёт немного времени*начиная осмотр"
-    ],
-    [
-      "SEND",
-      "/mticket {id}"
-    ]
+	[
+	  "SEND",
+	  "Очень замечательно, что Вы решили пройти обследование."
+	],
+	[
+	  "SEND",
+	  "Ведь с некоторыми заболеваниями служить крайне не рекомендуется!"
+	],
+	[
+	  "SEND",
+	  "/do На плече висит медицинская сумка."
+	],
+	[
+	  "SEND",
+	  "/me достаёт необходимые средства из сумки для дальнейшего осмотра пациента"
+	],
+	[
+	  "SEND",
+	  "/todo Сейчас расслабьтесь, это займёт немного времени*начиная осмотр"
+	],
+	[
+	  "SEND",
+	  "/mticket {id}"
+	]
   ],
   "desc": "Провести обследование для военного билета",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 6,
   "cmd": "mt",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -18643,73 +21488,73 @@ local cmd_defoult_json_for_hospital = {
   },
   "rank": 4,
   "act": [
-    [
-      "SEND",
-      "Очень замечательно, что Вы решили пройти медицинский осмотр."
-    ],
-    [
-      "SEND",
-      "Предоставьте мне, пожалуйста, Вашу медицинскую карту."
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "/me берёт медицинскую карту в руки и внимательно её изучает"
-    ],
-    [
-      "SEND",
-      "Давайте начнём. Снимите всю одежду, кроме нижнего белья."
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "/medcheck {id} {priceosm}"
-    ],
-    [
-      "SEND",
-      "/me внимательно осматривает пациента на наличие кожных заболеваний"
-    ],
-    [
-      "SEND",
-      "/todo Поздравляю! У Вас всё отлично!*заканчивая медицинский осм"
-    ],
-    [
-      "SEND",
-      "/do Медицинская карта находится в левой руке."
-    ],
-    [
-      "SEND",
-      "/me достав ручку из кармана, {sex[внёс][внесла]} несколько изменений в медицинскую карту"
-    ],
-    [
-      "SEND",
-      "/me передал{sex[][а]} медицинскую карту обратно в руки пациенту"
-    ],
-    [
-      "SEND",
-      "На этом всё. Всего Вам доброго, не болейте!"
-    ]
+	[
+	  "SEND",
+	  "Очень замечательно, что Вы решили пройти медицинский осмотр."
+	],
+	[
+	  "SEND",
+	  "Предоставьте мне, пожалуйста, Вашу медицинскую карту."
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "/me берёт медицинскую карту в руки и внимательно её изучает"
+	],
+	[
+	  "SEND",
+	  "Давайте начнём. Снимите всю одежду, кроме нижнего белья."
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "/medcheck {id} {priceosm}"
+	],
+	[
+	  "SEND",
+	  "/me внимательно осматривает пациента на наличие кожных заболеваний"
+	],
+	[
+	  "SEND",
+	  "/todo Поздравляю! У Вас всё отлично!*заканчивая медицинский осм"
+	],
+	[
+	  "SEND",
+	  "/do Медицинская карта находится в левой руке."
+	],
+	[
+	  "SEND",
+	  "/me достав ручку из кармана, {sex[внёс][внесла]} несколько изменений в медицинскую карту"
+	],
+	[
+	  "SEND",
+	  "/me передал{sex[][а]} медицинскую карту обратно в руки пациенту"
+	],
+	[
+	  "SEND",
+	  "На этом всё. Всего Вам доброго, не болейте!"
+	]
   ],
   "desc": "Провести медицинский осмотр",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 13,
   "cmd": "osm",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -18721,35 +21566,35 @@ local cmd_defoult_json_for_hospital = {
   "id_element": 3,
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "/do Медицинская сумка весит на левом плече."
-    ],
-    [
-      "SEND",
-      "/me открыв сумку, достал{sex[][а]} необходимое лекарство и передал{sex[][а]} охраннику пациента"
-    ],
-    [
-      "SEND",
-      "/healactor {id} {pricelec}"
-    ]
+	[
+	  "SEND",
+	  "/do Медицинская сумка весит на левом плече."
+	],
+	[
+	  "SEND",
+	  "/me открыв сумку, достал{sex[][а]} необходимое лекарство и передал{sex[][а]} охраннику пациента"
+	],
+	[
+	  "SEND",
+	  "/healactor {id} {priceguard}"
+	]
   ],
   "desc": "Вылечить охранника игрока",
   "send_end_mes": true,
   "delay": 2.5,
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "cmd": "hlactor",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "var": {
 
@@ -18763,165 +21608,165 @@ local cmd_defoult_json_for_hospital = {
   "id_element": 21,
   "rank": 4,
   "act": [
-    [
-      "SEND",
-      "Мы выписываем рецепты в ограниченном количестве."
-    ],
-    [
-      "SEND",
-      "/n Не более 5 штук в минуту."
-    ],
-    [
-      "SEND",
-      "Стоимость одного рецепта составляет {pricerecept}$"
-    ],
-    [
-      "SEND",
-      "Вы согласны? Если да, то какое количество Вам необходимо?"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "1 рецепт",
-        "2 рецепта",
-        "3 рецепта",
-        "4 рецепта",
-        "5 рецептов"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      6],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      6],
-    [
-      "END",
-      6],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      8],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      8],
-    [
-      "END",
-      8],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      10],
-    [
-      "NEW_VAR",
-      "var1",
-      "3"
-    ],
-    [
-      "ELSE",
-      10],
-    [
-      "END",
-      10],
-    [
-      "IF",
-      2, [
-        "1",
-        "4"
-      ],
-      12],
-    [
-      "NEW_VAR",
-      "var1",
-      "4"
-    ],
-    [
-      "ELSE",
-      12],
-    [
-      "END",
-      12],
-    [
-      "IF",
-      2, [
-        "1",
-        "5"
-      ],
-      14],
-    [
-      "NEW_VAR",
-      "var1",
-      "5"
-    ],
-    [
-      "ELSE",
-      14],
-    [
-      "END",
-      14],
-    [
-      "SEND",
-      "/do На столе лежат бланки для оформления рецептов."
-    ],
-    [
-      "SEND",
-      "/me взяв ручку с печатью, заполнил{sex[][а]} необходимые бланки, после чего поставил{sex[][а]} печати в углу листа"
-    ],
-    [
-      "SEND",
-      "/do Все бланки рецептов успешно заполнены."
-    ],
-    [
-      "SEND",
-      "/todo Держите и строго соблюдайте инструкцию!*передавая рецепты человеку напротив"
-    ],
-    [
-      "SEND",
-      "/recept {arg1} {var1}"
-    ]
+	[
+	  "SEND",
+	  "Мы выписываем рецепты в ограниченном количестве."
+	],
+	[
+	  "SEND",
+	  "/n Не более 5 штук в минуту."
+	],
+	[
+	  "SEND",
+	  "Стоимость одного рецепта составляет {pricerecept}$"
+	],
+	[
+	  "SEND",
+	  "Вы согласны? Если да, то какое количество Вам необходимо?"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"1 рецепт",
+		"2 рецепта",
+		"3 рецепта",
+		"4 рецепта",
+		"5 рецептов"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  6],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  6],
+	[
+	  "END",
+	  6],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  8],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  8],
+	[
+	  "END",
+	  8],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  10],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "3"
+	],
+	[
+	  "ELSE",
+	  10],
+	[
+	  "END",
+	  10],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"4"
+	  ],
+	  12],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "4"
+	],
+	[
+	  "ELSE",
+	  12],
+	[
+	  "END",
+	  12],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"5"
+	  ],
+	  14],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "5"
+	],
+	[
+	  "ELSE",
+	  14],
+	[
+	  "END",
+	  14],
+	[
+	  "SEND",
+	  "/do На столе лежат бланки для оформления рецептов."
+	],
+	[
+	  "SEND",
+	  "/me взяв ручку с печатью, заполнил{sex[][а]} необходимые бланки, после чего поставил{sex[][а]} печати в углу листа"
+	],
+	[
+	  "SEND",
+	  "/do Все бланки рецептов успешно заполнены."
+	],
+	[
+	  "SEND",
+	  "/todo Держите и строго соблюдайте инструкцию!*передавая рецепты человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/recept {arg1} {var1}"
+	]
   ],
   "desc": "Выписать рецепт",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "var": [
-    {
-      "name": "var1",
-      "value": "5"
-    }
+	{
+	  "name": "var1",
+	  "value": "5"
+	}
   ],
   "cmd": "rec",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
  }
@@ -18933,321 +21778,321 @@ local cmd_defoult_json_for_hospital = {
   "id_element": 66,
   "rank": 1,
   "act": [
-    [
-      "DIALOG",
-      "1",
-      [
-        "Правила пользов. рацией",
-        "ПМП при обмороке",
-        "Прав. общ. с гражданами",
-        "ОПП при ожогах"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      2],
-    [
-      "SEND",
-      "Приветствую Вас, уважаемые коллеги!"
-    ],
-    [
-      "SEND",
-      "Сейчас я проведу лекцию, на тему \"Правила пользования рацией\""
-    ],
-    [
-      "SEND",
-      "Для того, чтобы использовать рацию грамотно, следует изучить правила."
-    ],
-    [
-      "SEND",
-      "При использовании рации, следует помнить о субординации."
-    ],
-    [
-      "SEND",
-      "Ко всем работникам следует относиться с уважением, на \"Вы\""
-    ],
-    [
-      "SEND",
-      "Также запрещено использовать нецензурную лексику."
-    ],
-    [
-      "SEND",
-      "За подобные нарушения Вы можете получить наказание."
-    ],
-    [
-      "SEND",
-      "В рацию запрещается кричать или издавать помехи."
-    ],
-    [
-      "SEND",
-      "Лекция на тему \"Правила пользования рацией\" окончена."
-    ],
-    [
-      "SEND",
-      "Всем спасибо за внимание."
-    ],
-    [
-      "ELSE",
-      2],
-    [
-      "END",
-      2],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      13],
-    [
-      "SEND",
-      "Приветствую, коллеги, я прочту вам лекцию на тему \"Первая помощь при обмороке\"."
-    ],
-    [
-      "SEND",
-      "Обмороки сопровождаются кратковременной потерей сознания,.."
-    ],
-    [
-      "SEND",
-      "вызванная недостаточным снабжением мозга кровью."
-    ],
-    [
-      "SEND",
-      "Обморок могут вызвать резкая боль, эмоциональный стресс."
-    ],
-    [
-      "SEND",
-      "Бессознательному состоянию обычно предшествует резкое ухудшение самочувствия:"
-    ],
-    [
-      "SEND",
-      "нарастает слабость, появляются тошнота, головокружение, шум или звон в ушах."
-    ],
-    [
-      "SEND",
-      "Затем человек бледнеет, покрывается холодным потом..."
-    ],
-    [
-      "SEND",
-      "и внезапно теряет сознание."
-    ],
-    [
-      "SEND",
-      "Первая помощь должна быть направлена на улучшение кровоснабжения мозга..."
-    ],
-    [
-      "SEND",
-      "и обеспечение свободного дыхания."
-    ],
-    [
-      "SEND",
-      "Если пострадавший находится в душном, плохо проветренном помещении,.."
-    ],
-    [
-      "SEND",
-      "откройте окно, включите вентилятор или вынесите потерявшего сознание на воздух."
-    ],
-    [
-      "SEND",
-      "Протрите лицо и шею прохладной водой"
-    ],
-    [
-      "SEND",
-      "Похлопайте по щекам и если возможно, дайте пострадавшему понюхать ватку,.."
-    ],
-    [
-      "SEND",
-      "смоченную нашатырным спиртом."
-    ],
-    [
-      "ELSE",
-      13],
-    [
-      "END",
-      13],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      29],
-    [
-      "SEND",
-      "Доброго времени суток, уважаемые сотрудники Больницы!"
-    ],
-    [
-      "SEND",
-      "Сегодня я расскажу вам о правилах общения с гражданами."
-    ],
-    [
-      "SEND",
-      "Всегда ведите себя вежливо и сдержанно - это ключ к взаимопониманию."
-    ],
-    [
-      "SEND",
-      "Показывайте свою воспитанность перед пациентами, и в целом перед незнакомыми людьми."
-    ],
-    [
-      "SEND",
-      "Ни в коем случае не стоит оскорблять граждан, ругаться матом, дерзить, хамить, грубить им."
-    ],
-    [
-      "SEND",
-      "Это асоциальное поведение, оно не приветствуется в обществе и в нашей клиники."
-    ],
-    [
-      "SEND",
-      "За нарушение этих правил вы рискуете быть уволенными или получить выговор!"
-    ],
-    [
-      "SEND",
-      "В случае, если гражданин ведёт себя неадекватно по отношению к вам или другим людям,"
-    ],
-    [
-      "SEND",
-      "вы в праве вывести из больницы подобного нарушителя."
-    ],
-    [
-      "SEND",
-      "На этом у меня всё, благодарю за внимание и, надеюсь, за понимание."
-    ],
-    [
-      "ELSE",
-      29],
-    [
-      "END",
-      29],
-    [
-      "IF",
-      2, [
-        "1",
-        "4"
-      ],
-      40],
-    [
-      "SEND",
-      "Сейчас я проведу для вас лекцию на тему ОПП при Ожогах."
-    ],
-    [
-      "SEND",
-      "Если вам удалсь вытащить человека из пожара с высокой степенью ожогов."
-    ],
-    [
-      "SEND",
-      "Главное дайте ему воздуха не ложите его туда куда идёт весь дым."
-    ],
-    [
-      "SEND",
-      "Нивкоем случае не снимайте с него прилипшую одежду."
-    ],
-    [
-      "SEND",
-      "И не лопайте волдыри на теле пострадавшего, как бы это небыло забавно."
-    ],
-    [
-      "SEND",
-      "Сразу же вам нужно срочно вызвать скорую помощь."
-    ],
-    [
-      "SEND",
-      "И ожидайте приезда специалистов, не пытайтесь сами помочь."
-    ],
-    [
-      "SEND",
-      "Из-за боли или надышавшись парами пострадавший будет без сознания"
-    ],
-    [
-      "SEND",
-      "А если будет в сознании не реагируйте на его просьбы помочь."
-    ],
-    [
-      "SEND",
-      "Просто будьте с ним рядом и морально поддерживайте."
-    ],
-    [
-      "SEND",
-      "На этом лекция закончена."
-    ],
-    [
-      "ELSE",
-      40],
-    [
-      "END",
-      40],
-    [
-      "IF",
-      2, [
-        "1",
-        "5"
-      ],
-      52],
-    [
-      "SEND",
-      "Сейчас я проведу для вас лекцию на тему ОПП при Утоплении."
-    ],
-    [
-      "SEND",
-      "Если вы заметили что человек тонет, пострайтесь позвать сразу на помощь."
-    ],
-    [
-      "SEND",
-      "Или попытайтесь попробовать помочь ему сами."
-    ],
-    [
-      "SEND",
-      "Главное не стоит прыгать за пострадавшим в воду если сами не умеете плавать."
-    ],
-    [
-      "SEND",
-      "В противном случае спасатель рискует сам оказаться в роли утопающего."
-    ],
-    [
-      "SEND",
-      "Лучше всего подплыть к тонущему сзади и обхватить его одной рукой вокруг шеи."
-    ],
-    [
-      "SEND",
-      "Так, чтобы лицо смотрело вверх,дыхательные пути были над водой,"
-    ],
-    [
-      "SEND",
-      "Можно взяться за волосы, а затем как можно скорее вытащить его на сушу."
-    ],
-    [
-      "SEND",
-      "Основные действия будут направлены на то, чтобы согреть его и успокоить."
-    ],
-    [
-      "SEND",
-      "Если человек без сознания, нужно удалить воду из дыхательных путей."
-    ],
-    [
-      "SEND",
-      "Для этого надавливаем на корень языка, вызывая тем самым рвотный рефлекс."
-    ],
-    [
-      "SEND",
-      "Если рвотный рефлекс сохранен это означает,что пострадавший жив."
-    ],
-    [
-      "SEND",
-      "Сразу же вам нужно срочно вызвать скорую помощь."
-    ],
-    [
-      "SEND",
-      "На этом лекция закончена."
-    ],
-    [
-      "ELSE",
-      52],
-    [
-      "END",
-      52]
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"Правила пользов. рацией",
+		"ПМП при обмороке",
+		"Прав. общ. с гражданами",
+		"ОПП при ожогах"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  2],
+	[
+	  "SEND",
+	  "Приветствую Вас, уважаемые коллеги!"
+	],
+	[
+	  "SEND",
+	  "Сейчас я проведу лекцию, на тему \"Правила пользования рацией\""
+	],
+	[
+	  "SEND",
+	  "Для того, чтобы использовать рацию грамотно, следует изучить правила."
+	],
+	[
+	  "SEND",
+	  "При использовании рации, следует помнить о субординации."
+	],
+	[
+	  "SEND",
+	  "Ко всем работникам следует относиться с уважением, на \"Вы\""
+	],
+	[
+	  "SEND",
+	  "Также запрещено использовать нецензурную лексику."
+	],
+	[
+	  "SEND",
+	  "За подобные нарушения Вы можете получить наказание."
+	],
+	[
+	  "SEND",
+	  "В рацию запрещается кричать или издавать помехи."
+	],
+	[
+	  "SEND",
+	  "Лекция на тему \"Правила пользования рацией\" окончена."
+	],
+	[
+	  "SEND",
+	  "Всем спасибо за внимание."
+	],
+	[
+	  "ELSE",
+	  2],
+	[
+	  "END",
+	  2],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  13],
+	[
+	  "SEND",
+	  "Приветствую, коллеги, я прочту вам лекцию на тему \"Первая помощь при обмороке\"."
+	],
+	[
+	  "SEND",
+	  "Обмороки сопровождаются кратковременной потерей сознания,.."
+	],
+	[
+	  "SEND",
+	  "вызванная недостаточным снабжением мозга кровью."
+	],
+	[
+	  "SEND",
+	  "Обморок могут вызвать резкая боль, эмоциональный стресс."
+	],
+	[
+	  "SEND",
+	  "Бессознательному состоянию обычно предшествует резкое ухудшение самочувствия:"
+	],
+	[
+	  "SEND",
+	  "нарастает слабость, появляются тошнота, головокружение, шум или звон в ушах."
+	],
+	[
+	  "SEND",
+	  "Затем человек бледнеет, покрывается холодным потом..."
+	],
+	[
+	  "SEND",
+	  "и внезапно теряет сознание."
+	],
+	[
+	  "SEND",
+	  "Первая помощь должна быть направлена на улучшение кровоснабжения мозга..."
+	],
+	[
+	  "SEND",
+	  "и обеспечение свободного дыхания."
+	],
+	[
+	  "SEND",
+	  "Если пострадавший находится в душном, плохо проветренном помещении,.."
+	],
+	[
+	  "SEND",
+	  "откройте окно, включите вентилятор или вынесите потерявшего сознание на воздух."
+	],
+	[
+	  "SEND",
+	  "Протрите лицо и шею прохладной водой"
+	],
+	[
+	  "SEND",
+	  "Похлопайте по щекам и если возможно, дайте пострадавшему понюхать ватку,.."
+	],
+	[
+	  "SEND",
+	  "смоченную нашатырным спиртом."
+	],
+	[
+	  "ELSE",
+	  13],
+	[
+	  "END",
+	  13],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  29],
+	[
+	  "SEND",
+	  "Доброго времени суток, уважаемые сотрудники Больницы!"
+	],
+	[
+	  "SEND",
+	  "Сегодня я расскажу вам о правилах общения с гражданами."
+	],
+	[
+	  "SEND",
+	  "Всегда ведите себя вежливо и сдержанно - это ключ к взаимопониманию."
+	],
+	[
+	  "SEND",
+	  "Показывайте свою воспитанность перед пациентами, и в целом перед незнакомыми людьми."
+	],
+	[
+	  "SEND",
+	  "Ни в коем случае не стоит оскорблять граждан, ругаться матом, дерзить, хамить, грубить им."
+	],
+	[
+	  "SEND",
+	  "Это асоциальное поведение, оно не приветствуется в обществе и в нашей клиники."
+	],
+	[
+	  "SEND",
+	  "За нарушение этих правил вы рискуете быть уволенными или получить выговор!"
+	],
+	[
+	  "SEND",
+	  "В случае, если гражданин ведёт себя неадекватно по отношению к вам или другим людям,"
+	],
+	[
+	  "SEND",
+	  "вы в праве вывести из больницы подобного нарушителя."
+	],
+	[
+	  "SEND",
+	  "На этом у меня всё, благодарю за внимание и, надеюсь, за понимание."
+	],
+	[
+	  "ELSE",
+	  29],
+	[
+	  "END",
+	  29],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"4"
+	  ],
+	  40],
+	[
+	  "SEND",
+	  "Сейчас я проведу для вас лекцию на тему ОПП при Ожогах."
+	],
+	[
+	  "SEND",
+	  "Если вам удалсь вытащить человека из пожара с высокой степенью ожогов."
+	],
+	[
+	  "SEND",
+	  "Главное дайте ему воздуха не ложите его туда куда идёт весь дым."
+	],
+	[
+	  "SEND",
+	  "Нивкоем случае не снимайте с него прилипшую одежду."
+	],
+	[
+	  "SEND",
+	  "И не лопайте волдыри на теле пострадавшего, как бы это небыло забавно."
+	],
+	[
+	  "SEND",
+	  "Сразу же вам нужно срочно вызвать скорую помощь."
+	],
+	[
+	  "SEND",
+	  "И ожидайте приезда специалистов, не пытайтесь сами помочь."
+	],
+	[
+	  "SEND",
+	  "Из-за боли или надышавшись парами пострадавший будет без сознания"
+	],
+	[
+	  "SEND",
+	  "А если будет в сознании не реагируйте на его просьбы помочь."
+	],
+	[
+	  "SEND",
+	  "Просто будьте с ним рядом и морально поддерживайте."
+	],
+	[
+	  "SEND",
+	  "На этом лекция закончена."
+	],
+	[
+	  "ELSE",
+	  40],
+	[
+	  "END",
+	  40],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"5"
+	  ],
+	  52],
+	[
+	  "SEND",
+	  "Сейчас я проведу для вас лекцию на тему ОПП при Утоплении."
+	],
+	[
+	  "SEND",
+	  "Если вы заметили что человек тонет, пострайтесь позвать сразу на помощь."
+	],
+	[
+	  "SEND",
+	  "Или попытайтесь попробовать помочь ему сами."
+	],
+	[
+	  "SEND",
+	  "Главное не стоит прыгать за пострадавшим в воду если сами не умеете плавать."
+	],
+	[
+	  "SEND",
+	  "В противном случае спасатель рискует сам оказаться в роли утопающего."
+	],
+	[
+	  "SEND",
+	  "Лучше всего подплыть к тонущему сзади и обхватить его одной рукой вокруг шеи."
+	],
+	[
+	  "SEND",
+	  "Так, чтобы лицо смотрело вверх,дыхательные пути были над водой,"
+	],
+	[
+	  "SEND",
+	  "Можно взяться за волосы, а затем как можно скорее вытащить его на сушу."
+	],
+	[
+	  "SEND",
+	  "Основные действия будут направлены на то, чтобы согреть его и успокоить."
+	],
+	[
+	  "SEND",
+	  "Если человек без сознания, нужно удалить воду из дыхательных путей."
+	],
+	[
+	  "SEND",
+	  "Для этого надавливаем на корень языка, вызывая тем самым рвотный рефлекс."
+	],
+	[
+	  "SEND",
+	  "Если рвотный рефлекс сохранен это означает,что пострадавший жив."
+	],
+	[
+	  "SEND",
+	  "Сразу же вам нужно срочно вызвать скорую помощь."
+	],
+	[
+	  "SEND",
+	  "На этом лекция закончена."
+	],
+	[
+	  "ELSE",
+	  52],
+	[
+	  "END",
+	  52]
   ],
   "desc": "Провести лекцию",
   "var": {
@@ -19257,10 +22102,10 @@ local cmd_defoult_json_for_hospital = {
   "send_end_mes": true,
   "cmd": "lekmz",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -19274,18 +22119,18 @@ local cmd_defoult_json_for_hospital = {
   "id_element": 3,
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "/do Медицинская сумка весит на левом плече."
-    ],
-    [
-      "SEND",
-      "/me открыв сумку, достал{sex[][а]} необходимое лекарство и запил его водой"
-    ],
-    [
-      "SEND",
-      "/heal {myid} 10000"
-    ]
+	[
+	  "SEND",
+	  "/do Медицинская сумка весит на левом плече."
+	],
+	[
+	  "SEND",
+	  "/me открыв сумку, достал{sex[][а]} необходимое лекарство и запил его водой"
+	],
+	[
+	  "SEND",
+	  "/heal {myid} 10000"
+	]
   ],
   "desc": "Вылечить самого себя",
   "send_end_mes": true,
@@ -19295,10 +22140,10 @@ local cmd_defoult_json_for_hospital = {
   },
   "cmd": "hme",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "var": {
 
@@ -19318,10 +22163,10 @@ local cmd_defoult_json_for_driving_school = {
   },
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "Здравствуйте, меня зовут {mynickrus}, чем могу быть полез{sex[ен][на]}?"
-    ]
+	[
+	  "SEND",
+	  "Здравствуйте, меня зовут {mynickrus}, чем могу быть полез{sex[ен][на]}?"
+	]
   ],
   "desc": "Приветствие",
   "id_element": 1,
@@ -19329,10 +22174,10 @@ local cmd_defoult_json_for_driving_school = {
   "send_end_mes": true,
   "cmd": "z",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -19344,121 +22189,121 @@ local cmd_defoult_json_for_driving_school = {
 {
   "folder": 4,
   "var": [
-    {
-      "name": "var1",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "0"
+	}
   ],
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии зависит от её срока."
-    ],
-    [
-      "SEND",
-      "На 1 месяц {priceauto1}$, на 2 месяца {priceauto2}$, на 3 месяца {priceauto3}$"
-    ],
-    [
-      "SEND",
-      "На какой срок оформляем?"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "1 месяц",
-        "2 месяца",
-        "3 месяца"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      6],
-    [
-      "NEW_VAR",
-      "var1",
-      "0"
-    ],
-    [
-      "ELSE",
-      6],
-    [
-      "END",
-      6],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      9],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      9],
-    [
-      "END",
-      9],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      11],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      11],
-    [
-      "END",
-      11],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на авто"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[0][{var1}][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "На 1 месяц {priceauto1}$, на 2 месяца {priceauto2}$, на 3 месяца {priceauto3}$"
+	],
+	[
+	  "SEND",
+	  "На какой срок оформляем?"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"1 месяц",
+		"2 месяца",
+		"3 месяца"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  6],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  6],
+	[
+	  "END",
+	  6],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  9],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  9],
+	[
+	  "END",
+	  9],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  11],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  11],
+	[
+	  "END",
+	  11],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на авто"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[0][{var1}][{arg1}]}"
+	]
   ],
   "desc": "Продать лицензию на вождение автомобиля",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 16,
   "cmd": "licmauto",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -19468,197 +22313,197 @@ local cmd_defoult_json_for_driving_school = {
 {
   "folder": 4,
   "var": [
-    {
-      "name": "var1",
-      "value": "2"
-    }
+	{
+	  "name": "var1",
+	  "value": "2"
+	}
   ],
   "rank": 5,
   "act": [
-    [
-      "SEND",
-      "Для оформления лицензии на оружие, мне нужно убедиться, что Вы здоровы."
-    ],
-    [
-      "SEND",
-      "Покажите, пожалуйста, Вашу медицинскую карту."
-    ],
-    [
-      "SEND",
-      "/n /showmc {myid}"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "Здоров",
-        "Имеются отклонения",
-        "Нет мед. карты"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      5],
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии зависит от её срока."
-    ],
-    [
-      "SEND",
-      "На 1 месяц {pricegun1}$, на 2 месяца {pricegun2}$, на 3 месяца {pricegun3}$"
-    ],
-    [
-      "SEND",
-      "На какой срок оформляем?"
-    ],
-    [
-      "DIALOG",
-      "2",
-      [
-        "1 месяц",
-        "2 месяца",
-        "3 месяца"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "2",
-        "1"
-      ],
-      11],
-    [
-      "NEW_VAR",
-      "var1",
-      "0"
-    ],
-    [
-      "ELSE",
-      11],
-    [
-      "END",
-      11],
-    [
-      "IF",
-      2, [
-        "2",
-        "2"
-      ],
-      13],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      13],
-    [
-      "END",
-      13],
-    [
-      "IF",
-      2, [
-        "2",
-        "3"
-      ],
-      15],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      15],
-    [
-      "END",
-      15],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на оружие"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[5][{var1}][{arg1}]}"
-    ],
-    [
-      "ELSE",
-      5],
-    [
-      "END",
-      5],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      21],
-    [
-      "SEND",
-      "Извините, но я не могу оформить Вам лицензию на оружие в связи с состоянием здоровья."
-    ],
-    [
-      "SEND",
-      "Вы можете снова пройти мед. обследование в больнице и вернуться к нам."
-    ],
-    [
-      "ELSE",
-      21],
-    [
-      "END",
-      21],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      26],
-    [
-      "SEND",
-      "Извините, но сейчас я не могу оформить Вам лицензию на оружие."
-    ],
-    [
-      "SEND",
-      "У Вас отсутствует медицинская карта. Оформить её можно в ближайшей больнице."
-    ],
-    [
-      "ELSE",
-      26],
-    [
-      "END",
-      26]
+	[
+	  "SEND",
+	  "Для оформления лицензии на оружие, мне нужно убедиться, что Вы здоровы."
+	],
+	[
+	  "SEND",
+	  "Покажите, пожалуйста, Вашу медицинскую карту."
+	],
+	[
+	  "SEND",
+	  "/n /showmc {myid}"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"Здоров",
+		"Имеются отклонения",
+		"Нет мед. карты"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  5],
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "На 1 месяц {pricegun1}$, на 2 месяца {pricegun2}$, на 3 месяца {pricegun3}$"
+	],
+	[
+	  "SEND",
+	  "На какой срок оформляем?"
+	],
+	[
+	  "DIALOG",
+	  "2",
+	  [
+		"1 месяц",
+		"2 месяца",
+		"3 месяца"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"2",
+		"1"
+	  ],
+	  11],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  11],
+	[
+	  "END",
+	  11],
+	[
+	  "IF",
+	  2, [
+		"2",
+		"2"
+	  ],
+	  13],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  13],
+	[
+	  "END",
+	  13],
+	[
+	  "IF",
+	  2, [
+		"2",
+		"3"
+	  ],
+	  15],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  15],
+	[
+	  "END",
+	  15],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на оружие"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[5][{var1}][{arg1}]}"
+	],
+	[
+	  "ELSE",
+	  5],
+	[
+	  "END",
+	  5],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  21],
+	[
+	  "SEND",
+	  "Извините, но я не могу оформить Вам лицензию на оружие в связи с состоянием здоровья."
+	],
+	[
+	  "SEND",
+	  "Вы можете снова пройти мед. обследование в больнице и вернуться к нам."
+	],
+	[
+	  "ELSE",
+	  21],
+	[
+	  "END",
+	  21],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  26],
+	[
+	  "SEND",
+	  "Извините, но сейчас я не могу оформить Вам лицензию на оружие."
+	],
+	[
+	  "SEND",
+	  "У Вас отсутствует медицинская карта. Оформить её можно в ближайшей больнице."
+	],
+	[
+	  "ELSE",
+	  26],
+	[
+	  "END",
+	  26]
   ],
   "desc": "Продать лицензию на оружие",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 1
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "id_element": 29,
   "cmd": "licgun",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -19670,51 +22515,51 @@ local cmd_defoult_json_for_driving_school = {
   "id_element": 6,
   "rank": 7,
   "act": [
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии составляет {pricefly}$. Вы согласны?"
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на полёты"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[2][0][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии составляет {pricefly}$. Вы согласны?"
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на полёты"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[2][0][{arg1}]}"
+	]
   ],
   "desc": "Продать лицензию на полёты",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 1
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "var": [
-    {
-      "name": "var1",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "0"
+	}
   ],
   "cmd": "licfly",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -19726,120 +22571,120 @@ local cmd_defoult_json_for_driving_school = {
   "id_element": 15,
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии"
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии зависит от её срока."
-    ],
-    [
-      "SEND",
-      "На 1 месяц {pricefish1}$, на 2 месяца {pricefish2}$, на 3 месяца {pricefish3}$"
-    ],
-    [
-      "SEND",
-      "На какой срок оформляем?"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "1 месяц",
-        "2 месяца",
-        "3 месяца"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      7],
-    [
-      "NEW_VAR",
-      "var1",
-      "0"
-    ],
-    [
-      "ELSE",
-      7],
-    [
-      "END",
-      7],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      9],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      9],
-    [
-      "END",
-      9],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      11],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      11],
-    [
-      "END",
-      11],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на рыболовство"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[3][{var1}][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии"
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "На 1 месяц {pricefish1}$, на 2 месяца {pricefish2}$, на 3 месяца {pricefish3}$"
+	],
+	[
+	  "SEND",
+	  "На какой срок оформляем?"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"1 месяц",
+		"2 месяца",
+		"3 месяца"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  7],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  7],
+	[
+	  "END",
+	  7],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  9],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  9],
+	[
+	  "END",
+	  9],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  11],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  11],
+	[
+	  "END",
+	  11],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на рыболовство"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[3][{var1}][{arg1}]}"
+	]
   ],
   "desc": "Продать лицензию на рыболовство",
   "send_end_mes": true,
   "delay": 2.5,
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 1
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 1
+	}
   ],
   "cmd": "licfish",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "var": [
-    {
-      "name": "var1",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "0"
+	}
   ]
 }
 ]],
@@ -19848,121 +22693,121 @@ local cmd_defoult_json_for_driving_school = {
 {
   "folder": 4,
   "var": [
-    {
-      "name": "var1",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "0"
+	}
   ],
   "rank": 2,
   "act": [
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии зависит от её срока."
-    ],
-    [
-      "SEND",
-      "На 1 месяц {pricemoto1}$, на 2 месяца {pricemoto2}$, на 3 месяца {pricemoto3}$"
-    ],
-    [
-      "SEND",
-      "На какой срок оформляем?"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "1 месяц",
-        "2 месяца",
-        "3 месяца"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      6],
-    [
-      "NEW_VAR",
-      "var1",
-      "0"
-    ],
-    [
-      "ELSE",
-      6],
-    [
-      "END",
-      6],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      8],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      8],
-    [
-      "END",
-      8],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      10],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      10],
-    [
-      "END",
-      10],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на мото"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[1][{var1}][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "На 1 месяц {pricemoto1}$, на 2 месяца {pricemoto2}$, на 3 месяца {pricemoto3}$"
+	],
+	[
+	  "SEND",
+	  "На какой срок оформляем?"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"1 месяц",
+		"2 месяца",
+		"3 месяца"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  6],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  6],
+	[
+	  "END",
+	  6],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  8],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  8],
+	[
+	  "END",
+	  8],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  10],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  10],
+	[
+	  "END",
+	  10],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на мото"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[1][{var1}][{arg1}]}"
+	]
   ],
   "desc": "Продать лицензию на вождение мотоцикла",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 14,
   "cmd": "licmoto",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -19974,119 +22819,119 @@ local cmd_defoult_json_for_driving_school = {
   "id_element": 14,
   "rank": 6,
   "act": [
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии зависит от её срока."
-    ],
-    [
-      "SEND",
-      "На 1 месяц {pricemeh1}$, на 2 месяца {pricemeh2}$, на 3 месяца {pricemeh3}$"
-    ],
-    [
-      "SEND",
-      "На какой срок оформляем?"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "1 месяц",
-        "2 месяца",
-        "3 месяца"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      6],
-    [
-      "NEW_VAR",
-      "var1",
-      "0"
-    ],
-    [
-      "ELSE",
-      6],
-    [
-      "END",
-      6],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      8],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      8],
-    [
-      "END",
-      8],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      10],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      10],
-    [
-      "END",
-      10],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на механика"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[9][{var1}][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "На 1 месяц {pricemeh1}$, на 2 месяца {pricemeh2}$, на 3 месяца {pricemeh3}$"
+	],
+	[
+	  "SEND",
+	  "На какой срок оформляем?"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"1 месяц",
+		"2 месяца",
+		"3 месяца"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  6],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  6],
+	[
+	  "END",
+	  6],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  8],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  8],
+	[
+	  "END",
+	  8],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  10],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  10],
+	[
+	  "END",
+	  10],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на механика"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[9][{var1}][{arg1}]}"
+	]
   ],
   "desc": "Продать лицензию для работы на механика",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 1
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "var": [
-    {
-      "name": "var1",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "0"
+	}
   ],
   "cmd": "licmec",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -20098,120 +22943,120 @@ local cmd_defoult_json_for_driving_school = {
   "id_element": 15,
   "rank": 6,
   "act": [
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии зависит от её срока."
-    ],
-    [
-      "SEND",
-      "На 1 месяц {pricetaxi1}$, на 2 месяца {pricetaxi2}$, на 3 месяца {pricetaxi3}$"
-    ],
-    [
-      "SEND",
-      "На какой срок оформляем?"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "1 месяц",
-        "2 месяца",
-        "3 месяца"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      6],
-    [
-      "NEW_VAR",
-      "var1",
-      "0"
-    ],
-    [
-      "ELSE",
-      6],
-    [
-      "END",
-      6],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      9],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      9],
-    [
-      "END",
-      9],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      11],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      11],
-    [
-      "END",
-      11],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на такси"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[8][{var1}][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "На 1 месяц {pricetaxi1}$, на 2 месяца {pricetaxi2}$, на 3 месяца {pricetaxi3}$"
+	],
+	[
+	  "SEND",
+	  "На какой срок оформляем?"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"1 месяц",
+		"2 месяца",
+		"3 месяца"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  6],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  6],
+	[
+	  "END",
+	  6],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  9],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  9],
+	[
+	  "END",
+	  9],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  11],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  11],
+	[
+	  "END",
+	  11],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на такси"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[8][{var1}][{arg1}]}"
+	]
   ],
   "desc": "Продать лицензию для работы в такси",
   "var": [
-    {
-      "name": "var1",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "0"
+	}
   ],
   "delay": 2.5,
   "send_end_mes": true,
   "cmd": "lictaxi",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 1
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 1
+	}
   ]
 }
 ]],
@@ -20222,120 +23067,120 @@ local cmd_defoult_json_for_driving_school = {
   "id_element": 14,
   "rank": 4,
   "act": [
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии зависит от её срока."
-    ],
-    [
-      "SEND",
-      "На 1 месяц {priceswim1}$, на 2 месяца {priceswim2}$, на 3 месяца {priceswim3}$"
-    ],
-    [
-      "SEND",
-      "На какой срок оформляем?"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "1 месяц",
-        "2 месяца",
-        "3 месяца"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      6],
-    [
-      "NEW_VAR",
-      "var1",
-      "0"
-    ],
-    [
-      "ELSE",
-      6],
-    [
-      "END",
-      6],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      8],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      8],
-    [
-      "END",
-      8],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      10],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      10],
-    [
-      "END",
-      10],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на вод. транспорт"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[4][{var1}][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "На 1 месяц {priceswim1}$, на 2 месяца {priceswim2}$, на 3 месяца {priceswim3}$"
+	],
+	[
+	  "SEND",
+	  "На какой срок оформляем?"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"1 месяц",
+		"2 месяца",
+		"3 месяца"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  6],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  6],
+	[
+	  "END",
+	  6],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  8],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  8],
+	[
+	  "END",
+	  8],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  10],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  10],
+	[
+	  "END",
+	  10],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на вод. транспорт"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[4][{var1}][{arg1}]}"
+	]
   ],
   "desc": "Продать лицензию на водный транспорт",
   "var": [
-    {
-      "name": "var1",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "0"
+	}
   ],
   "delay": 2.5,
   "send_end_mes": true,
   "cmd": "licswim",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ]
 }
 ]],
@@ -20344,121 +23189,121 @@ local cmd_defoult_json_for_driving_school = {
 {
   "folder": 4,
   "var": [
-    {
-      "name": "var1",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "0"
+	}
   ],
   "rank": 5,
   "act": [
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии зависит от её срока."
-    ],
-    [
-      "SEND",
-      "На 1 месяц {pricehunt1}$, на 2 месяца {pricehunt2}$, на 3 месяца {pricehunt3}$"
-    ],
-    [
-      "SEND",
-      "На какой срок оформляем?"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "1 месяц",
-        "2 месяца",
-        "3 месяца"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      6],
-    [
-      "NEW_VAR",
-      "var1",
-      "0"
-    ],
-    [
-      "ELSE",
-      6],
-    [
-      "END",
-      6],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      8],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      8],
-    [
-      "END",
-      8],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      10],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      10],
-    [
-      "END",
-      10],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на охоту"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[6][{var1}][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии "
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "На 1 месяц {pricehunt1}$, на 2 месяца {pricehunt2}$, на 3 месяца {pricehunt3}$"
+	],
+	[
+	  "SEND",
+	  "На какой срок оформляем?"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"1 месяц",
+		"2 месяца",
+		"3 месяца"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  6],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  6],
+	[
+	  "END",
+	  6],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  8],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  8],
+	[
+	  "END",
+	  8],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  10],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  10],
+	[
+	  "END",
+	  10],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на охоту"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[6][{var1}][{arg1}]}"
+	]
   ],
   "desc": "Продать лицензию на охоту",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 14,
   "cmd": "lichunt",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -20470,119 +23315,119 @@ local cmd_defoult_json_for_driving_school = {
   "id_element": 15,
   "rank": 6,
   "act": [
-    [
-      "SEND",
-      "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии"
-    ],
-    [
-      "SEND",
-      "Стоимость лицензии зависит от её срока."
-    ],
-    [
-      "SEND",
-      "На 1 месяц {priceexc1}$, на 2 месяца {priceexc2}$, на 3 месяца {priceexc3}$"
-    ],
-    [
-      "SEND",
-      "На какой срок оформляем?"
-    ],
-    [
-      "DIALOG",
-      "1",
-      [
-        "1 месяц",
-        "2 месяца",
-        "3 месяца"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      7],
-    [
-      "NEW_VAR",
-      "var1",
-      "0"
-    ],
-    [
-      "ELSE",
-      7],
-    [
-      "END",
-      7],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      9],
-    [
-      "NEW_VAR",
-      "var1",
-      "1"
-    ],
-    [
-      "ELSE",
-      9],
-    [
-      "END",
-      9],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      11],
-    [
-      "NEW_VAR",
-      "var1",
-      "2"
-    ],
-    [
-      "ELSE",
-      11],
-    [
-      "END",
-      11],
-    [
-      "SEND",
-      "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на раскопки"
-    ],
-    [
-      "SEND",
-      "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
-    ],
-    [
-      "SEND",
-      "{dialoglic[7][{var1}][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} из под стола пустой бланк для выдачи лицензии"
+	],
+	[
+	  "SEND",
+	  "Стоимость лицензии зависит от её срока."
+	],
+	[
+	  "SEND",
+	  "На 1 месяц {priceexc1}$, на 2 месяца {priceexc2}$, на 3 месяца {priceexc3}$"
+	],
+	[
+	  "SEND",
+	  "На какой срок оформляем?"
+	],
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"1 месяц",
+		"2 месяца",
+		"3 месяца"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  7],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "0"
+	],
+	[
+	  "ELSE",
+	  7],
+	[
+	  "END",
+	  7],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  9],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "1"
+	],
+	[
+	  "ELSE",
+	  9],
+	[
+	  "END",
+	  9],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  11],
+	[
+	  "NEW_VAR",
+	  "var1",
+	  "2"
+	],
+	[
+	  "ELSE",
+	  11],
+	[
+	  "END",
+	  11],
+	[
+	  "SEND",
+	  "/me засунул{sex[][а]} бланк в принтер, после чего распечатал{sex[][а]} лицензию на раскопки"
+	],
+	[
+	  "SEND",
+	  "/todo Вот, распишитесь здесь*протягивая лицензию человеку напротив"
+	],
+	[
+	  "SEND",
+	  "{dialoglic[7][{var1}][{arg1}]}"
+	]
   ],
   "desc": "Продать лицензию на раскопки",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "var": [
-    {
-      "name": "var1",
-      "value": "0"
-    }
+	{
+	  "name": "var1",
+	  "value": "0"
+	}
   ],
   "cmd": "licdig",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -20594,39 +23439,39 @@ local cmd_defoult_json_for_driving_school = {
   "id_element": 5,
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "/me резким движением руки ухватил{sex[ся][ась]} за воротник нарушителя"
-    ],
-    [
-      "SEND",
-      "/do Крепко держит нарушителя за воротник."
-    ],
-    [
-      "SEND",
-      "/todo Я вынужден{sex[][а]} вывести вас из здания*направляясь к выходу"
-    ],
-    [
-      "SEND",
-      "/me движением левой руки открыл{sex[][а]} входную дверь, после чего вытолкнул{sex[][а]} нарушителя"
-    ],
-    [
-      "SEND",
-      "/expel {id} {reason}"
-    ]
+	[
+	  "SEND",
+	  "/me резким движением руки ухватил{sex[ся][ась]} за воротник нарушителя"
+	],
+	[
+	  "SEND",
+	  "/do Крепко держит нарушителя за воротник."
+	],
+	[
+	  "SEND",
+	  "/todo Я вынужден{sex[][а]} вывести вас из здания*направляясь к выходу"
+	],
+	[
+	  "SEND",
+	  "/me движением левой руки открыл{sex[][а]} входную дверь, после чего вытолкнул{sex[][а]} нарушителя"
+	],
+	[
+	  "SEND",
+	  "/expel {id} {reason}"
+	]
   ],
   "desc": "Выгнать из помещения",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    },
-    {
-      "desc": "Причина",
-      "name": "reason",
-      "type": 1
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	},
+	{
+	  "desc": "Причина",
+	  "name": "reason",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "var": {
@@ -20634,10 +23479,10 @@ local cmd_defoult_json_for_driving_school = {
   },
   "cmd": "exp",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -20651,62 +23496,62 @@ local cmd_defoult_json_for_driving_school = {
   },
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "Сейчас я представлю вам прайс-лист лицензий."
-    ],
-    [
-      "SEND",
-      "/me потянулся в карман, затем достал заламинированный лист"
-    ],
-    [
-      "SEND",
-      "/do Прайс-Лист в руке."
-    ],
-    [
-      "SEND",
-      "Водительские права 1 месяц {priceauto1}$, 2 месяца {priceauto2}$, 3 месяца {priceauto3}$"
-    ],
-    [
-      "SEND",
-      "Права на мото-транспорт 1 месяц {pricemoto1}$, 2 месяца {pricemoto2}$, 3 месяца {pricemoto3}$"
-    ],
-    [
-      "SEND",
-      "Права на водный транспорт 1 месяц {priceswim1}$, 2 месяца {priceswim2}$, 3 месяца {priceswim3}$"
-    ],
-    [
-      "SEND",
-      "Лицензия на рыбалку 1 месяц {pricefish1}$, 2 месяца {pricefish2}$, 3 месяца {pricefish3}$"
-    ],
-    [
-      "SEND",
-      "Лицензия на владение оружием 1 месяц {pricegun1}$, 2 месяца {pricegun2}$, 3 месяца {pricegun3}$"
-    ],
-    [
-      "SEND",
-      "Лицензия на охоту 1 месяц {pricehunt1}$, 2 месяца {pricehunt2}$, 3 месяца {pricehunt3}$"
-    ],
-    [
-      "SEND",
-      "Лицензия на раскопки 1 месяц {priceexc1}$, 2 месяца {priceexc2}$, 3 месяца {priceexc3}$"
-    ],
-    [
-      "SEND",
-      "Лицензия на работу в такси 1 месяц {pricetaxi1}$, 2 месяца {pricetaxi2}$, 3 месяца {pricetaxi3}$"
-    ],
-    [
-      "SEND",
-      "Лицензия на работу механика 1 месяц {pricemeh1}$, 2 месяца {pricemeh2}$, 3 месяца {pricemeh3}$"
-    ],
-    [
-      "SEND",
-      "Лицензия на воздушный транспорт 1 месяц {pricefly}$"
-    ],
-    [
-      "SEND",
-      "/todo Если у вас нет вопросов, то я приступаю к оформлению*убирая лист в карман"
-    ]
+	[
+	  "SEND",
+	  "Сейчас я представлю вам прайс-лист лицензий."
+	],
+	[
+	  "SEND",
+	  "/me потянулся в карман, затем достал заламинированный лист"
+	],
+	[
+	  "SEND",
+	  "/do Прайс-Лист в руке."
+	],
+	[
+	  "SEND",
+	  "Водительские права 1 месяц {priceauto1}$, 2 месяца {priceauto2}$, 3 месяца {priceauto3}$"
+	],
+	[
+	  "SEND",
+	  "Права на мото-транспорт 1 месяц {pricemoto1}$, 2 месяца {pricemoto2}$, 3 месяца {pricemoto3}$"
+	],
+	[
+	  "SEND",
+	  "Права на водный транспорт 1 месяц {priceswim1}$, 2 месяца {priceswim2}$, 3 месяца {priceswim3}$"
+	],
+	[
+	  "SEND",
+	  "Лицензия на рыбалку 1 месяц {pricefish1}$, 2 месяца {pricefish2}$, 3 месяца {pricefish3}$"
+	],
+	[
+	  "SEND",
+	  "Лицензия на владение оружием 1 месяц {pricegun1}$, 2 месяца {pricegun2}$, 3 месяца {pricegun3}$"
+	],
+	[
+	  "SEND",
+	  "Лицензия на охоту 1 месяц {pricehunt1}$, 2 месяца {pricehunt2}$, 3 месяца {pricehunt3}$"
+	],
+	[
+	  "SEND",
+	  "Лицензия на раскопки 1 месяц {priceexc1}$, 2 месяца {priceexc2}$, 3 месяца {priceexc3}$"
+	],
+	[
+	  "SEND",
+	  "Лицензия на работу в такси 1 месяц {pricetaxi1}$, 2 месяца {pricetaxi2}$, 3 месяца {pricetaxi3}$"
+	],
+	[
+	  "SEND",
+	  "Лицензия на работу механика 1 месяц {pricemeh1}$, 2 месяца {pricemeh2}$, 3 месяца {pricemeh3}$"
+	],
+	[
+	  "SEND",
+	  "Лицензия на воздушный транспорт 1 месяц {pricefly}$"
+	],
+	[
+	  "SEND",
+	  "/todo Если у вас нет вопросов, то я приступаю к оформлению*убирая лист в карман"
+	]
   ],
   "desc": "Прайс-лист лицензий",
   "arg": {
@@ -20716,10 +23561,10 @@ local cmd_defoult_json_for_driving_school = {
   "id_element": 15,
   "cmd": "price",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -20731,342 +23576,342 @@ local cmd_defoult_json_for_driving_school = {
   "id_element": 77,
   "rank": 3,
   "act": [
-    [
-      "DIALOG",
-      "1",
-      [
-        "Служебный транспорт",
-        "Субординация",
-        "ПДД",
-        "Запреты в рацию",
-        "Основные правила"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      2],
-    [
-      "SEND",
-      "Приветствую Вас на лекции об уходе за служебным транспортом."
-    ],
-    [
-      "SEND",
-      "И сегодня я расскажу, что надо делать, чтобы наш транспорт не ломался."
-    ],
-    [
-      "SEND",
-      "Каждый сотрудник, когда берет служебный автомобиль под свое использование..."
-    ],
-    [
-      "SEND",
-      "должен следить за уровнем бензина в баке."
-    ],
-    [
-      "SEND",
-      "Если бак становится пустым, он должен заправлять авто..."
-    ],
-    [
-      "SEND",
-      "Либо же сообщить об этом водителям."
-    ],
-    [
-      "SEND",
-      "Сев за руль надо быть очень аккуратным..."
-    ],
-    [
-      "SEND",
-      "Ведь в данном случае может не только..."
-    ],
-    [
-      "SEND",
-      "Сломаться транспорт, может пострадать и сам сотрудник."
-    ],
-    [
-      "SEND",
-      "При случае повреждений автомобиля, надо отвезти его в автомастерскую."
-    ],
-    [
-      "SEND",
-      "Если выполнять эти простые правила, то с автомобилем будет все хорошо."
-    ],
-    [
-      "SEND",
-      "Спасибо за прослушивание лекции."
-    ],
-    [
-      "ELSE",
-      2],
-    [
-      "END",
-      2],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      15],
-    [
-      "SEND",
-      "Всех приветствую, сейчас я расскажу вам о субординации."
-    ],
-    [
-      "SEND",
-      "Субординация - дисциплина, система служебных отношений, связанных с подчинением одних руководителей..."
-    ],
-    [
-      "SEND",
-      "... вместе с их подразделениями, руководителям более высоких уровней."
-    ],
-    [
-      "SEND",
-      "Субординация предусматривает уважительные отношения между начальником и подчинённым."
-    ],
-    [
-      "SEND",
-      "Об исполнении поручения подчиненные обязаны докладывать в устной, письменной или ..."
-    ],
-    [
-      "SEND",
-      "... иной материальной форме, которая удовлетворит начальника."
-    ],
-    [
-      "SEND",
-      "Вы должны обращаться к сотрудникам только на «Вы»."
-    ],
-    [
-      "SEND",
-      "Вы должны уважать сотрудников вашей организации."
-    ],
-    [
-      "SEND",
-      "При оскорблении сотрудников вашей или чужой организации вы можете понести за это наказание."
-    ],
-    [
-      "SEND",
-      "Перечить старшим по должности категорически запрещено."
-    ],
-    [
-      "SEND",
-      "Лекция окончена, благодарю за внимание."
-    ],
-    [
-      "ELSE",
-      15],
-    [
-      "END",
-      15],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      33],
-    [
-      "SEND",
-      "Приветствую, уважаемые слушатели лекции о Правилах Дорожного Движения."
-    ],
-    [
-      "SEND",
-      "Сейчас я расскажу вам основные правила, которые обязан знать водитель перед..."
-    ],
-    [
-      "SEND",
-      "...и во время управления транспортным средством."
-    ],
-    [
-      "SEND",
-      "Для вождения вам необходимо иметь водительские права."
-    ],
-    [
-      "SEND",
-      "Перед использованием необходимо убедиться в исправности автомобиля."
-    ],
-    [
-      "SEND",
-      "Вы не должны находиться в алкогольном опьянении во время вождения."
-    ],
-    [
-      "SEND",
-      "Это может привести к дорожно-транспортному происшествию, в лучшем же случае..."
-    ],
-    [
-      "SEND",
-      "...вы получите штраф от офицеров полиции."
-    ],
-    [
-      "SEND",
-      "Также автомобиль должен быть застрахован на повреждения."
-    ],
-    [
-      "SEND",
-      "Оформить страховку возможно в Страховой Компании."
-    ],
-    [
-      "SEND",
-      "Если у вас плохое зрение - носите очки или линзы."
-    ],
-    [
-      "SEND",
-      "Вы обязательно должны видеть дорогу!"
-    ],
-    [
-      "SEND",
-      "Во время вождения каждый обязан соблюдать установленные правила дорожного движения."
-    ],
-    [
-      "SEND",
-      "Двигаться нужно только по правой стороне дороги."
-    ],
-    [
-      "SEND",
-      "Совершить обгон можно, только если..."
-    ],
-    [
-      "SEND",
-      "...вы едете по двухполосной дороге с прерывистой разметкой на осевой линии."
-    ],
-    [
-      "SEND",
-      "Вы должны внимательно следить за дорогой, останавливаться на светофорах и..."
-    ],
-    [
-      "SEND",
-      "...пропускать пешеходов."
-    ],
-    [
-      "SEND",
-      "Движение по обочине и тротуару строго запрещено и наказывается штрафом."
-    ],
-    [
-      "SEND",
-      "Соблюдайте эти правила! Любое нарушение может привести к несчастному случаю."
-    ],
-    [
-      "SEND",
-      "Все мы хотим вернуться домой живыми и здоровыми, поэтому будьте внимательны."
-    ],
-    [
-      "SEND",
-      "Лекция окончена, всех благодарю за уделённое внимание."
-    ],
-    [
-      "ELSE",
-      33],
-    [
-      "END",
-      33],
-    [
-      "IF",
-      2, [
-        "1",
-        "4"
-      ],
-      56],
-    [
-      "SEND",
-      "Приветствую, коллеги, сейчас я расскажу вам о правилах общения по нашей рации."
-    ],
-    [
-      "SEND",
-      "Сотрудникам запрещено кричать, создавать помехи в рацию."
-    ],
-    [
-      "SEND",
-      "Сотрудникам запрещено использовать нецензурную лексику при общении по рации."
-    ],
-    [
-      "SEND",
-      "Сотрудникам не дозволено разводить конфликты, розни и споры по рации."
-    ],
-    [
-      "SEND",
-      "Сотрудникам запрещено оскорблять коллег по работе."
-    ],
-    [
-      "SEND",
-      "Сотрудникам запрещено заниматься купле-продажей по рации организации."
-    ],
-    [
-      "SEND",
-      "Сотрудникам запрещено выключать рацию и игнорировать руководство."
-    ],
-    [
-      "SEND",
-      "ация предназначена для связи с руководством и остальными коллегами по работе."
-    ],
-    [
-      "SEND",
-      "В рацию сообщаются доклады с постов."
-    ],
-    [
-      "SEND",
-      "За нарушение этих правил вы можете получить выговор или увольнение."
-    ],
-    [
-      "SEND",
-      "Лекция окончена, спасибо за внимание."
-    ],
-    [
-      "ELSE",
-      56],
-    [
-      "END",
-      56],
-    [
-      "IF",
-      2, [
-        "1",
-        "5"
-      ],
-      68],
-    [
-      "SEND",
-      "Cейчас я проведу лекцию на тему 'Основные правила центра лицензирования'."
-    ],
-    [
-      "SEND",
-      "Сотрудникам центра лицензирования запрещено прогуливать рабочий день."
-    ],
-    [
-      "SEND",
-      "Сотрудникам центра лицензирования запрещено в рабочее время посещать мероприятия."
-    ],
-    [
-      "SEND",
-      "Сотрудникам центра лицензирования запрещено в рабочее время посещать казино."
-    ],
-    [
-      "SEND",
-      "Сотрудникам центра лицензирования запрещено в рабочее время посещать любые подработки."
-    ],
-    [
-      "SEND",
-      "Сотрудникам центра лицензирования запрещено носить при себе огнестрельное оружие."
-    ],
-    [
-      "SEND",
-      "Сотрудникам центра лицензирования запрещено курить в здании центра лицензирования."
-    ],
-    [
-      "SEND",
-      "Сотрудникам центра лицензирования запрещено употреблять алкогольные напитки в рабочее время."
-    ],
-    [
-      "SEND",
-      "На этом у меня всё, спасибо за внимание."
-    ],
-    [
-      "ELSE",
-      68],
-    [
-      "END",
-      68]
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"Служебный транспорт",
+		"Субординация",
+		"ПДД",
+		"Запреты в рацию",
+		"Основные правила"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  2],
+	[
+	  "SEND",
+	  "Приветствую Вас на лекции об уходе за служебным транспортом."
+	],
+	[
+	  "SEND",
+	  "И сегодня я расскажу, что надо делать, чтобы наш транспорт не ломался."
+	],
+	[
+	  "SEND",
+	  "Каждый сотрудник, когда берет служебный автомобиль под свое использование..."
+	],
+	[
+	  "SEND",
+	  "должен следить за уровнем бензина в баке."
+	],
+	[
+	  "SEND",
+	  "Если бак становится пустым, он должен заправлять авто..."
+	],
+	[
+	  "SEND",
+	  "Либо же сообщить об этом водителям."
+	],
+	[
+	  "SEND",
+	  "Сев за руль надо быть очень аккуратным..."
+	],
+	[
+	  "SEND",
+	  "Ведь в данном случае может не только..."
+	],
+	[
+	  "SEND",
+	  "Сломаться транспорт, может пострадать и сам сотрудник."
+	],
+	[
+	  "SEND",
+	  "При случае повреждений автомобиля, надо отвезти его в автомастерскую."
+	],
+	[
+	  "SEND",
+	  "Если выполнять эти простые правила, то с автомобилем будет все хорошо."
+	],
+	[
+	  "SEND",
+	  "Спасибо за прослушивание лекции."
+	],
+	[
+	  "ELSE",
+	  2],
+	[
+	  "END",
+	  2],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  15],
+	[
+	  "SEND",
+	  "Всех приветствую, сейчас я расскажу вам о субординации."
+	],
+	[
+	  "SEND",
+	  "Субординация - дисциплина, система служебных отношений, связанных с подчинением одних руководителей..."
+	],
+	[
+	  "SEND",
+	  "... вместе с их подразделениями, руководителям более высоких уровней."
+	],
+	[
+	  "SEND",
+	  "Субординация предусматривает уважительные отношения между начальником и подчинённым."
+	],
+	[
+	  "SEND",
+	  "Об исполнении поручения подчиненные обязаны докладывать в устной, письменной или ..."
+	],
+	[
+	  "SEND",
+	  "... иной материальной форме, которая удовлетворит начальника."
+	],
+	[
+	  "SEND",
+	  "Вы должны обращаться к сотрудникам только на «Вы»."
+	],
+	[
+	  "SEND",
+	  "Вы должны уважать сотрудников вашей организации."
+	],
+	[
+	  "SEND",
+	  "При оскорблении сотрудников вашей или чужой организации вы можете понести за это наказание."
+	],
+	[
+	  "SEND",
+	  "Перечить старшим по должности категорически запрещено."
+	],
+	[
+	  "SEND",
+	  "Лекция окончена, благодарю за внимание."
+	],
+	[
+	  "ELSE",
+	  15],
+	[
+	  "END",
+	  15],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  33],
+	[
+	  "SEND",
+	  "Приветствую, уважаемые слушатели лекции о Правилах Дорожного Движения."
+	],
+	[
+	  "SEND",
+	  "Сейчас я расскажу вам основные правила, которые обязан знать водитель перед..."
+	],
+	[
+	  "SEND",
+	  "...и во время управления транспортным средством."
+	],
+	[
+	  "SEND",
+	  "Для вождения вам необходимо иметь водительские права."
+	],
+	[
+	  "SEND",
+	  "Перед использованием необходимо убедиться в исправности автомобиля."
+	],
+	[
+	  "SEND",
+	  "Вы не должны находиться в алкогольном опьянении во время вождения."
+	],
+	[
+	  "SEND",
+	  "Это может привести к дорожно-транспортному происшествию, в лучшем же случае..."
+	],
+	[
+	  "SEND",
+	  "...вы получите штраф от офицеров полиции."
+	],
+	[
+	  "SEND",
+	  "Также автомобиль должен быть застрахован на повреждения."
+	],
+	[
+	  "SEND",
+	  "Оформить страховку возможно в Страховой Компании."
+	],
+	[
+	  "SEND",
+	  "Если у вас плохое зрение - носите очки или линзы."
+	],
+	[
+	  "SEND",
+	  "Вы обязательно должны видеть дорогу!"
+	],
+	[
+	  "SEND",
+	  "Во время вождения каждый обязан соблюдать установленные правила дорожного движения."
+	],
+	[
+	  "SEND",
+	  "Двигаться нужно только по правой стороне дороги."
+	],
+	[
+	  "SEND",
+	  "Совершить обгон можно, только если..."
+	],
+	[
+	  "SEND",
+	  "...вы едете по двухполосной дороге с прерывистой разметкой на осевой линии."
+	],
+	[
+	  "SEND",
+	  "Вы должны внимательно следить за дорогой, останавливаться на светофорах и..."
+	],
+	[
+	  "SEND",
+	  "...пропускать пешеходов."
+	],
+	[
+	  "SEND",
+	  "Движение по обочине и тротуару строго запрещено и наказывается штрафом."
+	],
+	[
+	  "SEND",
+	  "Соблюдайте эти правила! Любое нарушение может привести к несчастному случаю."
+	],
+	[
+	  "SEND",
+	  "Все мы хотим вернуться домой живыми и здоровыми, поэтому будьте внимательны."
+	],
+	[
+	  "SEND",
+	  "Лекция окончена, всех благодарю за уделённое внимание."
+	],
+	[
+	  "ELSE",
+	  33],
+	[
+	  "END",
+	  33],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"4"
+	  ],
+	  56],
+	[
+	  "SEND",
+	  "Приветствую, коллеги, сейчас я расскажу вам о правилах общения по нашей рации."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам запрещено кричать, создавать помехи в рацию."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам запрещено использовать нецензурную лексику при общении по рации."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам не дозволено разводить конфликты, розни и споры по рации."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам запрещено оскорблять коллег по работе."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам запрещено заниматься купле-продажей по рации организации."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам запрещено выключать рацию и игнорировать руководство."
+	],
+	[
+	  "SEND",
+	  "ация предназначена для связи с руководством и остальными коллегами по работе."
+	],
+	[
+	  "SEND",
+	  "В рацию сообщаются доклады с постов."
+	],
+	[
+	  "SEND",
+	  "За нарушение этих правил вы можете получить выговор или увольнение."
+	],
+	[
+	  "SEND",
+	  "Лекция окончена, спасибо за внимание."
+	],
+	[
+	  "ELSE",
+	  56],
+	[
+	  "END",
+	  56],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"5"
+	  ],
+	  68],
+	[
+	  "SEND",
+	  "Cейчас я проведу лекцию на тему 'Основные правила центра лицензирования'."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам центра лицензирования запрещено прогуливать рабочий день."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам центра лицензирования запрещено в рабочее время посещать мероприятия."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам центра лицензирования запрещено в рабочее время посещать казино."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам центра лицензирования запрещено в рабочее время посещать любые подработки."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам центра лицензирования запрещено носить при себе огнестрельное оружие."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам центра лицензирования запрещено курить в здании центра лицензирования."
+	],
+	[
+	  "SEND",
+	  "Сотрудникам центра лицензирования запрещено употреблять алкогольные напитки в рабочее время."
+	],
+	[
+	  "SEND",
+	  "На этом у меня всё, спасибо за внимание."
+	],
+	[
+	  "ELSE",
+	  68],
+	[
+	  "END",
+	  68]
   ],
   "desc": "Провести лекцию",
   "arg": {
@@ -21078,10 +23923,10 @@ local cmd_defoult_json_for_driving_school = {
   },
   "cmd": "lekcl",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -21099,10 +23944,10 @@ local cmd_defoult_json_for_government = {
   },
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "Здравствуйте, меня зовут {mynickrus}, чем могу быть полез{sex[ен][на]}?"
-    ]
+	[
+	  "SEND",
+	  "Здравствуйте, меня зовут {mynickrus}, чем могу быть полез{sex[ен][на]}?"
+	]
   ],
   "desc": "Приветствие",
   "id_element": 1,
@@ -21110,10 +23955,10 @@ local cmd_defoult_json_for_government = {
   "send_end_mes": true,
   "cmd": "z",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -21127,39 +23972,39 @@ local cmd_defoult_json_for_government = {
   "id_element": 4,
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "/do Бланк для замены информации в паспорте находится под столом."
-    ],
-    [
-      "SEND",
-      "/me засунув руку под стол, взял{sex[][а]} бланк, после чего протянул{sex[][а]} его человеку напротив"
-    ],
-    [
-      "SEND",
-      "/todo Впишите сюда новую дату и поставьте подпись снизу*протягивая лист с ручкой"
-    ],
-    [
-      "SEND",
-      "{dialoggov[0][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/do Бланк для замены информации в паспорте находится под столом."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку под стол, взял{sex[][а]} бланк, после чего протянул{sex[][а]} его человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/todo Впишите сюда новую дату и поставьте подпись снизу*протягивая лист с ручкой"
+	],
+	[
+	  "SEND",
+	  "{dialoggov[0][{arg1}]}"
+	]
   ],
   "desc": "Изменить дату рождения в паспорте",
   "send_end_mes": true,
   "delay": 2.5,
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ],
   "cmd": "pass",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "var": {
 
@@ -21175,46 +24020,46 @@ local cmd_defoult_json_for_government = {
   },
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "Стоимость услуги составляет 500.000$. Вы согласны? Если да, то мы продолжим."
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "/do Бланк для оформления визы находится под столом."
-    ],
-    [
-      "SEND",
-      "/me засунув руку под стол, взял{sex[][а]} бланк, после чего протянул{sex[][а]} его человеку напротив"
-    ],
-    [
-      "SEND",
-      "/todo Впишите сюда ваши данные и поставьте подпись снизу*протягивая лист с ручкой"
-    ],
-    [
-      "SEND",
-      "{dialoggov[1][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "Стоимость услуги составляет 500.000$. Вы согласны? Если да, то мы продолжим."
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "/do Бланк для оформления визы находится под столом."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку под стол, взял{sex[][а]} бланк, после чего протянул{sex[][а]} его человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/todo Впишите сюда ваши данные и поставьте подпись снизу*протягивая лист с ручкой"
+	],
+	[
+	  "SEND",
+	  "{dialoggov[1][{arg1}]}"
+	]
   ],
   "desc": "Оформить визу для перелётов в Vice City",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 6,
   "cmd": "visa",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -21226,39 +24071,39 @@ local cmd_defoult_json_for_government = {
   "id_element": 4,
   "rank": 5,
   "act": [
-    [
-      "SEND",
-      "/do Бланк для получения сертификата находится под столом."
-    ],
-    [
-      "SEND",
-      "/me засунув руку под стол, взял{sex[][а]} бланк, после чего протянул{sex[][а]} его человеку напротив"
-    ],
-    [
-      "SEND",
-      "/todo Впишите сюда ваши данные и поставьте подпись снизу*протягивая лист с ручкой"
-    ],
-    [
-      "SEND",
-      "{dialoggov[2][{arg1}]}"
-    ]
+	[
+	  "SEND",
+	  "/do Бланк для получения сертификата находится под столом."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку под стол, взял{sex[][а]} бланк, после чего протянул{sex[][а]} его человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/todo Впишите сюда ваши данные и поставьте подпись снизу*протягивая лист с ручкой"
+	],
+	[
+	  "SEND",
+	  "{dialoggov[2][{arg1}]}"
+	]
   ],
   "desc": "Превратить личное т/с в сертификат",
   "send_end_mes": true,
   "delay": 2.5,
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ],
   "cmd": "car",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "var": {
 
@@ -21272,35 +24117,35 @@ local cmd_defoult_json_for_government = {
   "id_element": 3,
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "/me вытащил{sex[][а]} из нагрудного кармана визитку адвоката"
-    ],
-    [
-      "SEND",
-      "/do На визитке написано: {mynickrus}, адвокат штата."
-    ],
-    [
-      "SEND",
-      "/showvisit {arg1}"
-    ]
+	[
+	  "SEND",
+	  "/me вытащил{sex[][а]} из нагрудного кармана визитку адвоката"
+	],
+	[
+	  "SEND",
+	  "/do На визитке написано: {mynickrus}, адвокат штата."
+	],
+	[
+	  "SEND",
+	  "/showvisit {arg1}"
+	]
   ],
   "desc": "Показать визитку адвоката",
   "send_end_mes": true,
   "delay": 2.5,
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ],
   "cmd": "visit",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "var": {
 
@@ -21314,26 +24159,26 @@ local cmd_defoult_json_for_government = {
   "id_element": 5,
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "/do Папка с документами находится в левой руке."
-    ],
-    [
-      "SEND",
-      "/me открыв папку, вытащил{sex[][а]} из неё бланк для освобождения заключённого"
-    ],
-    [
-      "SEND",
-      "/me достав из кармана ручку, заполнил{sex[][а]} документ и передал{sex[][а]} человеку напротив"
-    ],
-    [
-      "SEND",
-      "/todo Впишите сюда свои данные и поставьте подпись снизу*передавая лист с ручкой"
-    ],
-    [
-      "SEND",
-      "/free {arg1} {arg2}"
-    ]
+	[
+	  "SEND",
+	  "/do Папка с документами находится в левой руке."
+	],
+	[
+	  "SEND",
+	  "/me открыв папку, вытащил{sex[][а]} из неё бланк для освобождения заключённого"
+	],
+	[
+	  "SEND",
+	  "/me достав из кармана ручку, заполнил{sex[][а]} документ и передал{sex[][а]} человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/todo Впишите сюда свои данные и поставьте подпись снизу*передавая лист с ручкой"
+	],
+	[
+	  "SEND",
+	  "/free {arg1} {arg2}"
+	]
   ],
   "desc": "Предложить услуги адвоката",
   "var": {
@@ -21343,22 +24188,22 @@ local cmd_defoult_json_for_government = {
   "send_end_mes": true,
   "cmd": "freely",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    },
-    {
-      "desc": "Цена",
-      "name": "arg2",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	},
+	{
+	  "desc": "Цена",
+	  "name": "arg2",
+	  "type": 2
+	}
   ]
 }
 ]],
@@ -21369,22 +24214,22 @@ local cmd_defoult_json_for_government = {
   "id_element": 4,
   "rank": 9,
   "act": [
-    [
-      "SEND",
-      "/do Бланк для выдачи лицензии находится под столом."
-    ],
-    [
-      "SEND",
-      "/me засунув руку под стол, взял{sex[][а]} бланк, после чего заполнил{sex[][а]} его нужной информацией"
-    ],
-    [
-      "SEND",
-      "/todo Впишите сюда Ваши данные и поставьте подпись снизу*передавая бланк и ручку"
-    ],
-    [
-      "SEND",
-      "/givelicadvokat {arg1}"
-    ]
+	[
+	  "SEND",
+	  "/do Бланк для выдачи лицензии находится под столом."
+	],
+	[
+	  "SEND",
+	  "/me засунув руку под стол, взял{sex[][а]} бланк, после чего заполнил{sex[][а]} его нужной информацией"
+	],
+	[
+	  "SEND",
+	  "/todo Впишите сюда Ваши данные и поставьте подпись снизу*передавая бланк и ручку"
+	],
+	[
+	  "SEND",
+	  "/givelicadvokat {arg1}"
+	]
   ],
   "desc": "Выдать лицензию адвоката",
   "var": {
@@ -21394,17 +24239,17 @@ local cmd_defoult_json_for_government = {
   "send_end_mes": true,
   "cmd": "lic",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
   ]
 }
 ]],
@@ -21417,71 +24262,71 @@ local cmd_defoult_json_for_government = {
   },
   "rank": 6,
   "act": [
-    [
-      "SEND",
-      "Приветствую, уважаемые новобрачные и гости!"
-    ],
-    [
-      "SEND",
-      "Уважаемые невеста и жених!"
-    ],
-    [
-      "SEND",
-      "Сегодня - самое прекрасное и незабываемое событие в вашей жизни."
-    ],
-    [
-      "SEND",
-      "С этого дня вы пойдёте по жизни рука об руку, вместе переживая и радость счастливых дней, и огорчения."
-    ],
-    [
-      "SEND",
-      "Создавая семью, вы добровольно приняли на себя великий долг друг перед другом и перед будущим ваших детей."
-    ],
-    [
-      "SEND",
-      "С вашего взаимного согласия, выраженного в присутствии свидетелей, ваш брак регистрируется."
-    ],
-    [
-      "SEND",
-      "Прошу вас в знак любви и преданности друг другу обменяться обручальными кольцами."
-    ],
-    [
-      "SEND",
-      "Прошу вас в знак любви и преданности друг другу обменяться обручальными кольцами."
-    ],
-    [
-      "SEND",
-      "/wedding {arg1} {arg2}"
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "Совет вам да любовь! Можете поцеловаться!"
-    ]
+	[
+	  "SEND",
+	  "Приветствую, уважаемые новобрачные и гости!"
+	],
+	[
+	  "SEND",
+	  "Уважаемые невеста и жених!"
+	],
+	[
+	  "SEND",
+	  "Сегодня - самое прекрасное и незабываемое событие в вашей жизни."
+	],
+	[
+	  "SEND",
+	  "С этого дня вы пойдёте по жизни рука об руку, вместе переживая и радость счастливых дней, и огорчения."
+	],
+	[
+	  "SEND",
+	  "Создавая семью, вы добровольно приняли на себя великий долг друг перед другом и перед будущим ваших детей."
+	],
+	[
+	  "SEND",
+	  "С вашего взаимного согласия, выраженного в присутствии свидетелей, ваш брак регистрируется."
+	],
+	[
+	  "SEND",
+	  "Прошу вас в знак любви и преданности друг другу обменяться обручальными кольцами."
+	],
+	[
+	  "SEND",
+	  "Прошу вас в знак любви и преданности друг другу обменяться обручальными кольцами."
+	],
+	[
+	  "SEND",
+	  "/wedding {arg1} {arg2}"
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "Совет вам да любовь! Можете поцеловаться!"
+	]
   ],
   "desc": "Заключить брак",
   "arg": [
-    {
-      "desc": "id жениха",
-      "name": "arg1",
-      "type": 2
-    },
-    {
-      "desc": "id невесты",
-      "name": "arg2",
-      "type": 2
-    }
+	{
+	  "desc": "id жениха",
+	  "name": "arg1",
+	  "type": 2
+	},
+	{
+	  "desc": "id невесты",
+	  "name": "arg2",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 11,
   "cmd": "wed",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -21493,35 +24338,35 @@ local cmd_defoult_json_for_government = {
   "id_element": 4,
   "rank": 9,
   "act": [
-    [
-      "SEND",
-      "/do В левом кармане лежит телефон."
-    ],
-    [
-      "SEND",
-      "/me достал{sex[][а]} телефон из кармана, после чего {sex[зашёл][зашла]} в базу данных организации"
-    ],
-    [
-      "SEND",
-      "/me изменил{sex[][а]} информацию о сотруднике государственной структуры"
-    ],
-    [
-      "SEND",
-      "/demoute {arg1} {arg2}"
-    ]
+	[
+	  "SEND",
+	  "/do В левом кармане лежит телефон."
+	],
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} телефон из кармана, после чего {sex[зашёл][зашла]} в базу данных организации"
+	],
+	[
+	  "SEND",
+	  "/me изменил{sex[][а]} информацию о сотруднике государственной структуры"
+	],
+	[
+	  "SEND",
+	  "/demoute {arg1} {arg2}"
+	]
   ],
   "desc": "Уволить госслужащего",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "arg1",
-      "type": 2
-    },
-    {
-      "desc": "Причина увольнения",
-      "name": "arg2",
-      "type": 1
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	},
+	{
+	  "desc": "Причина увольнения",
+	  "name": "arg2",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "var": {
@@ -21529,10 +24374,10 @@ local cmd_defoult_json_for_government = {
   },
   "cmd": "uvalgos",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -21544,39 +24389,39 @@ local cmd_defoult_json_for_government = {
   "id_element": 5,
   "rank": 3,
   "act": [
-    [
-      "SEND",
-      "/me резким движением руки ухватил{sex[ся][ась]} за воротник нарушителя"
-    ],
-    [
-      "SEND",
-      "/do Крепко держит нарушителя за воротник."
-    ],
-    [
-      "SEND",
-      "/todo Я вынужден{sex[][а]} вывести вас из здания*направляясь к выходу"
-    ],
-    [
-      "SEND",
-      "/me движением левой руки открыл{sex[][а]} входную дверь, после чего вытолкнул{sex[][а]} нарушителя"
-    ],
-    [
-      "SEND",
-      "/expel {id} {reason}"
-    ]
+	[
+	  "SEND",
+	  "/me резким движением руки ухватил{sex[ся][ась]} за воротник нарушителя"
+	],
+	[
+	  "SEND",
+	  "/do Крепко держит нарушителя за воротник."
+	],
+	[
+	  "SEND",
+	  "/todo Я вынужден{sex[][а]} вывести вас из здания*направляясь к выходу"
+	],
+	[
+	  "SEND",
+	  "/me движением левой руки открыл{sex[][а]} входную дверь, после чего вытолкнул{sex[][а]} нарушителя"
+	],
+	[
+	  "SEND",
+	  "/expel {id} {reason}"
+	]
   ],
   "desc": "Выгнать из помещения",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    },
-    {
-      "desc": "Причина",
-      "name": "reason",
-      "type": 1
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	},
+	{
+	  "desc": "Причина",
+	  "name": "reason",
+	  "type": 1
+	}
   ],
   "delay": 2.5,
   "var": {
@@ -21584,10 +24429,10 @@ local cmd_defoult_json_for_government = {
   },
   "cmd": "exp",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -21601,292 +24446,292 @@ local cmd_defoult_json_for_government = {
   },
   "rank": 4,
   "act": [
-    [
-      "DIALOG",
-      "1",
-      [
-        "Отъезд по личным делам",
-        "Субординация",
-        "Знание Устава",
-        "О служебном Т/С",
-        "О применении оружия",
-        "Дресс-Код"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      2],
-    [
-      "SEND",
-      "Уважаемые сотрудники правительства, минуточку внимания."
-    ],
-    [
-      "SEND",
-      "Если вы хотите отлучится по личных делам, например покушать..."
-    ],
-    [
-      "SEND",
-      "или уехать в больницу, то нужно спросить разрешения у Старшего состава."
-    ],
-    [
-      "SEND",
-      "Также напоминаю, что рабочий транспорт брать в личных целях крайне запрещено."
-    ],
-    [
-      "SEND",
-      "За неподчинение старшим по должности, вы будете уволены."
-    ],
-    [
-      "SEND",
-      "Так-же за противозаконные действия подлежит выговор вплоть до увольнения."
-    ],
-    [
-      "SEND",
-      "Спасибо за внимание."
-    ],
-    [
-      "ELSE",
-      2],
-    [
-      "END",
-      2],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      10],
-    [
-      "SEND",
-      "Приветствую вас на лекции о субординации."
-    ],
-    [
-      "SEND",
-      "Для начала расскажу, что такое субординация."
-    ],
-    [
-      "SEND",
-      "Субординация - правила подчинения младших по званию к старшим по званию уважение, отношение к ним."
-    ],
-    [
-      "SEND",
-      "То есть младшие сотрудники должны выполнять приказы начальства."
-    ],
-    [
-      "SEND",
-      "Кто ослушается - получит выговор, сперва устный."
-    ],
-    [
-      "SEND",
-      "Вы должны с уважением относится к начальству на \"Вы\"."
-    ],
-    [
-      "SEND",
-      "Не нарушайте правила и не нарушайте субординацию дабы не получить наказание."
-    ],
-    [
-      "SEND",
-      "Спасибо за внимание, лекция окончена."
-    ],
-    [
-      "ELSE",
-      10],
-    [
-      "END",
-      10],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      19],
-    [
-      "SEND",
-      "Сейчас я проведу лекцию на тему \"Знание устава\"."
-    ],
-    [
-      "SEND",
-      "Если вы хотите отлучится по личных делам, например покушать..."
-    ],
-    [
-      "SEND",
-      "В ваши обязанности входит знание устава, иначе не знание устава не освобождает от ответственности."
-    ],
-    [
-      "SEND",
-      "В случае незнания устава вы получите выговор, а затем вовсе можете вылететь с работы."
-    ],
-    [
-      "SEND",
-      "Запомните: Не знание Устава не освобождает вас от ответственности."
-    ],
-    [
-      "ELSE",
-      19],
-    [
-      "END",
-      19],
-    [
-      "IF",
-      2, [
-        "1",
-        "4"
-      ],
-      27],
-    [
-      "SEND",
-      "Приветствую Вас на лекции об уходе за служебным транспортом."
-    ],
-    [
-      "SEND",
-      "И сегодня я расскажу, что надо делать, чтобы наш транспорт не ломался."
-    ],
-    [
-      "SEND",
-      "Каждый сотрудник, когда берет служебный автомобиль под свое использование..."
-    ],
-    [
-      "SEND",
-      "...должен следить за уровнем бензина в баке."
-    ],
-    [
-      "SEND",
-      "Если бак становится пустым, он должен заправлять авто, либо же сообщить об этом водителям."
-    ],
-    [
-      "SEND",
-      "Сев за руль надо быть очень аккуратным, ведь в данном случае может не только..."
-    ],
-    [
-      "SEND",
-      "...сломаться транспорт, может пострадать и сам сотрудник."
-    ],
-    [
-      "SEND",
-      "При случае повреждений автомобиля, надо отвезти его в автомастерскую."
-    ],
-    [
-      "SEND",
-      "Если выполнять эти простые правила, то с автомобилем будет все хорошо."
-    ],
-    [
-      "SEND",
-      "Спасибо за прослушивание лекции. Все свободны."
-    ],
-    [
-      "ELSE",
-      27],
-    [
-      "END",
-      27],
-    [
-      "IF",
-      2, [
-        "1",
-        "5"
-      ],
-      38],
-    [
-      "SEND",
-      "Приветствую вас на лекции о применении оружия."
-    ],
-    [
-      "SEND",
-      "Сегодня я расскажу о правилах использования табельного оружия."
-    ],
-    [
-      "SEND",
-      "Начну с того, что табельное оружие - это желательная часть экипировки сотрудника охраны."
-    ],
-    [
-      "SEND",
-      "Надо запомнить, что с табельным оружием надо обращаться с огромной осторожностью."
-    ],
-    [
-      "SEND",
-      "Использовать его, если вам, вашему, коллеге или же гражданину штата угрожает опасность."
-    ],
-    [
-      "SEND",
-      "Надо стараться не использовать оружие в людных местах если даже есть крайняя нужда."
-    ],
-    [
-      "SEND",
-      "Ведь из-за это могут пострадать невинные люди."
-    ],
-    [
-      "SEND",
-      "Важно то, что правильное использование оружия может спасти кому-то жизнь."
-    ],
-    [
-      "SEND",
-      "Поэтому табельное оружие всегда должно быть исправно."
-    ],
-    [
-      "SEND",
-      "Если оружие повредилось, надо заменить его."
-    ],
-    [
-      "SEND",
-      "Надеюсь, вы все усвоили, спасибо за прослушивание лекции."
-    ],
-    [
-      "ELSE",
-      38],
-    [
-      "END",
-      38],
-    [
-      "IF",
-      2, [
-        "1",
-        "6"
-      ],
-      50],
-    [
-      "SEND",
-      "Доброго времени суток, уважаемые сотрудники."
-    ],
-    [
-      "SEND",
-      "Сегодня я проведу для вас лекцию на тему \"Дресс-Код\"."
-    ],
-    [
-      "SEND",
-      "Дресс-код - это ваша рабочая форма ,требуемая уставом Правительства для ношения..."
-    ],
-    [
-      "SEND",
-      "...во время исполнения ваших служебных обязанностей. Помните, что запрещено..."
-    ],
-    [
-      "SEND",
-      "...исполнение службы не находясь в рабочей форме."
-    ],
-    [
-      "SEND",
-      "Каждый сотрудник должен опрятно выглядеть."
-    ],
-    [
-      "SEND",
-      "Если сотрудник будет носить запрещенные аксессуары, то ему будет устное предупреждение.После - выговор!"
-    ],
-    [
-      "SEND",
-      "На этом лекция окончена."
-    ],
-    [
-      "ELSE",
-      50],
-    [
-      "END",
-      50]
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"Отъезд по личным делам",
+		"Субординация",
+		"Знание Устава",
+		"О служебном Т/С",
+		"О применении оружия",
+		"Дресс-Код"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  2],
+	[
+	  "SEND",
+	  "Уважаемые сотрудники правительства, минуточку внимания."
+	],
+	[
+	  "SEND",
+	  "Если вы хотите отлучится по личных делам, например покушать..."
+	],
+	[
+	  "SEND",
+	  "или уехать в больницу, то нужно спросить разрешения у Старшего состава."
+	],
+	[
+	  "SEND",
+	  "Также напоминаю, что рабочий транспорт брать в личных целях крайне запрещено."
+	],
+	[
+	  "SEND",
+	  "За неподчинение старшим по должности, вы будете уволены."
+	],
+	[
+	  "SEND",
+	  "Так-же за противозаконные действия подлежит выговор вплоть до увольнения."
+	],
+	[
+	  "SEND",
+	  "Спасибо за внимание."
+	],
+	[
+	  "ELSE",
+	  2],
+	[
+	  "END",
+	  2],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  10],
+	[
+	  "SEND",
+	  "Приветствую вас на лекции о субординации."
+	],
+	[
+	  "SEND",
+	  "Для начала расскажу, что такое субординация."
+	],
+	[
+	  "SEND",
+	  "Субординация - правила подчинения младших по званию к старшим по званию уважение, отношение к ним."
+	],
+	[
+	  "SEND",
+	  "То есть младшие сотрудники должны выполнять приказы начальства."
+	],
+	[
+	  "SEND",
+	  "Кто ослушается - получит выговор, сперва устный."
+	],
+	[
+	  "SEND",
+	  "Вы должны с уважением относится к начальству на \"Вы\"."
+	],
+	[
+	  "SEND",
+	  "Не нарушайте правила и не нарушайте субординацию дабы не получить наказание."
+	],
+	[
+	  "SEND",
+	  "Спасибо за внимание, лекция окончена."
+	],
+	[
+	  "ELSE",
+	  10],
+	[
+	  "END",
+	  10],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  19],
+	[
+	  "SEND",
+	  "Сейчас я проведу лекцию на тему \"Знание устава\"."
+	],
+	[
+	  "SEND",
+	  "Если вы хотите отлучится по личных делам, например покушать..."
+	],
+	[
+	  "SEND",
+	  "В ваши обязанности входит знание устава, иначе не знание устава не освобождает от ответственности."
+	],
+	[
+	  "SEND",
+	  "В случае незнания устава вы получите выговор, а затем вовсе можете вылететь с работы."
+	],
+	[
+	  "SEND",
+	  "Запомните: Не знание Устава не освобождает вас от ответственности."
+	],
+	[
+	  "ELSE",
+	  19],
+	[
+	  "END",
+	  19],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"4"
+	  ],
+	  27],
+	[
+	  "SEND",
+	  "Приветствую Вас на лекции об уходе за служебным транспортом."
+	],
+	[
+	  "SEND",
+	  "И сегодня я расскажу, что надо делать, чтобы наш транспорт не ломался."
+	],
+	[
+	  "SEND",
+	  "Каждый сотрудник, когда берет служебный автомобиль под свое использование..."
+	],
+	[
+	  "SEND",
+	  "...должен следить за уровнем бензина в баке."
+	],
+	[
+	  "SEND",
+	  "Если бак становится пустым, он должен заправлять авто, либо же сообщить об этом водителям."
+	],
+	[
+	  "SEND",
+	  "Сев за руль надо быть очень аккуратным, ведь в данном случае может не только..."
+	],
+	[
+	  "SEND",
+	  "...сломаться транспорт, может пострадать и сам сотрудник."
+	],
+	[
+	  "SEND",
+	  "При случае повреждений автомобиля, надо отвезти его в автомастерскую."
+	],
+	[
+	  "SEND",
+	  "Если выполнять эти простые правила, то с автомобилем будет все хорошо."
+	],
+	[
+	  "SEND",
+	  "Спасибо за прослушивание лекции. Все свободны."
+	],
+	[
+	  "ELSE",
+	  27],
+	[
+	  "END",
+	  27],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"5"
+	  ],
+	  38],
+	[
+	  "SEND",
+	  "Приветствую вас на лекции о применении оружия."
+	],
+	[
+	  "SEND",
+	  "Сегодня я расскажу о правилах использования табельного оружия."
+	],
+	[
+	  "SEND",
+	  "Начну с того, что табельное оружие - это желательная часть экипировки сотрудника охраны."
+	],
+	[
+	  "SEND",
+	  "Надо запомнить, что с табельным оружием надо обращаться с огромной осторожностью."
+	],
+	[
+	  "SEND",
+	  "Использовать его, если вам, вашему, коллеге или же гражданину штата угрожает опасность."
+	],
+	[
+	  "SEND",
+	  "Надо стараться не использовать оружие в людных местах если даже есть крайняя нужда."
+	],
+	[
+	  "SEND",
+	  "Ведь из-за это могут пострадать невинные люди."
+	],
+	[
+	  "SEND",
+	  "Важно то, что правильное использование оружия может спасти кому-то жизнь."
+	],
+	[
+	  "SEND",
+	  "Поэтому табельное оружие всегда должно быть исправно."
+	],
+	[
+	  "SEND",
+	  "Если оружие повредилось, надо заменить его."
+	],
+	[
+	  "SEND",
+	  "Надеюсь, вы все усвоили, спасибо за прослушивание лекции."
+	],
+	[
+	  "ELSE",
+	  38],
+	[
+	  "END",
+	  38],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"6"
+	  ],
+	  50],
+	[
+	  "SEND",
+	  "Доброго времени суток, уважаемые сотрудники."
+	],
+	[
+	  "SEND",
+	  "Сегодня я проведу для вас лекцию на тему \"Дресс-Код\"."
+	],
+	[
+	  "SEND",
+	  "Дресс-код - это ваша рабочая форма ,требуемая уставом Правительства для ношения..."
+	],
+	[
+	  "SEND",
+	  "...во время исполнения ваших служебных обязанностей. Помните, что запрещено..."
+	],
+	[
+	  "SEND",
+	  "...исполнение службы не находясь в рабочей форме."
+	],
+	[
+	  "SEND",
+	  "Каждый сотрудник должен опрятно выглядеть."
+	],
+	[
+	  "SEND",
+	  "Если сотрудник будет носить запрещенные аксессуары, то ему будет устное предупреждение.После - выговор!"
+	],
+	[
+	  "SEND",
+	  "На этом лекция окончена."
+	],
+	[
+	  "ELSE",
+	  50],
+	[
+	  "END",
+	  50]
   ],
   "desc": "Провести лекцию",
   "id_element": 58,
@@ -21894,10 +24739,10 @@ local cmd_defoult_json_for_government = {
   "send_end_mes": true,
   "cmd": "lekgov",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -21917,62 +24762,62 @@ local cmd_defoult_json_for_army = {
   },
   "rank": 5,
   "act": [
-    [
-      "SEND",
-      "Здравствуйте, я {myrank} {mynickrus}."
-    ],
-    [
-      "SEND",
-      "Покажите пожалуйста Ваш паспорт."
-    ],
-    [
-      "WAIT_ENTER"
-    ],
-    [
-      "SEND",
-      "/me взял{sex[][а]} документ с рук человека напротив, внимательно его изучил{sex[][а]}, после чего вернул{sex[][а]} обратно"
-    ],
-    [
-      "SEND",
-      "/do В папке с документами лежит пустой бланк с надписью \"Повестка\"."
-    ],
-    [
-      "SEND",
-      "/me взял{sex[][а]} в руку бланк с ручкой и движением руки начал{sex[][а]} заполнять бланк"
-    ],
-    [
-      "SEND",
-      "/do Готовый бланк в руке."
-    ],
-    [
-      "SEND",
-      "/me убрал{sex[][а]} ручку в карман, поставил{sex[][а]} свою подпись на бланк"
-    ],
-    [
-      "SEND",
-      "/todo Так-с, это вам. Ждем вас в военкомате!*протягивая бланк человеку напротив"
-    ],
-    [
-      "SEND",
-      "/agenda {id}"
-    ]
+	[
+	  "SEND",
+	  "Здравствуйте, я {myrank} {mynickrus}."
+	],
+	[
+	  "SEND",
+	  "Покажите пожалуйста Ваш паспорт."
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "/me взял{sex[][а]} документ с рук человека напротив, внимательно его изучил{sex[][а]}, после чего вернул{sex[][а]} обратно"
+	],
+	[
+	  "SEND",
+	  "/do В папке с документами лежит пустой бланк с надписью \"Повестка\"."
+	],
+	[
+	  "SEND",
+	  "/me взял{sex[][а]} в руку бланк с ручкой и движением руки начал{sex[][а]} заполнять бланк"
+	],
+	[
+	  "SEND",
+	  "/do Готовый бланк в руке."
+	],
+	[
+	  "SEND",
+	  "/me убрал{sex[][а]} ручку в карман, поставил{sex[][а]} свою подпись на бланк"
+	],
+	[
+	  "SEND",
+	  "/todo Так-с, это вам. Ждем вас в военкомате!*протягивая бланк человеку напротив"
+	],
+	[
+	  "SEND",
+	  "/agenda {id}"
+	]
   ],
   "desc": "Выдать повестку",
   "arg": [
-    {
-      "desc": "id игрока",
-      "name": "id",
-      "type": 2
-    }
+	{
+	  "desc": "id игрока",
+	  "name": "id",
+	  "type": 2
+	}
   ],
   "delay": 2.5,
   "id_element": 10,
   "cmd": "agenda",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -21984,318 +24829,318 @@ local cmd_defoult_json_for_army = {
   "id_element": 69,
   "rank": 4,
   "act": [
-    [
-      "DIALOG",
-      "1",
-      [
-        "Субординация",
-        "Построение",
-        "Строевая подготовка",
-        "Поведение на КПП",
-        "Правила на тренировке"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      2],
-    [
-      "SEND",
-      "/s Здравия желаю, уважаемые бойцы!"
-    ],
-    [
-      "SEND",
-      "Сейчас я зачитаю Вам лекцию на тему \"Субординация\""
-    ],
-    [
-      "SEND",
-      "Запомните одно. Каждый военнослужащий должен..."
-    ],
-    [
-      "SEND",
-      "...выполнять и исполнять приказы старших по званию"
-    ],
-    [
-      "SEND",
-      "За невыполнение приказа, который не противоречит законам и уставу..."
-    ],
-    [
-      "SEND",
-      "Военнослужащий получает выговор."
-    ],
-    [
-      "SEND",
-      "Обращаться военнослужащие друг к другу должны следующим образом:"
-    ],
-    [
-      "SEND",
-      "Звание и Фамилия к кому обращаетесь или же уважаемый звание..."
-    ],
-    [
-      "SEND",
-      "...того, к кому обращаетесь."
-    ],
-    [
-      "SEND",
-      "Ну, а на этом лекция на тему \"Субординация\" окончена."
-    ],
-    [
-      "ELSE",
-      2],
-    [
-      "END",
-      2],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      13],
-    [
-      "SEND",
-      "/s Сейчас я зачитаю вам лекцию на тему \"Построение\""
-    ],
-    [
-      "SEND",
-      "Когда объявили всеобщее построение вы обязаны бросить все свои дела и явиться в строй."
-    ],
-    [
-      "SEND",
-      "При опоздании извинится со словами \"Виноват, разрешите встать в строй”\"..."
-    ],
-    [
-      "SEND",
-      "...и встать в конец строя."
-    ],
-    [
-      "SEND",
-      "В строю запрещено: спать, разговаривать, использовать рацию"
-    ],
-    [
-      "SEND",
-      "Выражать эмоции, стрелять и покидать строй без разрешения"
-    ],
-    [
-      "SEND",
-      "Во время строя бойцы, офицеры должны выполнять все приказы, которые им отдаёт командир"
-    ],
-    [
-      "SEND",
-      "Если вы заметили нарушителя во время пребывания в строю, огонь без приказа не открывать"
-    ],
-    [
-      "SEND",
-      "Лекция на тему \"Построение\" окончена. Спасибо за внимание"
-    ],
-    [
-      "ELSE",
-      13],
-    [
-      "END",
-      13],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      24],
-    [
-      "SEND",
-      "/s Здравия желаю, уважаемые бойцы!"
-    ],
-    [
-      "SEND",
-      "Сейчас я вам проведу лекцию на тему \"Строевая подготовка\""
-    ],
-    [
-      "SEND",
-      "Для начала все бойцы должны построиться в ровную шеренгу"
-    ],
-    [
-      "SEND",
-      "Самая первая команда: \"Равняйсь!\""
-    ],
-    [
-      "SEND",
-      "После такой команды все, кроме первого, должны повернуть голову на направляющего"
-    ],
-    [
-      "SEND",
-      "Следующая команда: \"Смирно!\""
-    ],
-    [
-      "SEND",
-      "Вы поворачиваете голову в исходное положение и неподвижно стоите"
-    ],
-    [
-      "SEND",
-      "Команда \"Вольно!\" дает возможность задать вопросы командиру"
-    ],
-    [
-      "SEND",
-      "После этого командир на усмотрение произносит такие команды, как:"
-    ],
-    [
-      "SEND",
-      "\"Налево!\", \"Направо!\", \"Кругом!\", \"Шагом марш!\", и тому прочее"
-    ],
-    [
-      "SEND",
-      "Самое главное - это слушать приказы командира"
-    ],
-    [
-      "SEND",
-      "Лекция на тему \"Строевая подготовка\" окончена!"
-    ],
-    [
-      "ELSE",
-      24],
-    [
-      "END",
-      24],
-    [
-      "IF",
-      2, [
-        "1",
-        "4"
-      ],
-      38],
-    [
-      "SEND",
-      "/s Здравия желаю, уважаемые бойцы!"
-    ],
-    [
-      "SEND",
-      "Сейчас я проведу лекцию на тему \"Поведение и общение с гражданскими на КПП\""
-    ],
-    [
-      "SEND",
-      "Сейчас я расскажу вам как вести себя на посту КПП с гражданскими"
-    ],
-    [
-      "SEND",
-      "Сначала нужно поприветствовать и спросить цель прибытия у гостя"
-    ],
-    [
-      "SEND",
-      "При этом вы должны убрать оружие, не нужно пугать или проявлять агрессию"
-    ],
-    [
-      "SEND",
-      "Выполняйте все просьбы гражданина, если они не противоречат уставу МО"
-    ],
-    [
-      "SEND",
-      "Старайтесь избежать конфликтов, если таковые могут возникнуть"
-    ],
-    [
-      "SEND",
-      "Но если все-таки гражданин начал хамить, кричать и драться, то:"
-    ],
-    [
-      "SEND",
-      "Просите гостя отъехать или отойти на 30 метров от КПП"
-    ],
-    [
-      "SEND",
-      "В случае неповиновения разрешено применить силу, досчитав до десяти"
-    ],
-    [
-      "SEND",
-      "Не нужно начинать диалог с гражданами, находящимся дальше 20 метров от КПП"
-    ],
-    [
-      "SEND",
-      "Запрещено стрелять, кричать и бить людей без причины"
-    ],
-    [
-      "SEND",
-      "За это вы можете получить выговор, или даже вас уволят"
-    ],
-    [
-      "SEND",
-      "Надеюсь все поняли главные принципы общения на КПП"
-    ],
-    [
-      "SEND",
-      "Лекция на тему \"Поведение и общение с гражданскими на КПП\" окончена!"
-    ],
-    [
-      "ELSE",
-      38],
-    [
-      "END",
-      38],
-    [
-      "IF",
-      2, [
-        "1",
-        "5"
-      ],
-      54],
-    [
-      "SEND",
-      "Уважаемые военнослужащие, сейчас я проведу вам лекцию на тему..."
-    ],
-    [
-      "SEND",
-      "...\"Правила поведения на тренировке\"."
-    ],
-    [
-      "SEND",
-      "С самого начала я расскажу, что такое тренировка."
-    ],
-    [
-      "SEND",
-      "Тренировка - это осмысленная физическая деятельность, направленная на развитие..."
-    ],
-    [
-      "SEND",
-      "...силы - выносливости, ловкости, техничности и так далее."
-    ],
-    [
-      "SEND",
-      "Правила поведение на тренировке..."
-    ],
-    [
-      "SEND",
-      "Первое - слушаться старших по званию."
-    ],
-    [
-      "SEND",
-      "Второе - доставать оружие только по приказу."
-    ],
-    [
-      "SEND",
-      "Третье - не покидать место сбора. Исключение: По приказу."
-    ],
-    [
-      "SEND",
-      "Четвертое - в строю молчать, слушать, что говорят ваши коллеги ..."
-    ],
-    [
-      "SEND",
-      "...разговорами вы отвлекаете и сбиваете с мысли проводящего."
-    ],
-    [
-      "SEND",
-      "Пятое - слушаться только офицеров."
-    ],
-    [
-      "SEND",
-      "Лекция на тему \"Правила поведения на тренировке\" окончена. "
-    ],
-    [
-      "ELSE",
-      54],
-    [
-      "END",
-      54]
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"Субординация",
+		"Построение",
+		"Строевая подготовка",
+		"Поведение на КПП",
+		"Правила на тренировке"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  2],
+	[
+	  "SEND",
+	  "/s Здравия желаю, уважаемые бойцы!"
+	],
+	[
+	  "SEND",
+	  "Сейчас я зачитаю Вам лекцию на тему \"Субординация\""
+	],
+	[
+	  "SEND",
+	  "Запомните одно. Каждый военнослужащий должен..."
+	],
+	[
+	  "SEND",
+	  "...выполнять и исполнять приказы старших по званию"
+	],
+	[
+	  "SEND",
+	  "За невыполнение приказа, который не противоречит законам и уставу..."
+	],
+	[
+	  "SEND",
+	  "Военнослужащий получает выговор."
+	],
+	[
+	  "SEND",
+	  "Обращаться военнослужащие друг к другу должны следующим образом:"
+	],
+	[
+	  "SEND",
+	  "Звание и Фамилия к кому обращаетесь или же уважаемый звание..."
+	],
+	[
+	  "SEND",
+	  "...того, к кому обращаетесь."
+	],
+	[
+	  "SEND",
+	  "Ну, а на этом лекция на тему \"Субординация\" окончена."
+	],
+	[
+	  "ELSE",
+	  2],
+	[
+	  "END",
+	  2],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  13],
+	[
+	  "SEND",
+	  "/s Сейчас я зачитаю вам лекцию на тему \"Построение\""
+	],
+	[
+	  "SEND",
+	  "Когда объявили всеобщее построение вы обязаны бросить все свои дела и явиться в строй."
+	],
+	[
+	  "SEND",
+	  "При опоздании извинится со словами \"Виноват, разрешите встать в строй”\"..."
+	],
+	[
+	  "SEND",
+	  "...и встать в конец строя."
+	],
+	[
+	  "SEND",
+	  "В строю запрещено: спать, разговаривать, использовать рацию"
+	],
+	[
+	  "SEND",
+	  "Выражать эмоции, стрелять и покидать строй без разрешения"
+	],
+	[
+	  "SEND",
+	  "Во время строя бойцы, офицеры должны выполнять все приказы, которые им отдаёт командир"
+	],
+	[
+	  "SEND",
+	  "Если вы заметили нарушителя во время пребывания в строю, огонь без приказа не открывать"
+	],
+	[
+	  "SEND",
+	  "Лекция на тему \"Построение\" окончена. Спасибо за внимание"
+	],
+	[
+	  "ELSE",
+	  13],
+	[
+	  "END",
+	  13],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  24],
+	[
+	  "SEND",
+	  "/s Здравия желаю, уважаемые бойцы!"
+	],
+	[
+	  "SEND",
+	  "Сейчас я вам проведу лекцию на тему \"Строевая подготовка\""
+	],
+	[
+	  "SEND",
+	  "Для начала все бойцы должны построиться в ровную шеренгу"
+	],
+	[
+	  "SEND",
+	  "Самая первая команда: \"Равняйсь!\""
+	],
+	[
+	  "SEND",
+	  "После такой команды все, кроме первого, должны повернуть голову на направляющего"
+	],
+	[
+	  "SEND",
+	  "Следующая команда: \"Смирно!\""
+	],
+	[
+	  "SEND",
+	  "Вы поворачиваете голову в исходное положение и неподвижно стоите"
+	],
+	[
+	  "SEND",
+	  "Команда \"Вольно!\" дает возможность задать вопросы командиру"
+	],
+	[
+	  "SEND",
+	  "После этого командир на усмотрение произносит такие команды, как:"
+	],
+	[
+	  "SEND",
+	  "\"Налево!\", \"Направо!\", \"Кругом!\", \"Шагом марш!\", и тому прочее"
+	],
+	[
+	  "SEND",
+	  "Самое главное - это слушать приказы командира"
+	],
+	[
+	  "SEND",
+	  "Лекция на тему \"Строевая подготовка\" окончена!"
+	],
+	[
+	  "ELSE",
+	  24],
+	[
+	  "END",
+	  24],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"4"
+	  ],
+	  38],
+	[
+	  "SEND",
+	  "/s Здравия желаю, уважаемые бойцы!"
+	],
+	[
+	  "SEND",
+	  "Сейчас я проведу лекцию на тему \"Поведение и общение с гражданскими на КПП\""
+	],
+	[
+	  "SEND",
+	  "Сейчас я расскажу вам как вести себя на посту КПП с гражданскими"
+	],
+	[
+	  "SEND",
+	  "Сначала нужно поприветствовать и спросить цель прибытия у гостя"
+	],
+	[
+	  "SEND",
+	  "При этом вы должны убрать оружие, не нужно пугать или проявлять агрессию"
+	],
+	[
+	  "SEND",
+	  "Выполняйте все просьбы гражданина, если они не противоречат уставу МО"
+	],
+	[
+	  "SEND",
+	  "Старайтесь избежать конфликтов, если таковые могут возникнуть"
+	],
+	[
+	  "SEND",
+	  "Но если все-таки гражданин начал хамить, кричать и драться, то:"
+	],
+	[
+	  "SEND",
+	  "Просите гостя отъехать или отойти на 30 метров от КПП"
+	],
+	[
+	  "SEND",
+	  "В случае неповиновения разрешено применить силу, досчитав до десяти"
+	],
+	[
+	  "SEND",
+	  "Не нужно начинать диалог с гражданами, находящимся дальше 20 метров от КПП"
+	],
+	[
+	  "SEND",
+	  "Запрещено стрелять, кричать и бить людей без причины"
+	],
+	[
+	  "SEND",
+	  "За это вы можете получить выговор, или даже вас уволят"
+	],
+	[
+	  "SEND",
+	  "Надеюсь все поняли главные принципы общения на КПП"
+	],
+	[
+	  "SEND",
+	  "Лекция на тему \"Поведение и общение с гражданскими на КПП\" окончена!"
+	],
+	[
+	  "ELSE",
+	  38],
+	[
+	  "END",
+	  38],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"5"
+	  ],
+	  54],
+	[
+	  "SEND",
+	  "Уважаемые военнослужащие, сейчас я проведу вам лекцию на тему..."
+	],
+	[
+	  "SEND",
+	  "...\"Правила поведения на тренировке\"."
+	],
+	[
+	  "SEND",
+	  "С самого начала я расскажу, что такое тренировка."
+	],
+	[
+	  "SEND",
+	  "Тренировка - это осмысленная физическая деятельность, направленная на развитие..."
+	],
+	[
+	  "SEND",
+	  "...силы - выносливости, ловкости, техничности и так далее."
+	],
+	[
+	  "SEND",
+	  "Правила поведение на тренировке..."
+	],
+	[
+	  "SEND",
+	  "Первое - слушаться старших по званию."
+	],
+	[
+	  "SEND",
+	  "Второе - доставать оружие только по приказу."
+	],
+	[
+	  "SEND",
+	  "Третье - не покидать место сбора. Исключение: По приказу."
+	],
+	[
+	  "SEND",
+	  "Четвертое - в строю молчать, слушать, что говорят ваши коллеги ..."
+	],
+	[
+	  "SEND",
+	  "...разговорами вы отвлекаете и сбиваете с мысли проводящего."
+	],
+	[
+	  "SEND",
+	  "Пятое - слушаться только офицеров."
+	],
+	[
+	  "SEND",
+	  "Лекция на тему \"Правила поведения на тренировке\" окончена. "
+	],
+	[
+	  "ELSE",
+	  54],
+	[
+	  "END",
+	  54]
   ],
   "desc": "Провести лекцию",
   "var": {
@@ -22305,10 +25150,10 @@ local cmd_defoult_json_for_army = {
   "send_end_mes": true,
   "cmd": "lekarmy",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -22328,10 +25173,10 @@ local cmd_defoult_json_for_fire_department = {
   },
   "rank": 1,
   "act": [
-    [
-      "SEND",
-      "Здравствуйте, меня зовут {mynickrus}, чем могу быть полез{sex[ен][на]}?"
-    ]
+	[
+	  "SEND",
+	  "Здравствуйте, меня зовут {mynickrus}, чем могу быть полез{sex[ен][на]}?"
+	]
   ],
   "desc": "Приветствие",
   "id_element": 1,
@@ -22339,10 +25184,10 @@ local cmd_defoult_json_for_fire_department = {
   "send_end_mes": true,
   "cmd": "z",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -22355,346 +25200,346 @@ local cmd_defoult_json_for_fire_department = {
   "id_element": 72,
   "rank": 3,
   "act": [
-    [
-      "DIALOG",
-      "1",
-      [
-        "Огнетушители",
-        "Сигнализация",
-        "Субординация",
-        "Правила рации",
-        "Искуственное дыхание"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      2],
-    [
-      "SEND",
-      "Доброго времени суток, уважаемые коллеги."
-    ],
-    [
-      "SEND",
-      "Сейчас я проведу вам лекцию на тему \"Правила пользования огнетушителем\"."
-    ],
-    [
-      "SEND",
-      "Огнетушители бывают нескольких видов: Углекислотные, Пенные, Порошковые, Водные."
-    ],
-    [
-      "SEND",
-      "Углекислотные огнетушители применяются для тушения возгораний различных веществ и материалов."
-    ],
-    [
-      "SEND",
-      "Пенные огнетушители предназначены для тушения пожаров твёрдых, жидких горючих веществ..."
-    ],
-    [
-      "SEND",
-      "...в общественных зданиях и производственных объектах."
-    ],
-    [
-      "SEND",
-      "Порошковые огнетушители предназначены практически для всех классов пожаров."
-    ],
-    [
-      "SEND",
-      "Водные огнетушители предназначены для уменьшения распространения очага возгорания..."
-    ],
-    [
-      "SEND",
-      "...постепенно ограничивая площадь самого возгорания."
-    ],
-    [
-      "SEND",
-      "Для того, чтобы начать использование огнетушителя вам необходимо:"
-    ],
-    [
-      "SEND",
-      "Сорвать пломбу на огнетушителе, имеющуюся на запорно-пусковом устройстве."
-    ],
-    [
-      "SEND",
-      "Выдернуть чеку."
-    ],
-    [
-      "SEND",
-      "Направить насадку шланга на очаг возгорания."
-    ],
-    [
-      "SEND",
-      "Нажать рычаг на огнетушителе."
-    ],
-    [
-      "SEND",
-      "Подождать 3-5 с для приведения огнетушителя в готовность."
-    ],
-    [
-      "SEND",
-      "При выходе огнетушащего вещества потушить возгорание."
-    ],
-    [
-      "SEND",
-      "На этом наша лекция подошла к концу, всем спасибо за внимание."
-    ],
-    [
-      "ELSE",
-      2],
-    [
-      "END",
-      2],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      20],
-    [
-      "SEND",
-      "Доброго времени суток, уважаемые коллеги."
-    ],
-    [
-      "SEND",
-      "Сейчас я проведу вам лекцию на тему \"Охранно-Пожарная сигнализация."
-    ],
-    [
-      "SEND",
-      "ОПС - это комплексная система безопасности, призванная предотвращать нежелательные события..."
-    ],
-    [
-      "SEND",
-      "...будь то взлом, пожар или другое чрезвычайное происшествие."
-    ],
-    [
-      "SEND",
-      "Она состоит из следующих элементов."
-    ],
-    [
-      "SEND",
-      "Датчики: обнаруживают потенциальные угрозы..."
-    ],
-    [
-      "SEND",
-      "...(движение, открытие дверей, повышение температуры, частицы дыма)."
-    ],
-    [
-      "SEND",
-      "Приемно-контрольная панель: обрабатывает сигналы от датчиков, формирует сигналы тревоги..."
-    ],
-    [
-      "SEND",
-      "...управляет сиренами и другими системами безопасности."
-    ],
-    [
-      "SEND",
-      "Сирены: издают звуковой сигнал, предупреждая о чрезвычайной ситуации."
-    ],
-    [
-      "SEND",
-      " Пульт централизованного наблюдения: при подключении... "
-    ],
-    [
-      "SEND",
-      " специалистам, которые могут..."
-    ],
-    [
-      "SEND",
-      "...оперативно реагировать на ситуацию."
-    ],
-    [
-      "SEND",
-      "ОПС - это эффективный инструмент безопасности, который помогает предотвратить..."
-    ],
-    [
-      "SEND",
-      "...нежелательные события и обеспечить спокойствие и безопасность для вас и вашего имущества."
-    ],
-    [
-      "SEND",
-      "На этом наша лекция подошла к концу, всем спасибо за внимание."
-    ],
-    [
-      "ELSE",
-      20],
-    [
-      "END",
-      20],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      37],
-    [
-      "SEND",
-      "Здравствуйте уважаемые коллеги, сегодня я вам проведу лекцию на тему субординация."
-    ],
-    [
-      "SEND",
-      "Я расскажу информативную лекцию на тему: Поведение в Строю."
-    ],
-    [
-      "SEND",
-      "Во-первых, Пожарному запрещено не появляться на построении без уважительной причины."
-    ],
-    [
-      "SEND",
-      "Во-вторых, Пожарным запрещено держать огнестрельное оружие в открытом виде."
-    ],
-    [
-      "SEND",
-      "В-третьих, Пожарным запрещено разговаривать, шептать, двигаться без какого-либо ведома"
-    ],
-    [
-      "SEND",
-      "В-четвертых, Пожарным запрещено курить, крутить головой, разговаривать по телефонному аппарату."
-    ],
-    [
-      "SEND",
-      "За вышеперечисленные манипуляции Вы получаете наказание в личное дело."
-    ],
-    [
-      "SEND",
-      "На этом наша лекция подошла к концу, всем спасибо за внимание."
-    ],
-    [
-      "ELSE",
-      37],
-    [
-      "END",
-      37],
-    [
-      "IF",
-      2, [
-        "1",
-        "4"
-      ],
-      46],
-    [
-      "SEND",
-      "Здравствуйте уважаемые коллеги, сегодня я вам проведу лекцию на тему..."
-    ],
-    [
-      "SEND",
-      "...правила использования рации."
-    ],
-    [
-      "SEND",
-      "Есть два вида раций: рация департамента и обычная рация."
-    ],
-    [
-      "SEND",
-      "Обычная рация нужна для связи со своими сотрудниками."
-    ],
-    [
-      "SEND",
-      "Разрешено: уведомлять о патрулировании территории, информировании..."
-    ],
-    [
-      "SEND",
-      "...сослуживцев о важной информации."
-    ],
-    [
-      "SEND",
-      "Просить о проверке проверить заявление на увольнение."
-    ],
-    [
-      "SEND",
-      "Запрещено: оскорблять своих коллег, принижать их честь и достоинство."
-    ],
-    [
-      "SEND",
-      "Повторять одну и ту же фразу более двух раз."
-    ],
-    [
-      "SEND",
-      "Обязательно соблюдение субординации, уважительное отношение к своим коллегам."
-    ],
-    [
-      "SEND",
-      "Рация департамента нужна для связи с другими государственными структурами."
-    ],
-    [
-      "SEND",
-      "На этом наша лекция подошла к концу, всем спасибо за внимание."
-    ],
-    [
-      "ELSE",
-      46],
-    [
-      "END",
-      46],
-    [
-      "IF",
-      2, [
-        "1",
-        "5"
-      ],
-      59],
-    [
-      "SEND",
-      "Доброго времени суток. Сейчас мы проведем лекцию на тему \"Искуственное дыхание легких\"."
-    ],
-    [
-      "SEND",
-      "Искусственное дыхание - неотложная мера при отсутствии..."
-    ],
-    [
-      "SEND",
-      "...самостоятельного дыхания и сердцебиения."
-    ],
-    [
-      "SEND",
-      "При выявление признаков у пострадавшего, у вас есть 5 минут на реамационные дейсвтвия."
-    ],
-    [
-      "SEND",
-      "Для начала Вам нужно уложить пострадавшего на жесткую плоскость."
-    ],
-    [
-      "SEND",
-      "Сложите руки крестом и толчком надавите на нижнию часть груди человека."
-    ],
-    [
-      "SEND",
-      "Для взрослого от 100 до 120 толчков."
-    ],
-    [
-      "SEND",
-      "Для детей до 10 лет до 80 толчков и обязательно одной рукой. Это важно!"
-    ],
-    [
-      "SEND",
-      "Через каждые 30 толчков Вы должно вдуть человеку воздух в легкие через рот..."
-    ],
-    [
-      "SEND",
-      "...при этом необходимо зажать нос пострадавшего и выровнять его шею в горизонтальное положение."
-    ],
-    [
-      "SEND",
-      "Переодически проверяйте пульс на сонной артерии."
-    ],
-    [
-      "SEND",
-      "Эффективность данного мероприятия служит реакция зрачков на свет, а также их сужение."
-    ],
-    [
-      "SEND",
-      "На этом наша лекция подошла к концу, всем спасибо за внимание."
-    ],
-    [
-      "ELSE",
-      59],
-    [
-      "END",
-      59]
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"Огнетушители",
+		"Сигнализация",
+		"Субординация",
+		"Правила рации",
+		"Искуственное дыхание"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  2],
+	[
+	  "SEND",
+	  "Доброго времени суток, уважаемые коллеги."
+	],
+	[
+	  "SEND",
+	  "Сейчас я проведу вам лекцию на тему \"Правила пользования огнетушителем\"."
+	],
+	[
+	  "SEND",
+	  "Огнетушители бывают нескольких видов: Углекислотные, Пенные, Порошковые, Водные."
+	],
+	[
+	  "SEND",
+	  "Углекислотные огнетушители применяются для тушения возгораний различных веществ и материалов."
+	],
+	[
+	  "SEND",
+	  "Пенные огнетушители предназначены для тушения пожаров твёрдых, жидких горючих веществ..."
+	],
+	[
+	  "SEND",
+	  "...в общественных зданиях и производственных объектах."
+	],
+	[
+	  "SEND",
+	  "Порошковые огнетушители предназначены практически для всех классов пожаров."
+	],
+	[
+	  "SEND",
+	  "Водные огнетушители предназначены для уменьшения распространения очага возгорания..."
+	],
+	[
+	  "SEND",
+	  "...постепенно ограничивая площадь самого возгорания."
+	],
+	[
+	  "SEND",
+	  "Для того, чтобы начать использование огнетушителя вам необходимо:"
+	],
+	[
+	  "SEND",
+	  "Сорвать пломбу на огнетушителе, имеющуюся на запорно-пусковом устройстве."
+	],
+	[
+	  "SEND",
+	  "Выдернуть чеку."
+	],
+	[
+	  "SEND",
+	  "Направить насадку шланга на очаг возгорания."
+	],
+	[
+	  "SEND",
+	  "Нажать рычаг на огнетушителе."
+	],
+	[
+	  "SEND",
+	  "Подождать 3-5 с для приведения огнетушителя в готовность."
+	],
+	[
+	  "SEND",
+	  "При выходе огнетушащего вещества потушить возгорание."
+	],
+	[
+	  "SEND",
+	  "На этом наша лекция подошла к концу, всем спасибо за внимание."
+	],
+	[
+	  "ELSE",
+	  2],
+	[
+	  "END",
+	  2],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  20],
+	[
+	  "SEND",
+	  "Доброго времени суток, уважаемые коллеги."
+	],
+	[
+	  "SEND",
+	  "Сейчас я проведу вам лекцию на тему \"Охранно-Пожарная сигнализация."
+	],
+	[
+	  "SEND",
+	  "ОПС - это комплексная система безопасности, призванная предотвращать нежелательные события..."
+	],
+	[
+	  "SEND",
+	  "...будь то взлом, пожар или другое чрезвычайное происшествие."
+	],
+	[
+	  "SEND",
+	  "Она состоит из следующих элементов."
+	],
+	[
+	  "SEND",
+	  "Датчики: обнаруживают потенциальные угрозы..."
+	],
+	[
+	  "SEND",
+	  "...(движение, открытие дверей, повышение температуры, частицы дыма)."
+	],
+	[
+	  "SEND",
+	  "Приемно-контрольная панель: обрабатывает сигналы от датчиков, формирует сигналы тревоги..."
+	],
+	[
+	  "SEND",
+	  "...управляет сиренами и другими системами безопасности."
+	],
+	[
+	  "SEND",
+	  "Сирены: издают звуковой сигнал, предупреждая о чрезвычайной ситуации."
+	],
+	[
+	  "SEND",
+	  " Пульт централизованного наблюдения: при подключении... "
+	],
+	[
+	  "SEND",
+	  " специалистам, которые могут..."
+	],
+	[
+	  "SEND",
+	  "...оперативно реагировать на ситуацию."
+	],
+	[
+	  "SEND",
+	  "ОПС - это эффективный инструмент безопасности, который помогает предотвратить..."
+	],
+	[
+	  "SEND",
+	  "...нежелательные события и обеспечить спокойствие и безопасность для вас и вашего имущества."
+	],
+	[
+	  "SEND",
+	  "На этом наша лекция подошла к концу, всем спасибо за внимание."
+	],
+	[
+	  "ELSE",
+	  20],
+	[
+	  "END",
+	  20],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  37],
+	[
+	  "SEND",
+	  "Здравствуйте уважаемые коллеги, сегодня я вам проведу лекцию на тему субординация."
+	],
+	[
+	  "SEND",
+	  "Я расскажу информативную лекцию на тему: Поведение в Строю."
+	],
+	[
+	  "SEND",
+	  "Во-первых, Пожарному запрещено не появляться на построении без уважительной причины."
+	],
+	[
+	  "SEND",
+	  "Во-вторых, Пожарным запрещено держать огнестрельное оружие в открытом виде."
+	],
+	[
+	  "SEND",
+	  "В-третьих, Пожарным запрещено разговаривать, шептать, двигаться без какого-либо ведома"
+	],
+	[
+	  "SEND",
+	  "В-четвертых, Пожарным запрещено курить, крутить головой, разговаривать по телефонному аппарату."
+	],
+	[
+	  "SEND",
+	  "За вышеперечисленные манипуляции Вы получаете наказание в личное дело."
+	],
+	[
+	  "SEND",
+	  "На этом наша лекция подошла к концу, всем спасибо за внимание."
+	],
+	[
+	  "ELSE",
+	  37],
+	[
+	  "END",
+	  37],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"4"
+	  ],
+	  46],
+	[
+	  "SEND",
+	  "Здравствуйте уважаемые коллеги, сегодня я вам проведу лекцию на тему..."
+	],
+	[
+	  "SEND",
+	  "...правила использования рации."
+	],
+	[
+	  "SEND",
+	  "Есть два вида раций: рация департамента и обычная рация."
+	],
+	[
+	  "SEND",
+	  "Обычная рация нужна для связи со своими сотрудниками."
+	],
+	[
+	  "SEND",
+	  "Разрешено: уведомлять о патрулировании территории, информировании..."
+	],
+	[
+	  "SEND",
+	  "...сослуживцев о важной информации."
+	],
+	[
+	  "SEND",
+	  "Просить о проверке проверить заявление на увольнение."
+	],
+	[
+	  "SEND",
+	  "Запрещено: оскорблять своих коллег, принижать их честь и достоинство."
+	],
+	[
+	  "SEND",
+	  "Повторять одну и ту же фразу более двух раз."
+	],
+	[
+	  "SEND",
+	  "Обязательно соблюдение субординации, уважительное отношение к своим коллегам."
+	],
+	[
+	  "SEND",
+	  "Рация департамента нужна для связи с другими государственными структурами."
+	],
+	[
+	  "SEND",
+	  "На этом наша лекция подошла к концу, всем спасибо за внимание."
+	],
+	[
+	  "ELSE",
+	  46],
+	[
+	  "END",
+	  46],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"5"
+	  ],
+	  59],
+	[
+	  "SEND",
+	  "Доброго времени суток. Сейчас мы проведем лекцию на тему \"Искуственное дыхание легких\"."
+	],
+	[
+	  "SEND",
+	  "Искусственное дыхание - неотложная мера при отсутствии..."
+	],
+	[
+	  "SEND",
+	  "...самостоятельного дыхания и сердцебиения."
+	],
+	[
+	  "SEND",
+	  "При выявление признаков у пострадавшего, у вас есть 5 минут на реамационные дейсвтвия."
+	],
+	[
+	  "SEND",
+	  "Для начала Вам нужно уложить пострадавшего на жесткую плоскость."
+	],
+	[
+	  "SEND",
+	  "Сложите руки крестом и толчком надавите на нижнию часть груди человека."
+	],
+	[
+	  "SEND",
+	  "Для взрослого от 100 до 120 толчков."
+	],
+	[
+	  "SEND",
+	  "Для детей до 10 лет до 80 толчков и обязательно одной рукой. Это важно!"
+	],
+	[
+	  "SEND",
+	  "Через каждые 30 толчков Вы должно вдуть человеку воздух в легкие через рот..."
+	],
+	[
+	  "SEND",
+	  "...при этом необходимо зажать нос пострадавшего и выровнять его шею в горизонтальное положение."
+	],
+	[
+	  "SEND",
+	  "Переодически проверяйте пульс на сонной артерии."
+	],
+	[
+	  "SEND",
+	  "Эффективность данного мероприятия служит реакция зрачков на свет, а также их сужение."
+	],
+	[
+	  "SEND",
+	  "На этом наша лекция подошла к концу, всем спасибо за внимание."
+	],
+	[
+	  "ELSE",
+	  59],
+	[
+	  "END",
+	  59]
   ],
   "desc": "Провести лекцию",
   "arg": {
@@ -22706,10 +25551,10 @@ local cmd_defoult_json_for_fire_department = {
   },
   "cmd": "lekfd",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "send_end_mes": true
 }
@@ -22727,122 +25572,122 @@ local cmd_defoult_json_for_jail = {
   },
   "rank": 4,
   "act": [
-    [
-      "DIALOG",
-      "1",
-      [
-        "Напоминание соблюдение правил",
-        "Дисциплина",
-        "Свидания заключенных"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      2],
-    [
-      "SEND",
-      "/rjail Здравствуйте уважаемые заключенные нашего штата."
-    ],
-    [
-      "SEND",
-      "/rjail Хочу напомнить что не стоит нарушать порядок тюрьмы."
-    ],
-    [
-      "SEND",
-      "/rjail За нарушений порядка вы можете получить наказание."
-    ],
-    [
-      "ELSE",
-      2],
-    [
-      "END",
-      2],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      6],
-    [
-      "SEND",
-      "/rjail Доброго времени суток, уважаемые заключенные нашего исправительного учреждения!"
-    ],
-    [
-      "SEND",
-      "/rjail Сейчас я проведу вам небольшую лекцию. На тему Дисциплина!"
-    ],
-    [
-      "SEND",
-      "/rjail Заключённым запрещено категорически: Поднимать бунт и оскорблять кого-либо"
-    ],
-    [
-      "SEND",
-      "/rjail Также запрещена организация нападения на сотрудников тюрьмы."
-    ],
-    [
-      "SEND",
-      "/rjail И всё что несёт за собой гибель людей!"
-    ],
-    [
-      "SEND",
-      "/rjail За данные нарушения вы понесёте наказание в виде повышения срока и карцера."
-    ],
-    [
-      "SEND",
-      "/rjail Хорошего время провождения. "
-    ],
-    [
-      "ELSE",
-      6],
-    [
-      "END",
-      6],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      14],
-    [
-      "SEND",
-      "/rjail Доброго времени суток, уважаемые заключенные нашего исправительного учреждения!"
-    ],
-    [
-      "SEND",
-      "/rjail Каждый заключенный может попросить встречу со своими родными"
-    ],
-    [
-      "SEND",
-      "/rjail Для этого вам нужно обратиться к работнику тюрьмы..."
-    ],
-    [
-      "SEND",
-      "/rjail ...сказав ему номер человека которого вы хотите видеть"
-    ],
-    [
-      "SEND",
-      "/rjail дабы он связался с нами и пришел к вам"
-    ],
-    [
-      "SEND",
-      "/rjail На этом у меня всё, надеюсь вскоре вы встретитесь с родными"
-    ],
-    [
-      "SEND",
-      "/rjail Приятного отдыха!"
-    ],
-    [
-      "ELSE",
-      14],
-    [
-      "END",
-      14]
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"Напоминание соблюдение правил",
+		"Дисциплина",
+		"Свидания заключенных"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  2],
+	[
+	  "SEND",
+	  "/rjail Здравствуйте уважаемые заключенные нашего штата."
+	],
+	[
+	  "SEND",
+	  "/rjail Хочу напомнить что не стоит нарушать порядок тюрьмы."
+	],
+	[
+	  "SEND",
+	  "/rjail За нарушений порядка вы можете получить наказание."
+	],
+	[
+	  "ELSE",
+	  2],
+	[
+	  "END",
+	  2],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  6],
+	[
+	  "SEND",
+	  "/rjail Доброго времени суток, уважаемые заключенные нашего исправительного учреждения!"
+	],
+	[
+	  "SEND",
+	  "/rjail Сейчас я проведу вам небольшую лекцию. На тему Дисциплина!"
+	],
+	[
+	  "SEND",
+	  "/rjail Заключённым запрещено категорически: Поднимать бунт и оскорблять кого-либо"
+	],
+	[
+	  "SEND",
+	  "/rjail Также запрещена организация нападения на сотрудников тюрьмы."
+	],
+	[
+	  "SEND",
+	  "/rjail И всё что несёт за собой гибель людей!"
+	],
+	[
+	  "SEND",
+	  "/rjail За данные нарушения вы понесёте наказание в виде повышения срока и карцера."
+	],
+	[
+	  "SEND",
+	  "/rjail Хорошего время провождения. "
+	],
+	[
+	  "ELSE",
+	  6],
+	[
+	  "END",
+	  6],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  14],
+	[
+	  "SEND",
+	  "/rjail Доброго времени суток, уважаемые заключенные нашего исправительного учреждения!"
+	],
+	[
+	  "SEND",
+	  "/rjail Каждый заключенный может попросить встречу со своими родными"
+	],
+	[
+	  "SEND",
+	  "/rjail Для этого вам нужно обратиться к работнику тюрьмы..."
+	],
+	[
+	  "SEND",
+	  "/rjail ...сказав ему номер человека которого вы хотите видеть"
+	],
+	[
+	  "SEND",
+	  "/rjail дабы он связался с нами и пришел к вам"
+	],
+	[
+	  "SEND",
+	  "/rjail На этом у меня всё, надеюсь вскоре вы встретитесь с родными"
+	],
+	[
+	  "SEND",
+	  "/rjail Приятного отдыха!"
+	],
+	[
+	  "ELSE",
+	  14],
+	[
+	  "END",
+	  14]
   ],
   "desc": "Провести лекцию для заключённых",
   "id_element": 21,
@@ -22850,10 +25695,10 @@ local cmd_defoult_json_for_jail = {
   "send_end_mes": true,
   "cmd": "lekzeks",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -22867,254 +25712,254 @@ local cmd_defoult_json_for_jail = {
   "id_element": 52,
   "rank": 4,
   "act": [
-    [
-      "DIALOG",
-      "1",
-      [
-        "Построение",
-        "Субординация",
-        "Правила нахождение в строю",
-        "Правила действий при ЧС",
-        "Основы поставок боеприпасов"
-      ]
-    ],
-    [
-      "IF",
-      2, [
-        "1",
-        "1"
-      ],
-      3],
-    [
-      "SEND",
-      "Здравия желаю, уважаемые Военнослужащие Тюрьмы Строгого Режима"
-    ],
-    [
-      "SEND",
-      "Сейчас я зачитаю вам лекцию на тему Построение"
-    ],
-    [
-      "SEND",
-      "Когда объявили всеобщее построение вы обязаны бросить все свои дела и явиться в строй"
-    ],
-    [
-      "SEND",
-      "При опоздании извинится со словами Виноват, разрешите встать в строй?” ..."
-    ],
-    [
-      "SEND",
-      "... и встать в конец строя"
-    ],
-    [
-      "SEND",
-      "В строю запрещено: спать, разговаривать, использовать рацию"
-    ],
-    [
-      "SEND",
-      "Выражать эмоции, стрелять и покидать строй без разрешения"
-    ],
-    [
-      "SEND",
-      "Лекция на тему \"Построение окончена\". Спасибо за внимание"
-    ],
-    [
-      "ELSE",
-      3],
-    [
-      "END",
-      3],
-    [
-      "IF",
-      2, [
-        "1",
-        "2"
-      ],
-      13],
-    [
-      "SEND",
-      "Сейчас я проведу лекцию на тему Субординация"
-    ],
-    [
-      "SEND",
-      "Субординация - Система служебного подчинения младших старшим...."
-    ],
-    [
-      "SEND",
-      "...основанная на правилах служебной дисциплины!"
-    ],
-    [
-      "SEND",
-      "К всему ст. составу вы должны обращаться на Вы, Так точно!"
-    ],
-    [
-      "SEND",
-      "За нарушение субординации преследует выговор."
-    ],
-    [
-      "SEND",
-      "На этом наша лекция подошла к концу."
-    ],
-    [
-      "ELSE",
-      13],
-    [
-      "END",
-      13],
-    [
-      "IF",
-      2, [
-        "1",
-        "3"
-      ],
-      21],
-    [
-      "SEND",
-      "Доброго времени суток, уважаемые Военнослужащие."
-    ],
-    [
-      "SEND",
-      "Я расскажу информативную лекцию на тему: Поведение в Строю."
-    ],
-    [
-      "SEND",
-      "Во-первых, Военнослужащим запрещено не появляться на построении без уважительной причины"
-    ],
-    [
-      "SEND",
-      "Во-вторых, Военнослужащим запрещено держать огнестрельное оружие в открытом виде"
-    ],
-    [
-      "SEND",
-      "В-четвертых, Военнослужащим запрещено курить, крутить головой.."
-    ],
-    [
-      "SEND",
-      "разговаривать по телефонному аппарату."
-    ],
-    [
-      "SEND",
-      "За вышеперечисленные манипуляции Вы получаете наказание в личное дело"
-    ],
-    [
-      "SEND",
-      "На этом лекция заканчивается. Спасибо за внимание!"
-    ],
-    [
-      "ELSE",
-      21],
-    [
-      "END",
-      21],
-    [
-      "IF",
-      2, [
-        "1",
-        "4"
-      ],
-      30],
-    [
-      "SEND",
-      "Здравия желаю, уважаемые Военнослужащие Тюрьмы Строгого Режима"
-    ],
-    [
-      "SEND",
-      "Сегодня я вам проведу лекцию на тему \"Как правильно действовать при ЧС\""
-    ],
-    [
-      "SEND",
-      "В первую очередь, вам надо убедиться, что люди напали на базу"
-    ],
-    [
-      "SEND",
-      "Если бандиты в масках начали атаковать вас - это ЧС"
-    ],
-    [
-      "SEND",
-      "У вас должно быть в руках обязательно М4A4 и Deagle , а также иметь бронежилет на себе"
-    ],
-    [
-      "SEND",
-      "Первый отпор должны дать вы. Но если вы не справляетесь.."
-    ],
-    [
-      "SEND",
-      "...в рацию вы должны сообщить о нападении на тюрьму"
-    ],
-    [
-      "SEND",
-      "Запрещено убегать от выстрелов, обратно в казарму или на завод"
-    ],
-    [
-      "SEND",
-      "Лекция на тему \"Как правильно действовать при ЧС\" окончена"
-    ],
-    [
-      "ELSE",
-      30],
-    [
-      "END",
-      30],
-    [
-      "IF",
-      2, [
-        "1",
-        "5"
-      ],
-      40],
-    [
-      "SEND",
-      "Здравия желаю, уважаемые Военнослужащие Тюрьмы Строгого Режима"
-    ],
-    [
-      "SEND",
-      "Сейчас я проведу лекцию на тему - \"Основы поставок боеприпасов\""
-    ],
-    [
-      "SEND",
-      "Водитель грузовика с боеприпасами обязан:"
-    ],
-    [
-      "SEND",
-      "Не допускать захвата грузовика противником любыми возможными средствами..."
-    ],
-    [
-      "SEND",
-      "...в том числе ценой собственной жизни"
-    ],
-    [
-      "SEND",
-      "Иметь полный боекомплект и бронежилет"
-    ],
-    [
-      "SEND",
-      "Водителю грузовика снабжения запрещено:"
-    ],
-    [
-      "SEND",
-      "Отвлекаться от ведения поставок, терять бдительность находясь за рулем грузовика"
-    ],
-    [
-      "SEND",
-      "В частности, запрещено спать при загруженном грузовике"
-    ],
-    [
-      "SEND",
-      "Обеспечивать поставки без сопровождения"
-    ],
-    [
-      "SEND",
-      "Оставлять загруженный грузовик снабжения за пределами части"
-    ],
-    [
-      "SEND",
-      "Лекция на тему \"Основы поставок боеприпасов\" окончена"
-    ],
-    [
-      "ELSE",
-      40],
-    [
-      "END",
-      40]
+	[
+	  "DIALOG",
+	  "1",
+	  [
+		"Построение",
+		"Субординация",
+		"Правила нахождение в строю",
+		"Правила действий при ЧС",
+		"Основы поставок боеприпасов"
+	  ]
+	],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"1"
+	  ],
+	  3],
+	[
+	  "SEND",
+	  "Здравия желаю, уважаемые Военнослужащие Тюрьмы Строгого Режима"
+	],
+	[
+	  "SEND",
+	  "Сейчас я зачитаю вам лекцию на тему Построение"
+	],
+	[
+	  "SEND",
+	  "Когда объявили всеобщее построение вы обязаны бросить все свои дела и явиться в строй"
+	],
+	[
+	  "SEND",
+	  "При опоздании извинится со словами Виноват, разрешите встать в строй?” ..."
+	],
+	[
+	  "SEND",
+	  "... и встать в конец строя"
+	],
+	[
+	  "SEND",
+	  "В строю запрещено: спать, разговаривать, использовать рацию"
+	],
+	[
+	  "SEND",
+	  "Выражать эмоции, стрелять и покидать строй без разрешения"
+	],
+	[
+	  "SEND",
+	  "Лекция на тему \"Построение окончена\". Спасибо за внимание"
+	],
+	[
+	  "ELSE",
+	  3],
+	[
+	  "END",
+	  3],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"2"
+	  ],
+	  13],
+	[
+	  "SEND",
+	  "Сейчас я проведу лекцию на тему Субординация"
+	],
+	[
+	  "SEND",
+	  "Субординация - Система служебного подчинения младших старшим...."
+	],
+	[
+	  "SEND",
+	  "...основанная на правилах служебной дисциплины!"
+	],
+	[
+	  "SEND",
+	  "К всему ст. составу вы должны обращаться на Вы, Так точно!"
+	],
+	[
+	  "SEND",
+	  "За нарушение субординации преследует выговор."
+	],
+	[
+	  "SEND",
+	  "На этом наша лекция подошла к концу."
+	],
+	[
+	  "ELSE",
+	  13],
+	[
+	  "END",
+	  13],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"3"
+	  ],
+	  21],
+	[
+	  "SEND",
+	  "Доброго времени суток, уважаемые Военнослужащие."
+	],
+	[
+	  "SEND",
+	  "Я расскажу информативную лекцию на тему: Поведение в Строю."
+	],
+	[
+	  "SEND",
+	  "Во-первых, Военнослужащим запрещено не появляться на построении без уважительной причины"
+	],
+	[
+	  "SEND",
+	  "Во-вторых, Военнослужащим запрещено держать огнестрельное оружие в открытом виде"
+	],
+	[
+	  "SEND",
+	  "В-четвертых, Военнослужащим запрещено курить, крутить головой.."
+	],
+	[
+	  "SEND",
+	  "разговаривать по телефонному аппарату."
+	],
+	[
+	  "SEND",
+	  "За вышеперечисленные манипуляции Вы получаете наказание в личное дело"
+	],
+	[
+	  "SEND",
+	  "На этом лекция заканчивается. Спасибо за внимание!"
+	],
+	[
+	  "ELSE",
+	  21],
+	[
+	  "END",
+	  21],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"4"
+	  ],
+	  30],
+	[
+	  "SEND",
+	  "Здравия желаю, уважаемые Военнослужащие Тюрьмы Строгого Режима"
+	],
+	[
+	  "SEND",
+	  "Сегодня я вам проведу лекцию на тему \"Как правильно действовать при ЧС\""
+	],
+	[
+	  "SEND",
+	  "В первую очередь, вам надо убедиться, что люди напали на базу"
+	],
+	[
+	  "SEND",
+	  "Если бандиты в масках начали атаковать вас - это ЧС"
+	],
+	[
+	  "SEND",
+	  "У вас должно быть в руках обязательно М4A4 и Deagle , а также иметь бронежилет на себе"
+	],
+	[
+	  "SEND",
+	  "Первый отпор должны дать вы. Но если вы не справляетесь.."
+	],
+	[
+	  "SEND",
+	  "...в рацию вы должны сообщить о нападении на тюрьму"
+	],
+	[
+	  "SEND",
+	  "Запрещено убегать от выстрелов, обратно в казарму или на завод"
+	],
+	[
+	  "SEND",
+	  "Лекция на тему \"Как правильно действовать при ЧС\" окончена"
+	],
+	[
+	  "ELSE",
+	  30],
+	[
+	  "END",
+	  30],
+	[
+	  "IF",
+	  2, [
+		"1",
+		"5"
+	  ],
+	  40],
+	[
+	  "SEND",
+	  "Здравия желаю, уважаемые Военнослужащие Тюрьмы Строгого Режима"
+	],
+	[
+	  "SEND",
+	  "Сейчас я проведу лекцию на тему - \"Основы поставок боеприпасов\""
+	],
+	[
+	  "SEND",
+	  "Водитель грузовика с боеприпасами обязан:"
+	],
+	[
+	  "SEND",
+	  "Не допускать захвата грузовика противником любыми возможными средствами..."
+	],
+	[
+	  "SEND",
+	  "...в том числе ценой собственной жизни"
+	],
+	[
+	  "SEND",
+	  "Иметь полный боекомплект и бронежилет"
+	],
+	[
+	  "SEND",
+	  "Водителю грузовика снабжения запрещено:"
+	],
+	[
+	  "SEND",
+	  "Отвлекаться от ведения поставок, терять бдительность находясь за рулем грузовика"
+	],
+	[
+	  "SEND",
+	  "В частности, запрещено спать при загруженном грузовике"
+	],
+	[
+	  "SEND",
+	  "Обеспечивать поставки без сопровождения"
+	],
+	[
+	  "SEND",
+	  "Оставлять загруженный грузовик снабжения за пределами части"
+	],
+	[
+	  "SEND",
+	  "Лекция на тему \"Основы поставок боеприпасов\" окончена"
+	],
+	[
+	  "ELSE",
+	  40],
+	[
+	  "END",
+	  40]
   ],
   "desc": "Провести лекцию для сотрудников",
   "var": {
@@ -23124,10 +25969,10 @@ local cmd_defoult_json_for_jail = {
   "send_end_mes": true,
   "cmd": "lektsr",
   "key": [
-    "",
-    {
+	"",
+	{
 
-    }
+	}
   ],
   "arg": {
 
@@ -23690,31 +26535,1680 @@ local cmd_defoult_json_for_jail = {
 		  "SEND",
 		  "/me взял{sex[][а]} заключенного за руку, вывел{sex[][а]} его из карцера"
 		  ],
-      [
-        "SEND",
-        "/me закрыл{sex[][а]} дверь карцера и повесил{sex[][а]} ключ на пояс"
-      ],
-      [
-        "SEND",
-        "/uncarcer {arg1}"
-      ]
-    ],
-    "desc": "Выпустить игрока из карцера",
-    "send_end_mes": true,
-    "delay": 1.4,
-    "arg": [
-      {
-        "desc": "id игрока",
-        "name": "arg1",
-        "type": 2
-      }
-    ],
-    "cmd": "uncarcer",
-    "key": ["", {}],
-    "var": {}
+	  [
+		"SEND",
+		"/me закрыл{sex[][а]} дверь карцера и повесил{sex[][а]} ключ на пояс"
+	  ],
+	  [
+		"SEND",
+		"/uncarcer {arg1}"
+	  ]
+	],
+	"desc": "Выпустить игрока из карцера",
+	"send_end_mes": true,
+	"delay": 1.4,
+	"arg": [
+	  {
+		"desc": "id игрока",
+		"name": "arg1",
+		"type": 2
+	  }
+	],
+	"cmd": "uncarcer",
+	"key": ["", {}],
+	"var": {}
   }
 ]]
 }
+
+--> Для полиции
+local cmd_defoult_json_for_police = {
+--> Выдать повестку
+[1] = [[
+{
+  "folder": 4,
+  "UID": 41911340,
+  "id_element": 7,
+  "rank": 5,
+  "act": [
+    [
+      "SEND",
+      "Здравствуйте, я {myrank} {mynickrus}. Покажите ваш паспорт."
+    ],
+    [
+      "WAIT_ENTER"
+    ],
+    [
+      "SEND",
+      "/me взял{sex[][а]} документ, изучил{sex[][а]} и вернул{sex[][а]}"
+    ],
+    [
+      "SEND",
+      "/do В папке лежит бланк \"Повестка\"."
+    ],
+    [
+      "SEND",
+      "/me достает бланк, заполняет бланк и ставит свою подпись"
+    ],
+    [
+      "SEND",
+      "/todo Вот ваша повестка. Ждем вас в военкомате!*протягивая бланк человеку"
+    ],
+    [
+      "SEND",
+      "/agenda {arg1}"
+    ]
+  ],
+  "desc": "Выдать повестку",
+  "send_end_mes": true,
+  "delay": 1.4,
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ],
+  "cmd": "agenda",
+  "key": [
+    "",
+    {}
+  ],
+  "var": {}
+}
+]],
+--> Провести /arrest
+[2] = [[
+{
+  "folder": 4,
+  "UID": 72737835,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/me нажал{sex[][а]} кнопку на рации и сообщил{sex[][а]} диспетчеру о задержанном"
+    ],
+    [
+      "SEND",
+      "/me запросил{sex[][а]} патрульный экипаж для сопровождения арестованного"
+    ],
+    [
+      "SEND",
+      "/do Спустя время, офицеры выходят из департамента и забирают преступника."
+    ],
+    [
+      "SEND",
+      "/arrest {arg1}"
+    ]
+  ],
+  "desc": "Арестовать преступника",
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ],
+  "delay": 1.3,
+  "send_end_mes": true,
+  "cmd": "arrest",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 5
+}
+]],
+--> Отобрать быстро скрепки
+[3] = [[
+{
+  "folder": 4,
+  "UID": 28590337,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/me заметил, что задержанный пытается вскрыть наручники подручным предметом"
+    ],
+    [
+      "SEND",
+      "/todo Вы серьёзно?*резко изымая скрепки у {getplnick[{arg1}]} и пряча их в карман"
+    ],
+    [
+      "SEND",
+      "/bot {arg1}"
+    ]
+  ],
+  "desc": "Отобрать скрепки",
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ],
+  "delay": 1.3,
+  "send_end_mes": true,
+  "cmd": "bot",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 3
+}
+]],
+--> Очистить розыск
+[4] = [[
+{
+  "folder": 4,
+  "UID": 32924408,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/me достал служебный планшет и открыл базу данных"
+    ],
+    [
+      "SEND",
+      "/me нашёл запись о {getplnick[{arg1}]} и удалил её из списка разыскиваемых"
+    ],
+    [
+      "SEND",
+      "/clear {arg1}"
+    ],
+    [
+      "SEND",
+      "/do В базе данных теперь отсутствует информация о розыске данного гражданина."
+    ]
+  ],
+  "desc": "Очистить розыск",
+  "id_element": 4,
+  "delay": 1.3,
+  "send_end_mes": true,
+  "cmd": "clear",
+  "key": [
+    "",
+    {}
+  ],
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ]
+}
+]],
+--> Надеть наручники
+[5] = [[
+{
+  "folder": 4,
+  "UID": 59837210,
+  "id_element": 3,
+  "rank": 2,
+  "act": [
+    [
+      "SEND",
+      "/do На поясе висят наручники."
+    ],
+    [
+      "SEND",
+      "/me снял наручники, скрестил руки задержанного и зафиксировал их"
+    ],
+    [
+      "SEND",
+      "/cuff {arg1}"
+    ]
+  ],
+  "desc": "Надеть наручники",
+  "send_end_mes": true,
+  "delay": 1.4,
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ],
+  "cmd": "cuff",
+  "key": [
+    "",
+    {}
+  ],
+  "var": {}
+}
+]],
+--> Поднять из стадии смерти
+[6] = [[
+{
+  "folder": 4,
+  "UID": 88983788,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/cure {arg1}"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} платок из нагрудного кармана"
+    ],
+    [
+      "SEND",
+      "/me аккуратно приложил{sex[][а]} платок ко рту пострадавшего, после чего сделал{sex[][а]} глубокий вдох"
+    ],
+    [
+      "SEND",
+      "/do В лёгких много воздуха."
+    ],
+    [
+      "SEND",
+      "/me встал{sex[][а]} на колени, после чего прислонил{sex[ся][ась]} к пациенту"
+    ],
+    [
+      "SEND",
+      "/me подвел{sex[][а]} губы ко рту пострадавшего, после чего начал{sex[][а]} делать искусственное дыхание"
+    ],
+    [
+      "SEND",
+      "/me отвел{sex[][а]} губы от рта пострадавшего, после чего сделал{sex[][а]} глубокий вдох"
+    ],
+    [
+      "SEND",
+      "/me подвел{sex[][а]} губы ко рту пострадавшего, после чего начал{sex[][а]} делать искусственное дыхание"
+    ],
+    [
+      "SEND",
+      "/me начал{sex[][а]} проводить сердечно-лёгочную реанимацию"
+    ],
+    [
+      "SEND",
+      "/do Человек пришел в сознание."
+    ]
+  ],
+  "desc": "Поднять из стадии смерти",
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ],
+  "delay": 1.5,
+  "send_end_mes": true,
+  "cmd": "cure",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 7
+}
+]],
+--> Обыскать
+[7] = [[
+{
+  "folder": 4,
+  "UID": 35829120,
+  "id_element": 13,
+  "rank": 1,
+  "act": [
+    [
+      "SEND_ME",
+      "Выбирайте вариант с /gotome если вы заломали руку преступнику. Первичный обыск проводите у капота автомобиля."
+    ],
+    [
+      "DIALOG",
+      "why",
+      [
+        "Первичный обыск",
+        "Первичный обыск (/gotome)",
+        "Вторичный обыск",
+        "Вторичный обыск (/gotome)"
+      ]
+    ],
+    [
+      "IF",
+      2,
+      [
+        "why",
+        "1"
+      ],
+      6,
+      1
+    ],
+    [
+      "SEND",
+      "/me ногами раздвинул{sex[][а]} ноги подозреваемого на ширину плеч и положил{sex[][а]} его на капот"
+    ],
+    [
+      "SEND",
+      "/me положил{sex[][а]} руки подозреваемого выше его головы"
+    ],
+    [
+      "SEND",
+      "/me тщательно прохлопал{sex[][а]} поверхность всей одежды, ноги"
+    ],
+    [
+      "SEND",
+      "/frisk {arg1}"
+    ],
+    [
+      "ELSE",
+      6
+    ],
+    [
+      "IF",
+      2,
+      [
+        "why",
+        "2"
+      ],
+      8,
+      1,
+      false
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me ногами раздвинул{sex[][а]} ноги подозреваемого на ширину плеч и положил{sex[][а]} его на капот"
+    ],
+    [
+      "SEND",
+      "/me положил{sex[][а]} руки подозреваемого выше его головы"
+    ],
+    [
+      "SEND",
+      "/me тщательно прохлопал{sex[][а]} поверхность всей одежды, ноги"
+    ],
+    [
+      "SEND",
+      "/frisk {arg1}"
+    ],
+    [
+      "SEND",
+      "/me после чего взял{sex[][а]} его за руку и повел{sex[][а]} за собой"
+    ],
+    [
+      "ELSE",
+      8
+    ],
+    [
+      "END",
+      8
+    ],
+    [
+      "IF",
+      2,
+      [
+        "why",
+        "3"
+      ],
+      10,
+      1,
+      false
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} перчатки, после чего надел{sex[][а]} их на руки"
+    ],
+    [
+      "SEND",
+      "/me провел{sex[][а]} руками по верхним частям тела в области груди и рук"
+    ],
+    [
+      "SEND",
+      "/me провел{sex[][а]} руками по туловищу в области пояса и карманов"
+    ],
+    [
+      "SEND",
+      "/me провел{sex[][а]} руками по нижним частям тела в области ног"
+    ],
+    [
+      "SEND",
+      "/frisk {arg1}"
+    ],
+    [
+      "ELSE",
+      10
+    ],
+    [
+      "END",
+      10
+    ],
+    [
+      "IF",
+      2,
+      [
+        "why",
+        "4"
+      ],
+      12,
+      1,
+      false
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} перчатки, после чего надел{sex[][а]} их на руки"
+    ],
+    [
+      "SEND",
+      "/me провел{sex[][а]} руками по верхним частям тела в области груди и рук"
+    ],
+    [
+      "SEND",
+      "/me провел{sex[][а]} руками по туловищу в области пояса и карманов"
+    ],
+    [
+      "SEND",
+      "/me провел{sex[][а]} руками по нижним частям тела в области ног"
+    ],
+    [
+      "SEND",
+      "/frisk {arg1}"
+    ],
+    [
+      "SEND",
+      "/me после чего взял{sex[][а]} его за руку и повел{sex[][а]} за собой"
+    ],
+    [
+      "ELSE",
+      12
+    ],
+    [
+      "END",
+      12
+    ],
+    [
+      "END",
+      6
+    ]
+  ],
+  "desc": "Обыскать игрока",
+  "send_end_mes": true,
+  "delay": 1.4,
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ],
+  "cmd": "frisk",
+  "key": [
+    "",
+    {}
+  ],
+  "var": {}
+}
+]],
+--> Тащить за собой
+[8] = [[
+{
+  "folder": 4,
+  "UID": 18123637,
+  "id_element": 2,
+  "rank": 2,
+  "act": [
+    [
+      "SEND",
+      "/me резко схватил{sex[][а]} задержанного за запястье, заломал{sex[][а]} руку и потащил{sex[][а]} за собой, не давая вырваться"
+    ],
+    [
+      "SEND",
+      "/gotome {arg1}"
+    ]
+  ],
+  "desc": "Тащить за собой",
+  "send_end_mes": true,
+  "delay": 1.4,
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ],
+  "cmd": "gotome",
+  "key": [
+    "",
+    {}
+  ],
+  "var": {}
+}
+]],
+--> Затолкать в авто
+[9] = [[
+{
+  "folder": 4,
+  "UID": 89145788,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/me открыл{sex[][а]} заднюю дверь служебного автомобиля"
+    ],
+    [
+      "SEND",
+      "/todo Аккуратно, голова*усаживая задержанного в автомобиль"
+    ],
+    [
+      "SEND",
+      "/me закрыл{sex[][а]} дверь автомобиля"
+    ],
+    [
+      "SEND",
+      "/incar {arg1} {arg2}"
+    ]
+  ],
+  "desc": "Посадить в транспорт",
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    },
+    {
+      "desc": "место(3-4)",
+      "name": "arg2",
+      "type": 2
+    }
+  ],
+  "delay": 1.3,
+  "send_end_mes": true,
+  "cmd": "incar",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 4
+}
+]],
+--> Мегафон остановка транспорта
+[10] = [[
+{
+  "folder": 4,
+  "UID": 32881630,
+  "var": [
+    {
+      "name": "var1",
+      "value": "{veh_model}"
+    }
+  ],
+  "rank": 1,
+  "act": [
+    [
+      "IF",
+      4,
+      [
+        "var1",
+        "Неизвестно"
+      ],
+      5,
+      1
+    ],
+    [
+      "SEND",
+      "/me поднял мегафон к губам и включил его"
+    ],
+    [
+      "SEND",
+      "/m Водитель транспортного средства, немедленно остановитесь!"
+    ],
+    [
+      "SEND",
+      "/m Прижмитесь к обочине, заглушите двигатель и держите руки на руле!"
+    ],
+    [
+      "SEND",
+      "/m В случае неповиновения законному требованию, будет открыт огонь!"
+    ],
+    [
+      "ELSE",
+      5
+    ],
+    [
+      "SEND",
+      "/me включил мегафон, наведя его в сторону автомобиля, и обратился к водителю"
+    ],
+    [
+      "SEND",
+      "/m Водитель транспортного средства {var1}, немедленно остановитесь!"
+    ],
+    [
+      "SEND",
+      "/m Прижмитесь к обочине, заглушите двигатель и держите руки на руле!"
+    ],
+    [
+      "SEND",
+      "/m В случае неповиновения законному требованию, будет открыт огонь!"
+    ],
+    [
+      "END",
+      5
+    ]
+  ],
+  "desc": "Остановка транспорта",
+  "id_element": 13,
+  "delay": 1.4,
+  "send_end_mes": true,
+  "cmd": "meg",
+  "key": [
+    "Num 3",
+    [
+      99
+    ]
+  ],
+  "arg": {}
+}
+]],
+--> Миранда
+[11] = [[
+{
+  "folder": 4,
+  "UID": 30556991,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "Вы имеете право хранить молчание."
+    ],
+    [
+      "SEND",
+      "Всё, что вы скажете, может и будет использовано против вас в суде."
+    ],
+    [
+      "SEND",
+      "Вы имеете право на 1 телефонный звонок, например для вызова частного адвоката."
+    ],
+    [
+      "SEND",
+      "Ваш адвокат может присутствовать при допросе."
+    ],
+    [
+      "SEND",
+      "Если вы не можете оплатить услуги адвоката, он будет предоставлен вам государством."
+    ],
+    [
+      "SEND",
+      "Вам ясны Ваши права?"
+    ]
+  ],
+  "desc": "Зачитать правила",
+  "id_element": 6,
+  "delay": 1.4,
+  "send_end_mes": true,
+  "cmd": "miranda",
+  "key": [
+    "",
+    {}
+  ],
+  "arg": {}
+}
+]],
+--> Попросить показать документы
+[12] = [[
+{
+  "folder": 4,
+  "UID": 75043273,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "Здравствуйте, я {myrank} {mynickrus}. Жетон на груди."
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} свое удостоверение из кармана и аккуратно развернул{sex[][а]} его"
+    ],
+    [
+      "SEND",
+      "/me простирает удостоверение человеку напротив"
+    ],
+    [
+      "SEND",
+      "/do Удостоверение выглядит официально и имеет печать в верхнем углу."
+    ],
+    [
+      "SEND",
+      "/showbadge {arg1}"
+    ]
+  ],
+  "desc": "Представиться и попросить документы",
+  "id_element": 6,
+  "delay": 1.3,
+  "send_end_mes": true,
+  "cmd": "pass",
+  "key": [
+    "",
+    {}
+  ],
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ]
+}
+]],
+--> Вытащить из автомобиля
+[13] = [[
+{
+  "folder": 4,
+  "UID": 66020036,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/me ударом дубинки выбил{sex[][а]} стекло автомобиля"
+    ],
+    [
+      "SEND",
+      "/pull {arg1}"
+    ],
+    [
+      "SEND",
+      "/me открыл{sex[][а]} дверь изнутри, схватил{sex[][а]} задержанного и вытянул{sex[][а]} его наружу"
+    ]
+  ],
+  "desc": "Вытащить из транспорта",
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 2
+    }
+  ],
+  "delay": 1.3,
+  "send_end_mes": true,
+  "cmd": "pull",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 3
+}
+]],
+--> Отобрать что-то
+[14] = [[
+{
+  "folder": 4,
+  "UID": 81820075,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "DIALOG",
+      "what",
+      [
+        "Лицензии",
+        "Наркотики",
+        "Оружие",
+        "Патроны",
+        "Отмычки"
+      ]
+    ],
+    [
+      "IF",
+      2,
+      [
+        "what",
+        "1"
+      ],
+      2,
+      1
+    ],
+    [
+      "DIALOG",
+      "lic",
+      [
+        "Оружие",
+        "Автомобиль",
+        "Мотоцикл",
+        "Вертолет",
+        "Водный тс",
+        "Охоту"
+      ]
+    ],
+    [
+      "ELSE",
+      2
+    ],
+    [
+      "END",
+      2
+    ],
+    [
+      "IF",
+      2,
+      [
+        "what",
+        "2"
+      ],
+      4,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана одноразовые перчатки, натянул{sex[][а]} их на руки"
+    ],
+    [
+      "SEND",
+      "/me осторожным движением достал пакетик с белым порошком из кармана задержаного"
+    ],
+    [
+      "SEND",
+      "/take {arg1}"
+    ],
+    [
+      "ELSE",
+      4
+    ],
+    [
+      "END",
+      4
+    ],
+    [
+      "IF",
+      2,
+      [
+        "what",
+        "3"
+      ],
+      10,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана одноразовые перчатки, натянул{sex[][а]} их на руки"
+    ],
+    [
+      "SEND",
+      "/me отобрал{sex[][а]} у задержаного оружие, положил{sex[][а]} его в пакет для улик"
+    ],
+    [
+      "SEND",
+      "/take {arg1}"
+    ],
+    [
+      "ELSE",
+      10
+    ],
+    [
+      "END",
+      10
+    ],
+    [
+      "IF",
+      2,
+      [
+        "what",
+        "4"
+      ],
+      15,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана одноразовые перчатки, натянул{sex[][а]} их на руки"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из карманов задержаного патроны, положил{sex[][а]} их в пакет для улик"
+    ],
+    [
+      "SEND",
+      "/take {arg1}"
+    ],
+    [
+      "ELSE",
+      15
+    ],
+    [
+      "END",
+      15
+    ],
+    [
+      "IF",
+      2,
+      [
+        "what",
+        "5"
+      ],
+      21,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана одноразовые перчатки, натянул{sex[][а]} их на руки"
+    ],
+    [
+      "SEND",
+      "/me отобрал{sex[][а]} у задержаного отмычки, положил{sex[][а]} их в пакет для улик"
+    ],
+    [
+      "SEND",
+      "/take {arg1}"
+    ],
+    [
+      "ELSE",
+      21
+    ],
+    [
+      "END",
+      21
+    ],
+    [
+      "IF",
+      2,
+      [
+        "lic",
+        "1"
+      ],
+      26,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана задержаного лицензию на 'оружие' и положил её в пакет для улик"
+    ],
+    [
+      "SEND",
+      "Это останется у меня!"
+    ],
+    [
+      "SEND",
+      "/take {arg1}"
+    ],
+    [
+      "ELSE",
+      26
+    ],
+    [
+      "END",
+      26
+    ],
+    [
+      "IF",
+      2,
+      [
+        "lic",
+        "2"
+      ],
+      31,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана задержаного лицензию на 'вождение автомобиля' и положил её в пакет для улик"
+    ],
+    [
+      "SEND",
+      "Это останется у меня!"
+    ],
+    [
+      "SEND",
+      "/take {arg1}"
+    ],
+    [
+      "ELSE",
+      31
+    ],
+    [
+      "END",
+      31
+    ],
+    [
+      "IF",
+      2,
+      [
+        "lic",
+        "3"
+      ],
+      36,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана задержаного лицензию на 'вождение мотоцикла' и положил её в пакет для улик"
+    ],
+    [
+      "SEND",
+      "Это останется у меня!"
+    ],
+    [
+      "SEND",
+      "/take {arg1}"
+    ],
+    [
+      "ELSE",
+      36
+    ],
+    [
+      "END",
+      36
+    ],
+    [
+      "IF",
+      2,
+      [
+        "lic",
+        "4"
+      ],
+      41,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана задержаного лицензию на 'управление воздушным транспортом' и положил её в пакет для улик"
+    ],
+    [
+      "SEND",
+      "Это останется у меня!"
+    ],
+    [
+      "SEND",
+      "/take {arg1}"
+    ],
+    [
+      "ELSE",
+      41
+    ],
+    [
+      "END",
+      41
+    ],
+    [
+      "IF",
+      2,
+      [
+        "lic",
+        "5"
+      ],
+      46,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана задержаного лицензию на 'управление водным транспортом' и положил её в пакет для улик"
+    ],
+    [
+      "SEND",
+      "Это останется у меня!"
+    ],
+    [
+      "SEND",
+      "/take {arg1}"
+    ],
+    [
+      "ELSE",
+      46
+    ],
+    [
+      "END",
+      46
+    ],
+    [
+      "IF",
+      2,
+      [
+        "lic",
+        "6"
+      ],
+      51,
+      1
+    ],
+    [
+      "SEND",
+      "/me отпустил{sex[][а]} руку задержаного"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} из кармана задержаного лицензию на 'охоту' и положил её в пакет для улик"
+    ],
+    [
+      "SEND",
+	  "Это останется у меня!"
+	],
+	[
+	  "SEND",
+	  "/take {arg1}"
+	],
+	[
+	  "ELSE",
+	  51
+	],
+	[
+	  "END",
+	  51
+	]
+  ],
+  "desc": "Отобрать что-то",
+  "id_element": 55,
+  "delay": 1.3,
+  "send_end_mes": true,
+  "cmd": "take",
+  "key": [
+	"",
+	{}
+  ],
+  "arg": [
+	{
+	  "desc": "Аргумент 1",
+	  "name": "arg1",
+	  "type": 2
+	}
+  ]
+}
+]],
+--> Снять наручники
+[15] = [[
+{
+  "folder": 4,
+  "UID": 18535299,
+  "id_element": 2,
+  "rank": 2,
+  "act": [
+	[
+	  "SEND",
+	  "/me достал{sex[][а]} ключ и снял{sex[][а]} наручники с задержанного"
+	],
+	[
+	  "SEND",
+	  "/uncuff {arg1}"
+	]
+  ],
+  "desc": "Снять наручники",
+  "var": {},
+  "delay": 1.4,
+  "send_end_mes": true,
+  "cmd": "uncuff",
+  "key": [
+	"",
+	{}
+  ],
+  "arg": [
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
+  ]
+}
+]],
+--> Престать тащить
+[16] = [[
+{
+  "folder": 4,
+  "UID": 31151397,
+  "id_element": 2,
+  "rank": 2,
+  "act": [
+	[
+	  "SEND",
+	  "/me отпускает руку задержанного"
+	],
+	[
+	  "SEND",
+	  "/ungotome {arg1}"
+	]
+  ],
+  "desc": "Перестать тащить",
+  "send_end_mes": true,
+  "delay": 1.4,
+  "arg": [
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
+  ],
+  "cmd": "ungotome",
+  "key": [
+	"",
+	{}
+  ],
+  "var": {}
+}
+]],
+--> Снять маску
+[17] = [[
+{
+  "folder": 4,
+  "UID": 82562919,
+  "var": {},
+  "rank": 1,
+  "act": [
+	[
+	  "SEND",
+	  "/do Задержаный в балаклаве."
+	],
+	[
+	  "SEND",
+	  "/me резким движением стянул{sex[][а]} маску с лица задержанного, выбросил{sex[][а]} ее на пол"
+	],
+	[
+	  "SEND",
+	  "/unmask {arg1}"
+	]
+  ],
+  "desc": "Снять маску с человека",
+  "id_element": 3,
+  "delay": 1.3,
+  "send_end_mes": true,
+  "cmd": "unmask",
+  "key": [
+	"",
+	{}
+  ],
+  "arg": [
+	{
+	  "desc": "id игрока",
+	  "name": "arg1",
+	  "type": 2
+	}
+  ]
+}
+]],
+
+--> Запросить подкрипление
+[18] = [[
+{
+  "folder": 4,
+  "UID": 30894646,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/r 10-34, нахожусь в квадрате {city}. Причина: {arg1}"
+    ],
+    [
+      "SEND",
+      "/bk {arg1}"
+    ]
+  ],
+  "desc": "Запросить подкрипление",
+  "arg": [
+    {
+      "desc": "причина",
+      "name": "arg1",
+      "type": 1
+    }
+  ],
+  "delay": 1.4,
+  "send_end_mes": true,
+  "cmd": "bk",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 2
+}
+]],
+
+--> Получить взятку
+[19] = [[
+{
+  "folder": 4,
+  "UID": 64670816,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "DIALOG",
+      "wh",
+      [
+        "Намекнуть",
+        "Предложить, взять"
+      ]
+    ],
+    [
+      "IF",
+      2,
+      [
+        "wh",
+        "1"
+      ],
+      2,
+      1
+    ],
+    [
+      "SEND",
+      "/do Есть ли на задержаном любые записывабщие устройства?"
+    ],
+    [
+      "WAIT_ENTER"
+    ],
+    [
+      "SEND",
+      "/me закрыл{sex[][а]} динамик на боди камере рукой"
+    ],
+    [
+      "SEND",
+      "Не хотите решить вопрос прямо сейчас? У вас с собой {arg2}?"
+    ],
+    [
+      "ELSE",
+      2
+    ],
+    [
+      "IF",
+      2,
+      [
+        "wh",
+        "2"
+      ],
+      8,
+      1,
+      false
+    ],
+    [
+      "SEND",
+      "/me выключил{sex[][а]} служебную боди-камеру"
+    ],
+    [
+      "SEND",
+      "Давайте деньги, пока я не передумал{sex[][а]}"
+    ],
+    [
+      "SEND",
+      "/bribe {arg1} {arg2} {arg3}"
+    ],
+    [
+      "SEND_ME",
+      "Ждем подтверждения от человека."
+    ],
+    [
+      "WAIT_ENTER"
+    ],
+    [
+      "SEND",
+      "/me незаметным движением взял{sex[][а]} конверт, перещитал{sex[][а]} купюры"
+    ],
+    [
+      "SEND",
+      "/me достал{sex[][а]} деньги из конверта, свернул{sex[][а]} их, спратял{sex[][а]} в внутренный карман"
+    ],
+    [
+      "ELSE",
+      8
+    ],
+    [
+      "END",
+      8
+    ],
+    [
+      "END",
+      2
+    ]
+  ],
+  "desc": "Получить взятку",
+  "id_element": 15,
+  "delay": 1.4,
+  "send_end_mes": true,
+  "cmd": "bribe",
+  "key": [
+    "",
+    {}
+  ],
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 1
+    },
+    {
+      "desc": "Сумма (От 100.000$ до 10.000.000$)",
+      "name": "arg2",
+      "type": 1
+    },
+    {
+      "desc": "Обнулить розыск (0-Нет / 1-Да)",
+      "name": "arg3",
+      "type": 1
+    }
+  ]
+}
+]],
+
+--> Разрешение на номер
+[20] = [[
+{
+  "folder": 4,
+  "UID": 19542246,
+  "var": {},
+  "rank": 5,
+  "act": [
+    [
+      "SEND",
+      "/me достал{sex[][а]}  пустой бранк на выдачу номера, заполнил{sex[][а]}  бланк, после чего передал{sex[][а]}  его человеку"
+    ],
+    [
+      "SEND",
+      "/giveplate {arg1} {arg2}"
+    ],
+    [
+      "SEND",
+      "/todo Поставте подпись тут*показывая пальцем на бланк"
+    ]
+  ],
+  "desc": "Выдать разрешение на номер",
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 1
+    },
+    {
+      "desc": "стоимость (от 10.000$ до 500.000$)",
+      "name": "arg2",
+      "type": 1
+    }
+  ],
+  "delay": 1.4,
+  "send_end_mes": true,
+  "cmd": "giveplate",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 3
+}
+]],
+
+--> Снять мешок с головы
+[21] = [[
+{
+  "folder": 4,
+  "UID": 69528596,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/me достал{sex[][а]} нож и перерезал{sex[][а]} верёвку на мешке"
+    ],
+    [
+      "SEND",
+      "/me стянул{sex[][а]} мешок с головы человека"
+    ],
+    [
+      "SEND",
+      "/unbag {arg1}"
+    ]
+  ],
+  "desc": "Снять мешок с головы игрока",
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 1
+    }
+  ],
+  "delay": 1.4,
+  "send_end_mes": true,
+  "cmd": "unbag",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 3
+}
+]],
+
+--> Достать кляп изо рта
+[22] = [[
+{
+  "folder": 4,
+  "UID": 43608269,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/me аккуратно вытащил{sex[][а]} кляп изо рта человека"
+    ],
+    [
+      "SEND",
+      "/ungag {arg1}"
+    ]
+  ],
+  "desc": "Достать кляп изо рта",
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 1
+    }
+  ],
+  "delay": 1.4,
+  "send_end_mes": true,
+  "cmd": "ungag",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 2
+}
+]],
+
+--> Развязать
+[23] = [[
+{
+  "folder": 4,
+  "UID": 31089164,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/me достал{sex[][а]} нож и перерезал{sex[][а]} верёвку"
+    ],
+    [
+      "SEND",
+      "/untie {arg1}"
+    ]
+  ],
+  "desc": "Развязать игрока",
+  "arg": [
+    {
+      "desc": "id игрока",
+      "name": "arg1",
+      "type": 1
+    }
+  ],
+  "delay": 1.6,
+  "send_end_mes": true,
+  "cmd": "untie",
+  "key": [
+    "",
+    {}
+  ],
+  "id_element": 2
+}
+]],
+
+--> Наложить /z
+[24] = [[
+{
+  "folder": 4,
+  "UID": 53466941,
+  "var": {},
+  "rank": 1,
+  "act": [
+    [
+      "SEND",
+      "/z {pursuit_id}"
+    ]
+  ],
+  "desc": "Пометить преступника в погоне",
+  "id_element": 1,
+  "delay": 0.5,
+  "send_end_mes": true,
+  "cmd": "zp",
+  "key": [
+    "Num 2",
+    [
+      98
+    ]
+  ],
+  "arg": {}
+}
+]]
+}
+
 --> Для СМИ
 local cmd_defoult_json_for_smi = {
 
@@ -23722,24 +28216,12 @@ local cmd_defoult_json_for_smi = {
 --> Мед карта для феникса
 local medcard_phoenix = [[
 {
-  "folder": 4,
-  "UID": 61764606,
+  "folder": 1,
+  "UID": 94205371,
   "var": [
 	{
-	  "name": "period",
-	  "value": "1"
-	},
-	{
-	  "name": "levelpl",
-	  "value": "{getlevel[{idplayer}]}"
-	},
-	{
-	  "name": "term",
-	  "value": "0"
-	},
-	{
-	  "name": "price",
-	  "value": "1000"
+	  "name": "lvl",
+	  "value": "{getlevel[{arg1}]}"
 	},
 	{
 	  "name": "price7",
@@ -23756,9 +28238,17 @@ local medcard_phoenix = [[
 	{
 	  "name": "price60",
 	  "value": "65000"
+	},
+	{
+	  "name": "stat",
+	  "value": "3"
+	},
+	{
+	  "name": "days",
+	  "value": "4"
 	}
   ],
-  "rank": 3,
+  "rank": 1,
   "act": [
 	[
 	  "SEND",
@@ -23792,7 +28282,7 @@ local medcard_phoenix = [[
 	],
 	[
 	  "DIALOG",
-	  "mentalstate",
+	  "status",
 	  [
 		"Полностью здоров",
 		"Наблюдаются откл.",
@@ -23802,97 +28292,187 @@ local medcard_phoenix = [[
 	],
 	[
 	  "IF",
-	  2, [
-		"mentalstate",
-		"2"
+	  2,
+	  [
+		"status",
+		"1"
 	  ],
-	  10, 1],
+	  10,
+	  1
+	],
 	[
 	  "NEW_VAR",
-	  "period",
+	  "stat",
+	  "3"
+	],
+	[
+	  "ELSE",
+	  10
+	],
+	[
+	  "IF",
+	  2,
+	  [
+		"status",
+		"2"
+	  ],
+	  12,
+	  1
+	],
+	[
+	  "NEW_VAR",
+	  "stat",
 	  "2"
 	],
 	[
 	  "ELSE",
-	  10],
+	  12
+	],
+	[
+	  "END",
+	  12
+	],
 	[
 	  "IF",
-	  2, [
-		"mentalstate",
+	  2,
+	  [
+		"status",
 		"3"
 	  ],
-	  12, 1],
+	  13,
+	  1
+	],
 	[
 	  "NEW_VAR",
-	  "period",
+	  "stat",
 	  "1"
 	],
 	[
 	  "ELSE",
-	  12],
+	  13
+	],
+	[
+	  "END",
+	  13
+	],
 	[
 	  "IF",
-	  2, [
-		"mentalstate",
+	  2,
+	  [
+		"status",
 		"4"
 	  ],
-	  15, 1],
+	  17,
+	  1
+	],
 	[
 	  "NEW_VAR",
-	  "period",
+	  "stat",
 	  "0"
 	],
 	[
 	  "ELSE",
-	  15],
+	  17
+	],
 	[
 	  "END",
-	  15],
+	  17
+	],
 	[
 	  "END",
-	  12],
-	[
-	  "END",
-	  10],
+	  10
+	],
 	[
 	  "IF",
-	  4, [
-		"levelpl",
+	  4,
+	  [
+		"lvl",
 		"6"
 	  ],
-	  22, 3],
-	[
-	  "IF",
-	  4, [
-		"levelpl",
-		"10"
-	  ],
-	  23, 5],
-	[
-	  "SEND",
-	  "Стоимость оформления мед карты зависит от его срока."
+	  19,
+	  4
 	],
 	[
 	  "SEND",
-	  "7 дней - 20.000$. 14 дней - 35.000$. 30 дней - 45.000$. 60 дней - 65.000$."
+	  "Для Вас стоимость медицинской карты составляет всего 1000$. Оформляем?"
+	],
+	[
+	  "WAIT_ENTER"
+	],
+	[
+	  "SEND",
+	  "/me берёт в правую руку из мед. кейса печать и наносит штамп в углу бланка"
+	],
+	[
+	  "SEND",
+	  "/do Печать больницы нанесена на бланк."
+	],
+	[
+	  "SEND",
+	  "/me кладёт печать в мед. кейс, после чего ручкой ставит подпись и сегодняшнюю дату"
+	],
+	[
+	  "SEND",
+	  "/do Страница медицинской карты полностью заполнена."
+	],
+	[
+	  "SEND",
+	  "/me передаёт медицинскую карту в руки обратившемуся"
+	],
+	[
+	  "SEND",
+	  "/medcard {arg1} {stat} 7 1000"
+	],
+	[
+	  "STOP"
 	],
 	[
 	  "ELSE",
-	  23],
-	[
-	  "IF",
-	  4, [
-		"levelpl",
-		"15"
-	  ],
-	  29, 5],
-	[
-	  "SEND",
-	  "Стоимость оформления мед карты зависит от его срока."
+	  19
 	],
 	[
-	  "SEND",
-	  "7 дней - 35.000$. 14 дней - 50.000$. 30 дней - 60.000$. 60 дней - 75.000$."
+	  "IF",
+	  4,
+	  [
+		"lvl",
+		"10"
+	  ],
+	  28,
+	  5
+	],
+	[
+	  "NEW_VAR",
+	  "price7",
+	  "20000"
+	],
+	[
+	  "NEW_VAR",
+	  "price14",
+	  "35000"
+	],
+	[
+	  "NEW_VAR",
+	  "price30",
+	  "45000"
+	],
+	[
+	  "NEW_VAR",
+	  "price60",
+	  "65000"
+	],
+	[
+	  "ELSE",
+	  28
+	],
+	[
+	  "IF",
+	  4,
+	  [
+		"lvl",
+		"15"
+	  ],
+	  36,
+	  5
 	],
 	[
 	  "NEW_VAR",
@@ -23916,21 +28496,17 @@ local medcard_phoenix = [[
 	],
 	[
 	  "ELSE",
-	  29],
-	[
-	  "IF",
-	  4, [
-		"levelpl",
-		"20"
-	  ],
-	  31, 5],
-	[
-	  "SEND",
-	  "Стоимость оформления мед карты зависит от его срока."
+	  36
 	],
 	[
-	  "SEND",
-	  "7 дней - 50.000$. 14 дней - 60.000$. 30 дней - 85.000$. 60 дней - 100.000$."
+	  "IF",
+	  4,
+	  [
+		"lvl",
+		"20"
+	  ],
+	  38,
+	  5
 	],
 	[
 	  "NEW_VAR",
@@ -23954,68 +28530,61 @@ local medcard_phoenix = [[
 	],
 	[
 	  "ELSE",
-	  31],
-	[
-	  "SEND",
-	  "Стоимость оформления мед карты зависит от его срока."
+	  38
 	],
 	[
-	  "SEND",
-	  "7 дней - 140.000$. 14 дней - 160.000$. 30 дней - 180.000$. 60 дней - 200.000$."
+	  "IF",
+	  4,
+	  [
+		"lvl",
+		"20"
+	  ],
+	  40,
+	  3
 	],
 	[
-	  "NEW_VAR",
-	  "price7",
-	  "140000"
-	],
-	[
-	  "NEW_VAR",
-	  "price14",
-	  "160000"
-	],
-	[
-	  "NEW_VAR",
-	  "price30",
-	  "180000"
-	],
-	[
-	  "NEW_VAR",
-	  "price60",
-	  "200000"
-	],
-	[
-	  "END",
-	  31],
-	[
-	  "END",
-	  29],
-	[
-	  "END",
-	  23],
-	[
-	  "SEND",
-	  "Выберите срок оформления и мы продолжим."
+	  "COMMENT",
+	  "20+"
 	],
 	[
 	  "ELSE",
-	  22],
-	[
-	  "SEND",
-	  "Для Вас стоимость медицинской карты составляет всего 1000$. Оформляем?"
+	  40
 	],
 	[
 	  "END",
-	  22],
+	  40
+	],
 	[
-	  "IF",
-	  4, [
-		"levelpl",
-		"6"
-	  ],
-	  49, 3],
+	  "END",
+	  38
+	],
+	[
+	  "END",
+	  36
+	],
+	[
+	  "END",
+	  28
+	],
+	[
+	  "END",
+	  19
+	],
+	[
+	  "SEND",
+	  "На какой срок желаете оформить? Стоимость зависит от срока."
+	],
+	[
+	  "SEND",
+	  "На 7 дней - {price7}. На 14 дней - {price14}"
+	],
+	[
+	  "SEND",
+	  "На 30 дней - {price30}. На 60 дней - {price60}"
+	],
 	[
 	  "DIALOG",
-	  "termmed",
+	  "day",
 	  [
 		"7 дней",
 		"14 дней",
@@ -24023,87 +28592,6 @@ local medcard_phoenix = [[
 		"60 дней"
 	  ]
 	],
-	[
-	  "IF",
-	  2, [
-		"termmed",
-		"1"
-	  ],
-	  51, 1],
-	[
-	  "NEW_VAR",
-	  "price",
-	  "{price7}"
-	],
-	[
-	  "ELSE",
-	  51],
-	[
-	  "IF",
-	  2, [
-		"termmed",
-		"2"
-	  ],
-	  53, 1],
-	[
-	  "NEW_VAR",
-	  "price",
-	  "{price14}"
-	],
-	[
-	  "ELSE",
-	  53],
-	[
-	  "IF",
-	  2, [
-		"termmed",
-		"3"
-	  ],
-	  55, 1],
-	[
-	  "NEW_VAR",
-	  "price",
-	  "{price30}"
-	],
-	[
-	  "ELSE",
-	  55],
-	[
-	  "IF",
-	  2, [
-		"termmed",
-		"4"
-	  ],
-	  57, 1],
-	[
-	  "NEW_VAR",
-	  "price",
-	  "{price60}"
-	],
-	[
-	  "ELSE",
-	  57],
-	[
-	  "END",
-	  57],
-	[
-	  "END",
-	  55],
-	[
-	  "END",
-	  53],
-	[
-	  "END",
-	  51],
-	[
-	  "ELSE",
-	  49],
-	[
-	  "WAIT_ENTER"
-	],
-	[
-	  "END",
-	  49],
 	[
 	  "SEND",
 	  "/me берёт в правую руку из мед. кейса печать и наносит штамп в углу бланка"
@@ -24125,26 +28613,131 @@ local medcard_phoenix = [[
 	  "/me передаёт медицинскую карту в руки обратившемуся"
 	],
 	[
+	  "IF",
+	  2,
+	  [
+		"day",
+		"1"
+	  ],
+	  62,
+	  1
+	],
+	[
+	  "NEW_VAR",
+	  "days",
+	  "0"
+	],
+	[
 	  "SEND",
-	  "/medcard {idplayer} {period} {term} {price}"
+	  "/medcard {arg1} {stat} {days} {price7}"
+	],
+	[
+	  "ELSE",
+	  62
+	],
+	[
+	  "IF",
+	  2,
+	  [
+		"day",
+		"2"
+	  ],
+	  64,
+	  1
+	],
+	[
+	  "NEW_VAR",
+	  "days",
+	  "1"
+	],
+	[
+	  "SEND",
+	  "/medcard {arg1} {stat} {days} {price14}"
+	],
+	[
+	  "ELSE",
+	  64
+	],
+	[
+	  "END",
+	  64
+	],
+	[
+	  "IF",
+	  2,
+	  [
+		"day",
+		"3"
+	  ],
+	  66,
+	  1
+	],
+	[
+	  "NEW_VAR",
+	  "days",
+	  "2"
+	],
+	[
+	  "SEND",
+	  "/medcard {arg1} {stat} {days} {price30}"
+	],
+	[
+	  "ELSE",
+	  66
+	],
+	[
+	  "END",
+	  66
+	],
+	[
+	  "IF",
+	  2,
+	  [
+		"day",
+		"4"
+	  ],
+	  68,
+	  1
+	],
+	[
+	  "NEW_VAR",
+	  "days",
+	  "3"
+	],
+	[
+	  "SEND",
+	  "/medcard {arg1} {stat} {days} {price60}"
+	],
+	[
+	  "ELSE",
+	  68
+	],
+	[
+	  "END",
+	  68
+	],
+	[
+	  "END",
+	  62
+	],
+	[
+	  "STOP"
 	]
   ],
-  "desc": "Оформить медицинскую карту",
-  "id_element": 77,
-  "delay": 2.5,
+  "desc": "Выдать мед карту",
+  "id_element": 85,
+  "delay": 1.3,
   "send_end_mes": true,
   "cmd": "mc",
   "key": [
 	"",
-	{
-
-	}
+	{}
   ],
   "arg": [
 	{
 	  "desc": "id игрока",
-	  "name": "idplayer",
-	  "type": 2
+	  "name": "arg1",
+	  "type": 1
 	}
   ]
 }
@@ -24159,7 +28752,8 @@ cmd_defoult = {
 	army = {}, --> Для служащих в армии
 	fire_department = {}, --> Для сотрудников пожарного департмамента
 	jail = {}, --> Для сотрудников тюрьмы
-	smi = {} --> Для сотрудников СМИ
+	police = {} --> Для сотрудников полиции
+	--smi = {} --> Для сотрудников СМИ
 }
 
 function add_cmd_defoult()
@@ -24223,7 +28817,7 @@ function add_cmd_defoult()
 		end
 	end
 	
-	--> Добавить команды для ТСР
+	--> Добавить команды для ТСР	
 	for i = 1, #cmd_defoult_json_for_jail do
 		local res, set = pcall(decodeJson, cmd_defoult_json_for_jail[i])
 		if res and type(set) == 'table' then
@@ -24233,15 +28827,25 @@ function add_cmd_defoult()
 		end
 	end
 
-		--> Добавить команды для СМИ
-		for i = 1, #cmd_defoult_json_for_smi do
-			local res, set = pcall(decodeJson, cmd_defoult_json_for_smi[i])
-			if res and type(set) == 'table' then
-				set = convertToUTF8(set)
-				table.insert(cmd_defoult.smi, set)
-				cmd_defoult.smi[#cmd_defoult.smi].UID = math.random(20, 95000000)
-			end
+	--> Добавить команды для Полиции
+	for i = 1, #cmd_defoult_json_for_police do
+		local res, set = pcall(decodeJson, cmd_defoult_json_for_police[i])
+		if res and type(set) == 'table' then
+			set = convertToUTF8(set)
+			table.insert(cmd_defoult.police, set)
+			cmd_defoult.police[#cmd_defoult.police].UID = math.random(20, 95000000)
 		end
+	end
+
+	--> Добавить команды для СМИ
+	for i = 1, #cmd_defoult_json_for_smi do
+		local res, set = pcall(decodeJson, cmd_defoult_json_for_smi[i])
+		if res and type(set) == 'table' then
+			set = convertToUTF8(set)
+			table.insert(cmd_defoult.smi, set)
+			cmd_defoult.smi[#cmd_defoult.smi].UID = math.random(20, 95000000)
+		end
+	end
 	
 	local res, set = pcall(decodeJson, medcard_phoenix)
 	if res and type(set) == 'table' then
@@ -24251,7 +28855,16 @@ function add_cmd_defoult()
 end
 add_cmd_defoult()
 
-local function get_last_lines(log, n)
+function download_admin_list()
+	local url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/nicks.json'
+	local save_path = dir .. '/config/Admins.json'
+	
+	downloadUrlToFile(url, save_path, function(id, status)
+	end)
+end
+download_admin_list()
+
+function get_last_lines(log, n)
 	local function split_text(input, length)
 		local parts = {}
 		while #input > length do
@@ -24278,48 +28891,64 @@ local function get_last_lines(log, n)
 	local last_lines = {}
 	local num_str = 1
 	for i = start_index, #lines do
+		local name_script_error, line_error, error_text
+		
 		if lines[i]:find("%(error%)") then
-			lines[i] = lines[i]:gsub('(.+)%(error%)', '')
-			local name_script_error = lines[i]:match('^(.-)%:')
-			local null_error_del, line_error = lines[i]:match('^(.+)%:(%d+)%:')
-			lines[i] = lines[i]:gsub('^(.+)%:(%d+)%: ', '')
-			lines[i] = '[' .. num_str .. '] [Лог краша] {FFFFFF}Ошибка в скрипте' .. name_script_error .. '[' .. scr.version .. '], строка ' .. line_error .. ': ' .. lines[i]
-			
-			local parts = split_text(lines[i], 120)
-			for i, part in ipairs(parts) do
-				if i == 1 then
-					table.insert(last_lines, part)
-				else
-					table.insert(last_lines, '{FFFFFF}' .. part)
-				end
-			end
-			
-			num_str = num_str + 1
-		elseif lines[i]:find('in function') and not lines[i]:find('>$') then
-			local del_param_null, name_script_error, line_error = lines[i]:match('(.+)\\(.-)%.lua%:(%d+)%:')
-			lines[i] = lines[i]:gsub('(.+)in function ', 'в функции ')
+			_, name_script_error, line_error, error_text = lines[i]:match("(%S+)%s*:%s*(.-%.lua):(%d+):%s*(.+)")
 			if not line_error then
-				line_error = 'nil'
+				_, name_script_error, error_text = lines[i]:match("(%S+)%s*:%s*(.+)")
+				line_error = "???"
 			end
-			if not name_script_error then
-				name_script_error = 'NAME'
-			end
-			lines[i] = '[' .. num_str .. '] [Лог краша] {FFFFFF}Ошибка функции в скрипте ' .. name_script_error .. '[' .. scr.version .. '], строка ' .. line_error .. ': ' .. lines[i]
-			
-			local parts = split_text(lines[i], 120)
-			for i, part in ipairs(parts) do
-				if i == 1 then
-					table.insert(last_lines, part)
-				else
-					table.insert(last_lines, '{FFFFFF}' .. part)
+
+			if name_script_error and error_text then
+				local formatted_line = string.format("[%d] [Лог краша] {FFFFFF}Ошибка в скрипте %s[%s], строка %s: %s", num_str, name_script_error, scr.version, error_text)
+				local parts = split_text(formatted_line, 120)
+				for j, part in ipairs(parts) do
+					table.insert(last_lines, (j == 1 and "" or "{FFFFFF}") .. part)
 				end
+				num_str = num_str + 1
+			end
+		elseif lines[i]:find('in function') and not lines[i]:find('>$') then
+			_, name_script_error, line_error, error_text = lines[i]:match("stack traceback:%s*(.-%.lua):(%d+):%s*(.+)")
+			if not line_error then
+				line_error = "???"
+				name_script_error = "script"
+				_, error_text = lines[i]:match("stack traceback:%s*(.+)")
 			end
 			
-			num_str = num_str + 1
+			if error_text then
+				local formatted_line = string.format("[%d] [Лог краша] {FFFFFF}Ошибка функции в скрипте %s[%s], строка %s: %s", num_str, name_script_error, scr.version, error_text)
+				local parts = split_text(formatted_line, 120)
+				for j, part in ipairs(parts) do
+					table.insert(last_lines, (j == 1 and "" or "{FFFFFF}") .. part)
+				end
+				num_str = num_str + 1
+			end
 		end
 	end
 
 	return last_lines
+end
+
+function reset_state()
+	scene_active = false
+	scene_edit_pos = false
+	new_scene = false
+	off_scene = false
+	change_pos_onstat = false
+	is_mini_player_pos = false
+	camhack_active = false
+	if isPlayerControlLocked() then
+		lockPlayerControl(false)
+	end
+	displayRadar(true)
+	displayHud(true)
+	restoreCameraJumpcut()
+	setCameraBehindPlayer()
+	sampSetCursorMode(0)
+	imgui.ShowCursor = true
+	setVirtualKeyDown(0x79, false)
+	evalanon("document.body.style.display = 'block'")
 end
 
 function onScriptTerminate(script, game_quit)
@@ -24357,13 +28986,621 @@ function onScriptTerminate(script, game_quit)
 		end
 	end
 end
+--[[ Потипу окно редактирования должно было быть)
+
+local inputTextCallback = ffi.cast("ImGuiInputTextCallback", function(data)
+	if needSetCursorToEnd then
+		data.CursorPos = #ffi.string(inputField)
+		needSetCursorToEnd = false
+	end
+	return 0
+end)
+
+function SmiEdit()
+	if not dialogData then return end
+		local startIdx, endIdx = string.find(dialogText, "{33AA33}([^\n]+)")
+		if imgui.IsItemHovered() then
+			gui.DrawLine({arrowPosX - 5, arrowPosY - 5}, {arrowPosX + 5, arrowPosY}, imgui.ImVec4(0.98, 0.30, 0.38, 1.00), 2)
+			gui.DrawLine({arrowPosX + 5, arrowPosY}, {arrowPosX - 5, arrowPosY + 5}, imgui.ImVec4(0.98, 0.30, 0.38, 1.00), 2)
+			imgui.SetTooltip(u8("Скопировать в поле ввода"))
+		else
+			gui.DrawLine({arrowPosX - 5, arrowPosY - 5}, {arrowPosX + 5, arrowPosY}, imgui.ImVec4(0.98, 0.40, 0.38, 1.00), 2)
+			gui.DrawLine({arrowPosX + 5, arrowPosY}, {arrowPosX - 5, arrowPosY + 5}, imgui.ImVec4(0.98, 0.40, 0.38, 1.00), 2)
+		end
 
 
---[[function SmiEdit()
-    if dialogData then
 
-    end
-end
+	end
 ]]
 
+local weatherNames = {	--> Названия погоды
+	["Чистое небо"] = {0, 1, 2, 3, 4, 5, 6, 7},
+	["Гроза с молниями"] = {8},
+	["Густой туман и пасмурно"] = {9},
+	["Ясное чистое небо"] = {10},
+	["Дикое пекло и жара"] = {11},
+	["Смуглая неприятная погода"] = {12, 13, 14, 15},
+	["Тусклый дождливый день"] = {16},
+	["Жаркая погода"] = {17, 18},
+	["Песчаная буря"] = {19},
+	["Туманная мрачная погода"] = {20},
+	["Ночь с пурпурным небом"] = {21},
+	["Ночь с зеленоватым оттенком"] = {22},
+	["Бледно-оранжевые тона"] = {23, 24, 25, 26},
+	["Свежий синий"] = {27, 28, 29},
+	["Темный неясный чирок"] = {30},
+	["Неясная погода"] = {31, 32},
+	["Вечер в коричневатых оттенках"] = {33},
+	["Сине-пурпурные оттенки"] = {34},
+	["Тусклая унылая погода"] = {35},
+	["Яркий туман"] = {36},
+	["Яркая погода"] = {37, 38},
+	["Очень яркая ослепительная погода"] = {39},
+	["Неясная пурпурно-синяя"] = {40, 41, 42},
+	["Темные едкие облака"] = {43},
+	["Черно-белое контрастное небо"] = {44},
+	["Пурпурное мистическое небо"] = {45},
+}
 
+function processCommand(param, mode)	--> Изменение времени/погоды
+	local num = tonumber(param)
+	if mode == "time" then
+		if num and num >= 0 and num <= 23 then
+			setting.time = num
+			local bs = raknetNewBitStream()
+			raknetBitStreamWriteInt8(bs, num)
+			raknetEmulRpcReceiveBitStream(94, bs)
+			raknetDeleteBitStream(bs)
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Установлено время: ' .. num .. ":00", 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH]{FFFFFF} Установлено время: ' .. num .. ":00", 3000)
+			end
+			save()
+		elseif param == "OFF" or param == "off" or param == "щаа" then
+			setting.time = '-1'
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Сервер теперь может изменять время', 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH]{FFFFFF} Сервер теперь может изменять время', 3000)
+			end
+			save()
+		else
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Используйте: /st [0 - 23 | off - отключить]', 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH]{FFFFFF} Используйте: /st [0 - 23 | off - отключить]', 3000)
+			end
+		end
+	elseif mode == "weather" then
+		if num and num >= 0 and num <= 45 then
+			setting.weather = num
+			local weatherName = "Неизвестная погода"
+			for name, indices in pairs(weatherNames or {}) do
+				for _, index in ipairs(indices) do
+					if index == num then
+						weatherName = name
+						break
+					end
+				end
+				if weatherName ~= "Неизвестная погода" then break end
+			end
+			local bs = raknetNewBitStream()
+			raknetBitStreamWriteInt8(bs, num)
+			raknetEmulRpcReceiveBitStream(152, bs)
+			raknetDeleteBitStream(bs)
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Установлена погода: ' .. weatherName .. ' [' .. num .. ']', 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH]{FFFFFF} Установлена погода: ' .. weatherName .. ' [' .. num .. ']', 2000)
+			end
+			bweather = true
+		elseif param == "OFF" or param == "off" or param == "щаа" then
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Сервер теперь может изменять погоду', 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH]{FFFFFF} Сервер теперь может изменять погоду', 2000)
+			end
+			bweather = false
+		else
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Используйте: /sw [0 - 45 | off - отключить]', 0xFF5345)
+			else
+				cefnotig('{FF5345}[SH]{FFFFFF} Используйте: /sw [0 - 45 | off - отключить]', 2000)
+			end
+		end
+	end
+end
+
+function hook.onSetWeather(weather)
+	if bweather then
+		return false
+	end
+	return true
+end
+
+function updateTime()
+	if setting.time then
+		local time = tonumber(setting.time)
+		if time and time >= 0 and time <= 23 then
+			setTimeOfDay(time, 0)
+		end
+	end
+end
+
+function correct_chat(text) --> Исправление чата
+	if not text or text:match("^%s*$") then return text end
+	text = text:gsub("^%s*(.-)%s*$", "%1")
+	text = text:gsub(",(%S)", ", %1")
+	local first_char = text:sub(1, 1)
+	local rest_of_text = text:sub(2)
+	local lower = 'абвгґдеєжзиіїйклмнопрстуфхцчшщьюяё'
+	local upper = 'АБВГҐДЕЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЬЮЯЁ'
+	local pos = lower:find(first_char, 1, true)
+	if pos then
+		first_char = upper:sub(pos, pos)
+	else
+		first_char = first_char:upper()
+	end
+	text = first_char .. rest_of_text
+	text = text:gsub("([.?!]%s*)([абвгґдеєжзиіїйклмнопрстуфхцчшщьюяёa-z])", function(punctuation_and_space, letter)
+		local pos_cyr = lower:find(letter, 1, true)
+		if pos_cyr then
+			return punctuation_and_space .. upper:sub(pos_cyr, pos_cyr)
+		else
+			return punctuation_and_space .. letter:upper()
+		end
+	end)
+	if not text:match('[%.%!%?%,%/%\\%)%(%:]$') then
+		text = text .. '.'
+	end
+	return text
+end
+
+function remove(path)
+	if lfs.attributes(path, "mode") == "directory" then
+		for file in lfs.dir(path) do
+			if file ~= "." and file ~= ".." then
+				remove(path .. "/" .. file)
+			end
+		end
+		lfs.rmdir(path)
+	else
+		os.remove(path)
+	end
+end
+
+function AddMoveButtons(i, pxl) --> Изменения очередность действий
+	local should_break = false
+	local current_action_type = bl_cmd.act[i][1]
+	if current_action_type == 'ELSE' or current_action_type == 'END' then
+		return false
+	end
+	local startIndex = i
+	local endIndex = i
+	if current_action_type == 'IF' then
+		local if_id = bl_cmd.act[i][4]
+		local nest_level = 0
+		for j = i + 1, #bl_cmd.act do
+			if bl_cmd.act[j][1] == 'IF' then
+				nest_level = nest_level + 1
+			elseif bl_cmd.act[j][1] == 'END' then
+				if nest_level == 0 and bl_cmd.act[j][2] == if_id then
+					endIndex = j
+					break
+				else
+					nest_level = nest_level - 1
+				end
+			end
+		end
+	end
+	if startIndex > 1 then
+		imgui.SetCursorPos(imgui.ImVec2(770, 293 + pxl))
+		if imgui.InvisibleButton("##UP" .. i, imgui.ImVec2(21, 22)) then
+			local block = {}
+			for k = startIndex, endIndex do
+				table.insert(block, bl_cmd.act[k])
+			end
+			for k = endIndex, startIndex, -1 do
+				table.remove(bl_cmd.act, k)
+			end
+			for k = 1, #block do
+				table.insert(bl_cmd.act, startIndex - 1 + k - 1, block[k])
+			end
+			should_break = true
+		end
+		local is_hovered_up = imgui.IsItemHovered()
+		if is_hovered_up then imgui.PushStyleColor(imgui.Col.Text, cl.def) end
+		gui.FaText(772, 295 + pxl, fa.ARROW_UP, fa_font[4])
+		if is_hovered_up then imgui.PopStyleColor() end
+	end
+	if endIndex < #bl_cmd.act then
+		imgui.SetCursorPos(imgui.ImVec2(740, 293 + pxl))
+		if imgui.InvisibleButton("##DOWN" .. i, imgui.ImVec2(21, 22)) then
+			local block = {}
+			for k = startIndex, endIndex do
+				table.insert(block, bl_cmd.act[k])
+			end
+			for k = endIndex, startIndex, -1 do
+				table.remove(bl_cmd.act, k)
+			end
+			for k = 1, #block do
+				table.insert(bl_cmd.act, startIndex + k, block[k])
+			end
+			should_break = true
+		end
+		local is_hovered_down = imgui.IsItemHovered()
+		if is_hovered_down then imgui.PushStyleColor(imgui.Col.Text, cl.def) end
+		gui.FaText(742, 295 + pxl, fa.ARROW_DOWN, fa_font[4])
+		if is_hovered_down then imgui.PopStyleColor() end
+	end
+	return should_break
+end
+
+--> Функции для полиции
+function checkVehicleData()
+	local vehicle_data_url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/cops/vehicle.json'
+	local local_path = dir .. '/State Helper/Police/vehicle.json'
+
+	local function loadVehicleNames()
+		local f = io.open(local_path, 'r')
+		if f then
+			local data = f:read('*a')
+			f:close()
+			local res, decoded_data = pcall(decodeJson, data)
+			if res and type(decoded_data) == 'table' then
+				vehicleNames = {}
+				if decoded_data[1] and decoded_data[1].version then
+					localVehicleVersion = decoded_data[1].version
+				end
+				for _, vehicle in ipairs(decoded_data) do
+					if vehicle.model_id and vehicle.name then
+						vehicleNames[vehicle.model_id] = u8:decode(vehicle.name)
+					end
+				end
+				print('[SH] Файл vehicle.json успешно загружен. Версия: ' .. localVehicleVersion)
+			else
+				print('[SH] Ошибка чтения vehicle.json.')
+			end
+		end
+	end
+	
+	if not doesFileExist(local_path) then
+		print('[SH] Файл vehicle.json не найден. Скачиваю...')
+		downloadUrlToFile(vehicle_data_url, local_path, function(id, status)
+			if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+				loadVehicleNames()
+			end
+		end)
+	else
+		loadVehicleNames()
+	end
+end
+
+function getNearestVehicleModel()
+	local closestCar = nil
+	local minDist = 150.0
+	local myX, myY, myZ = getCharCoordinates(PLAYER_PED)
+	local myCar = isCharInAnyCar(PLAYER_PED) and getCarCharIsUsing(PLAYER_PED) or nil
+
+	for _, vehicle in ipairs(getAllVehicles()) do
+		if vehicle ~= myCar and doesCharExist(getDriverOfCar(vehicle)) then
+			local vehX, vehY, vehZ = getCarCoordinates(vehicle)
+			local dist = getDistanceBetweenCoords3d(myX, myY, myZ, vehX, vehY, vehZ)
+			if dist < minDist then
+				minDist = dist
+				closestCar = vehicle
+			end
+		end
+	end
+
+	if closestCar then
+		local modelId = getCarModel(closestCar)
+		if vehicleNames and vehicleNames[modelId] then
+			return vehicleNames[modelId]
+		else
+			return "Модель " .. modelId
+		end
+	else
+		return "Неизвестно"
+	end
+end
+
+function getNearestVehicleSpeed()
+	local closestCar = nil
+	local minDist = 150.0
+	local myX, myY, myZ = getCharCoordinates(PLAYER_PED)
+	local myCar = isCharInAnyCar(PLAYER_PED) and getCarCharIsUsing(PLAYER_PED) or nil
+
+	for _, vehicle in ipairs(getAllVehicles()) do
+		if vehicle ~= myCar and doesCharExist(getDriverOfCar(vehicle)) then
+			local vehX, vehY, vehZ = getCarCoordinates(vehicle)
+			local dist = getDistanceBetweenCoords3d(myX, myY, myZ, vehX, vehY, vehZ)
+			if dist < minDist then
+				minDist = dist
+				closestCar = vehicle
+			end
+		end
+	end
+
+	if closestCar then
+		local speed = math.floor(getCarSpeed(closestCar) * 3.60)
+		return tostring(speed)
+	else
+		return "0"
+	end
+end
+
+function getCurrentMapSquare()
+	local alphabet = 'АБВГДЖЗИКЛМНОПРСТУФХЦЧШЯ'
+	local x, y = getCharCoordinates(PLAYER_PED)
+	local gridX = math.ceil((x + 3000) / 250)
+	local gridY = math.ceil((y * -1 + 3000) / 250)
+	local yLetter = string.sub(alphabet, gridY, gridY)
+	if yLetter and gridX > 0 and gridX <= 24 then
+		return yLetter .. '-' .. gridX
+	else
+		return 'Вне карты'
+	end
+end
+
+function download_wanted_reasons()
+	if s_na == '' then return end
+	local url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/AutoSu/' .. s_na .. '.json'
+	local auto_su_dir = dir .. '/State Helper/Police/AutoSu/'
+	if not doesDirectoryExist(auto_su_dir) then
+		createDirectory(auto_su_dir)
+	end
+	local file_path = auto_su_dir .. s_na .. '.json' 
+	if not doesFileExist(file_path) then
+		downloadUrlToFile(url, file_path, function(id, status)
+			if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+			--	sampAddChatMessage('[SH]{FFFFFF} ', 0x23E64A)
+			elseif status == dlstatus.STATUS_DOWNLOAD_ERROR then
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH]{FFFFFF} Не удалось скачать файл с розыском для вашего сервера.', 0xFF5345)
+				else
+					cefnotig("{FF5345}[SH]{FFFFFF} Не удалось скачать файл с розыском для вашего сервера.", 2000)
+				end
+			end
+		end)
+	end
+end
+--[[
+function download_ticket_reasons()
+	if s_na == '' then return end
+	local url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/cops/AutoTicket/' .. s_na .. '.json'
+	local auto_ticket_dir = dir .. '/State Helper/Police/AutoTicket/'
+	if not doesDirectoryExist(auto_ticket_dir) then
+		createDirectory(auto_ticket_dir)
+	end
+	local file_path = auto_ticket_dir .. s_na .. '.json'
+	if not doesFileExist(file_path) then
+		downloadUrlToFile(url, file_path, function(id, status)
+			if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+				-- 976+
+			elseif status == dlstatus.STATUS_DOWNLOAD_ERROR then
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH]{FFFFFF} Не удалось скачать файл с штрафами для вашего сервера.', 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH]{FFFFFF} Не удалось скачать файл с штрафами для вашего сервера.', 2000)
+				end
+			end
+		end)
+	end
+end]]
+--[[
+function send_ticket_commands(id, amount, code)
+	local commands_to_send = {}
+	local use_writeticket = true
+	local penaltyValue = tonumber(amount) or 0
+	if setting.police_settings.smart_ticket_trade and penaltyValue > 500000 then
+		use_writeticket = false
+	end
+	if use_writeticket then
+		table.insert(commands_to_send, string.format('/writeticket %d %d %s', id, penaltyValue, u1251:iconv(code)))
+	end
+	--> отыгровка
+	table.insert(commands_to_send, '/me ')
+	table.insert(commands_to_send, '/me ')
+	
+	send_smart_su_commands(commands_to_send)
+end]]
+
+--[[
+function send_take_command(id)
+	sampSetChatInputText('/take ' .. id)
+	sampSetChatInputEnabled(true)
+end]]
+
+function parsePenaltyRangeOrTake(penaltyStr)
+	local result = { type = 'unknown' }
+	if penaltyStr:lower() == 'take' then
+		result.type = 'take'
+	elseif penaltyStr:match('^(%d+)$') then
+		result.type = 'number'
+		result.value = tonumber(penaltyStr)
+	elseif penaltyStr:match('^(%d+)%s*-%s*(%d+)$') then
+		local minVal, maxVal = penaltyStr:match('^(%d+)%s*-%s*(%d+)$')
+		result.type = 'range'
+		result.min = tonumber(minVal)
+		result.max = tonumber(maxVal)
+		if result.min > result.max then
+			result.min, result.max = result.max, result.min
+		end
+	elseif penaltyStr:match('^(%d+)%s*-%s*take$') then
+		result.type = 'number-take'
+		result.value = tonumber(penaltyStr:match('^(%d+)'))
+	end
+	return result
+end
+
+function send_smart_su_commands(commands)
+	if thread:status() ~= 'dead' then
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH] {FFFFFF}Дождитесь завершения предыдущей отыгровки.', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH] {FFFFFF}Дождитесь завершения предыдущей отыгровки.', 2000)
+		end
+		return
+	end
+	thread = lua_thread.create(function(cmd_table)
+		for _, text in ipairs(cmd_table) do
+			sampSendChat(text)
+			wait(1300)
+		end
+	end, commands)
+end
+
+function parsePenaltyRange(rangeStr)
+	local startNum, endNum = rangeStr:match("(%d+)%s*-%s*(%d+)")
+	if startNum and endNum then
+		local penalties = {}
+		for i = tonumber(startNum), tonumber(endNum) do
+			table.insert(penalties, i)
+		end
+		return penalties
+	end
+	return nil
+end
+
+function smart_su_func(arg)
+	local id = tonumber(arg)
+	if id == nil or not sampIsPlayerConnected(id) then
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH]{FFFFFF} Используйте {a8a8a8}/su [id игрока]', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH]{FFFFFF} Используйте {a8a8a8}/su [id игрока]', 2000)
+		end
+		return
+	end
+	local auto_su_dir = dir .. '/State Helper/Police/AutoSu/'
+	if not doesDirectoryExist(auto_su_dir) then
+		createDirectory(auto_su_dir)
+	end
+	local file_path = auto_su_dir .. s_na .. '.json'
+	if doesFileExist(file_path) then
+		local file = io.open(file_path, 'r')
+		if file then
+			local data = file:read('*a')
+			file:close()
+			local success, decoded_data = pcall(decodeJson, data)
+			if success then
+				smartSuState.reasons = decoded_data
+			else
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH]{FFFFFF} Ошибка чтения файла ' .. s_na .. '.json. Файл может быть поврежден.', 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH]{FFFFFF} Ошибка чтения файла ' .. s_na .. '.json. Файл может быть поврежден.', 2000)
+				end
+				smartSuState.reasons = {}
+			end
+		end
+	else
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH]{FFFFFF} Файл розыска ' .. s_na .. '.json не найден. Скачивание...', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH]{FFFFFF} Файл розыска ' .. s_na .. '.json не найден. Скачивание...', 2000)
+		end
+		download_wanted_reasons()
+		smartSuState.reasons = {}
+	end
+	smartSuState.targetId[0] = id
+	windows.smart_su[0] = true
+	smartSuState.anim.is_opening = true
+	smartSuState.anim.is_closing = false
+end
+--[[
+function smart_ticket_func(arg)
+	local id = tonumber(arg)
+	if id == nil or not sampIsPlayerConnected(id) then
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH]{FFFFFF} Используйте {a8a8a8}/ticket [id игрока]', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH]{FFFFFF} Используйте {a8a8a8}/ticket [id игрока]', 2000)
+		end
+		return
+	end
+	local auto_ticket_dir = dir .. '/State Helper/Police/AutoTicket/'
+	if not doesDirectoryExist(auto_ticket_dir) then
+		createDirectory(auto_ticket_dir)
+	end
+	local file_path = auto_ticket_dir .. s_na .. '.json'
+	if doesFileExist(file_path) then
+		local file = io.open(file_path, 'r')
+		if file then
+			local data = file:read('*a')
+			file:close()
+			local success, decoded_data = pcall(decodeJson, data)
+			if success then
+				smartTicketState.reasons = decoded_data
+			else
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH]{FFFFFF} Ошибка чтения файла штрафов ' .. s_na .. '.json. Файл может быть поврежден.', 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH]{FFFFFF} Ошибка чтения файла штрафов ' .. s_na .. '.json. Файл может быть поврежден.', 2000)
+				end
+				smartTicketState.reasons = {}
+			end
+		end
+	else 
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH]{FFFFFF} Файл штрафов ' .. s_na .. '.json не найден. Скачивание...', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH]{FFFFFF} Файл штрафов ' .. s_na .. '.json не найден. Скачивание...', 3000)
+		end
+		download_ticket_reasons()
+		smartTicketState.reasons = {}
+	end
+	smartTicketState.targetId[0] = id
+	smartTicketState.searchQuery = ''
+	smartTicketState.chapterStates = {}
+	windows.smart_ticket[0] = true
+	smartTicketState.anim.is_opening = true
+	smartTicketState.anim.is_closing = false
+end
+]]
+function changeWantedPosition()
+	if setting.police_settings.wanted_list.func then
+		pos_new_wanted = lua_thread.create(function()
+			local backup = {
+				['x'] = setting.police_settings.wanted_list.pos.x,
+				['y'] = setting.police_settings.wanted_list.pos.y
+			}
+			local ChangePos = true
+			sampSetCursorMode(4)
+			windows.main[0] = false
+			if not setting.cef_notif then
+				sampAddChatMessage('[SH]{FFFFFF} Нажмите {FF6060}ЛКМ{FFFFFF}, чтобы применить или {FF6060}ESC{FFFFFF} для отмены.', 0xFF5345)
+			else
+				cefnotig("{FF5345}[SH]{FFFFFF} Нажмите {FF6060}ЛКМ{FFFFFF}, чтобы применить или {FF6060}ESC{FFFFFF} для отмены.", 3000)
+			end
+			if not sampIsChatInputActive() then
+				while not sampIsChatInputActive() and ChangePos do
+					wait(0)
+					local cX, cY = getCursorPos()
+					setting.police_settings.wanted_list.pos.x = cX
+					setting.police_settings.wanted_list.pos.y = cY
+					if isKeyDown(0x01) then
+						while isKeyDown(0x01) do wait(0) end
+						ChangePos = false
+						save()
+						if not setting.cef_notif then
+							sampAddChatMessage('[SH]{FFFFFF} Позиция сохранена.', 0xFF5345)
+						else
+							cefnotig("{FF5345}[SH]{FFFFFF} Позиция сохранена.", 2000)
+						end
+					elseif isKeyJustPressed(VK_ESCAPE) then
+						ChangePos = false
+						setting.police_settings.wanted_list.pos.x = backup['x']
+						setting.police_settings.wanted_list.pos.y = backup['y']
+					end
+				end
+			end
+			sampSetCursorMode(0)
+			windows.main[0] = true
+			imgui.ShowCursor = true
+			ChangePos = false
+		end)
+	end
+end
