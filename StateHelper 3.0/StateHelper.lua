@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.3')
+script_version('3.4')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -931,6 +931,7 @@ setting = {
 	visible_fast = 100,
 	replace_not_flood = true,
 	color_nick = false,
+	hide_chat = false,
 	replace_ic = true,
 	replace_s = true,
 	replace_c = true,
@@ -1011,6 +1012,7 @@ setting = {
 		ten_code = true,
 		auto_z = false,
 		auto_inves = false,
+		ghetto_notify = false,
 		cmd_patrol = 'patrol',
 		wanted_list = {
 			func = false, 
@@ -1913,10 +1915,6 @@ function main()
 		default = convert_color(setting.police_settings.wanted_list.color.default)
 	}
 	fontes_wanted = renderCreateFont('Trebuchet MS', setting.police_settings.wanted_list.size, setting.police_settings.wanted_list.flag)
-	if setting.mb.func then
-		members_wait.members = true
-		sampSendChat('/members')
-	end
 	update_text_dep()
 	add_cmd_in_all_cmd()
 	
@@ -1936,9 +1934,12 @@ function main()
 	if setting.button_close == 2 then
 		an[28] = 806
 	end
-	
+
 	while true do wait(0)
 		if not setting.blockl then
+
+			ghetto_notify_func()
+
 			if wanted_update then
 				local new_wanted_list = {}
 				local existing_ids = {}
@@ -2008,13 +2009,15 @@ function main()
 			if isKeyJustPressed(VK_Q) then
 				TEST = TEST + 1
 			end
-			
+			 
 			if not scene_active then
-				if setting.mb.func and not isGamePaused() and ((setting.mb.dialog and not sampIsDialogActive() and not sampIsCursorActive() and not sampIsChatInputActive() and not isSampfuncsConsoleActive()) or not setting.mb.dialog) then
-					render_members()
-				elseif setting.mb.func and pos_new_memb:status() ~= 'dead' then
-					render_members()
-				end
+            if setting.mb.func and not isGamePaused() then
+                if windows.main[0] or ((setting.mb.dialog and not sampIsDialogActive() and not sampIsCursorActive() and not sampIsChatInputActive() and not isSampfuncsConsoleActive()) or not setting.mb.dialog) then
+                    render_members()
+                end
+            elseif setting.mb.func and pos_new_memb:status() ~= 'dead' then
+                render_members()
+            end
 				if setting.police_settings.wanted_list.func and (setting.org >= 11 and setting.org <= 15) and not isGamePaused() and ((setting.police_settings.wanted_list.dialog and not sampIsDialogActive() and not sampIsCursorActive() and not sampIsChatInputActive() and not isSampfuncsConsoleActive()) or not setting.police_settings.wanted_list.dialog) then
 					render_wanted()
 				end
@@ -3560,93 +3563,108 @@ function hall.settings()
 		end
 	elseif tab_settings == 2 then
 		gui.Text(25, 12, 'Получаемые сообщения', bold_font[1])
-		new_draw(37, 431)
+		new_draw(37, 108)
 		
-		for i = 0, 10 do
+		for i = 0, 1 do
 			gui.DrawLine({16, 72 + (i * 36)}, {602, 72 + (i * 36)}, cl.line)
 		end
 		
-		gui.Text(26, 46, 'Скрыть частые подсказки сервера', font[3])
+		gui.Text(26, 46, 'Скрыть сообщения чата (общий фильтр)', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(561, 42))
-		if gui.Switch(u8'##Скрыть частые подсказки', setting.put_mes[1]) then
-			setting.put_mes[1] = not setting.put_mes[1]
+		if gui.Switch(u8'##Мастер скрытия чата', setting.hide_chat) then
+			setting.hide_chat = not setting.hide_chat
 			save()
 		end
-		gui.Text(26, 82, 'Скрыть объявления в СМИ от игроков', font[3])
+
+		if setting.hide_chat then
+			if gui.Button(u8'Настроить', {370, 46}, {130, 20}) then
+				imgui.OpenPopup(u8'Настроить фильтры чата')
+			end
+		else
+			imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+			imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+			imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+			gui.Button(u8'Настроить', {370, 46}, {130, 20}, false)
+			imgui.PopStyleColor(3)
+		end
+
+		if imgui.BeginPopupModal(u8'Настроить фильтры чата', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+			imgui.SetCursorPos(imgui.ImVec2(0, 0))
+			imgui.BeginChild(u8'Настройки скрытия', imgui.ImVec2(730, 405), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoScrollbar)
+			
+			imgui.SetCursorPos(imgui.ImVec2(710, 2))
+			if imgui.InvisibleButton(u8'##Закрыть окно фильтров', imgui.ImVec2(20, 20)) then
+				save()
+				imgui.CloseCurrentPopup()
+			end
+			if imgui.IsItemHovered() then
+				gui.DrawCircle({721, 12}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
+			else
+				gui.DrawCircle({721, 12}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00))
+			end
+			
+			gui.Draw({16, 16}, {698, 389}, cl.tab, 7, 15)
+
+			local items = {
+				{ 'Скрыть частые подсказки сервера', setting.put_mes, 1 },
+				{ 'Скрыть объявления в СМИ от игроков', setting.put_mes, 2 },
+				{ 'Скрыть репортажи и новости от СМИ', setting.put_mes, 3 },
+				{ 'Скрыть удачи игроков при открытии ларцов', setting.put_mes, 4 },
+				{ 'Скрыть информацию о сборе средств в организации', setting.put_mes, 5 },
+				{ 'Скрыть сообщения в вип чате', setting.put_mes, 6 },
+				{ 'Скрыть сообщения о лотерее', setting.put_mes, 7 },
+				{ 'Скрыть государственные новости', setting.put_mes, 8 },
+				{ 'Скрыть сообщения рации департамента', setting.put_mes, 9 },
+				{ 'Скрыть сообщения рации организации', setting.put_mes, 10 },
+			--	{ 'Скрыть сообщения о кладах', setting.chat_filters, 'treasure' }, -- без скрытия, дописать
+			--	{ 'Скрыть сообщения об отелях', setting.chat_filters, 'hotels' },  -- без скрытия, дописать
+			--	{ 'Скрыть сообщения о списанных бронежилетах', setting.chat_filters, 'armor_warehouse' },  -- без скрытия, дописать
+			--	{ 'Скрыть сообщения о гонке вооружений', setting.chat_filters, 'arms_race' },  -- без скрытия, дописать
+			--	{ 'Скрыть сообщения о качестве транспорта', setting.chat_filters, 'car_quality' }  -- без скрытия, дописать
+			}
+
+			for i, item in ipairs(items) do
+				local name = item[1]
+				local data_table = item[2]
+				local key = item[3]
+				
+				local y_pos = 26 + ((i-1) * 36)
+				gui.Text(26, y_pos, name, font[3])
+				
+				imgui.SetCursorPos(imgui.ImVec2(640, y_pos - 4)) 
+				if gui.Switch(u8'##hide_item_'..i, data_table[key]) then
+					data_table[key] = not data_table[key]
+					save()
+				end
+			end
+
+			imgui.Dummy(imgui.ImVec2(0, 20))
+			imgui.EndChild()
+			imgui.Dummy(imgui.ImVec2(0, 13))
+			imgui.EndPopup()
+		end
+		
+		gui.Text(26, 82, 'Заменить сообщения о флуде всплывающей надписью', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(561, 77))
-		if gui.Switch(u8'##Скрыть объявления в СМИ от игроков', setting.put_mes[2]) then
-			setting.put_mes[2] = not setting.put_mes[2]
-			save()
-		end
-		gui.Text(26, 118, 'Скрыть репортажи и новости от СМИ', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 113))
-		if gui.Switch(u8'##Скрыть репортажи и новости от СМИ', setting.put_mes[3]) then
-			setting.put_mes[3] = not setting.put_mes[3]
-			save()
-		end
-		gui.Text(26, 154, 'Скрыть удачи игроков при открытии ларцов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 149))
-		if gui.Switch(u8'##Скрыть удачи игроков при открытии ларцов', setting.put_mes[4]) then
-			setting.put_mes[4] = not setting.put_mes[4]
-			save()
-		end
-		gui.Text(26, 190, 'Скрыть информацию о сборе средств в организации', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 185))
-		if gui.Switch(u8'##Скрыть информацию о сборе средств в организации', setting.put_mes[5]) then
-			setting.put_mes[5] = not setting.put_mes[5]
-			save()
-		end
-		gui.Text(26, 226, 'Скрыть сообщения в вип чате', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 221))
-		if gui.Switch(u8'##Скрыть сообщения в вип чате', setting.put_mes[6]) then
-			setting.put_mes[6] = not setting.put_mes[6]
-			save()
-		end
-		gui.Text(26, 262, 'Скрыть сообщения о лотерее', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 257))
-		if gui.Switch(u8'##Скрыть сообщения о лотерее', setting.put_mes[7]) then
-			setting.put_mes[7] = not setting.put_mes[7]
-			save()
-		end
-		gui.Text(26, 298, 'Скрыть государственные новости', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 293))
-		if gui.Switch(u8'##Скрыть государственные новости', setting.put_mes[8]) then
-			setting.put_mes[8] = not setting.put_mes[8]
-			save()
-		end
-		gui.Text(26, 334, 'Скрыть сообщения рации департамента', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 329))
-		if gui.Switch(u8'##Скрыть сообщения рации департамента', setting.put_mes[9]) then
-			setting.put_mes[9] = not setting.put_mes[9]
-			save()
-		end
-		gui.Text(26, 370, 'Скрыть сообщения рации организации', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 365))
-		if gui.Switch(u8'##Скрыть сообщения рации организации', setting.put_mes[10]) then
-			setting.put_mes[10] = not setting.put_mes[10]
-			save()
-		end
-		gui.Text(26, 406, 'Заменить сообщения о флуде всплывающей надписью', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 401))
 		if gui.Switch(u8'##Заменить сообщение о флуде', setting.replace_not_flood) then
 			setting.replace_not_flood = not setting.replace_not_flood
 			save()
 		end
-		gui.Text(26, 442, 'Изменить цвет ника по цвету организации', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 437))
+		gui.Text(26, 118, 'Изменить цвет ника по цвету организации', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 113))
 		if gui.Switch(u8'##Цветные ники', setting.color_nick) then
 			setting.color_nick = not setting.color_nick
 			save()
 		end
 		if setting.color_nick then
-			if gui.Button(u8'Настроить', {370, 442}, {130, 20}) then
+			if gui.Button(u8'Настроить', {370, 118}, {130, 20}) then
 				imgui.OpenPopup(u8'Настроить цвет ника')
 			end
 		else
 			imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
 			imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
 			imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-			gui.Button(u8'Настроить', {370, 442}, {130, 20}, false)
+			gui.Button(u8'Настроить', {370, 118}, {130, 20}, false)
 			imgui.PopStyleColor(3)
 		end
 		if imgui.BeginPopupModal(u8'Настроить цвет ника', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
@@ -3693,189 +3711,196 @@ function hall.settings()
 			imgui.EndPopup()
 		end
 
-		gui.Text(25, 487, 'Отыгровки', bold_font[1])
-		new_draw(512, 694)
+		gui.Text(25, 164, 'Отыгровки', bold_font[1])
+		new_draw(189, 694)
 		
-		gui.Text(26, 521, 'Корректор чата', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 516))
+		gui.Text(26, 198, 'Корректор чата', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 193))
 		if gui.Switch(u8'##Корректор чата', setting.chat_corrector) then
 			setting.chat_corrector = not setting.chat_corrector
 			save()
 		end
-		gui.TextInfo({26, 540}, {'Автоматически делает первую букву заглавной, ставит точку в конце,', 'пробел после запятой и исправляет регистр после знаков . ? !'})
-		gui.DrawLine({16, 575}, {602, 575}, cl.line)
+		gui.TextInfo({26, 217}, {'Автоматически делает первую букву заглавной, ставит точку в конце,', 'пробел после запятой и исправляет регистр после знаков . ? !'})
+		gui.DrawLine({16, 252}, {602, 252}, cl.line)
 
-		gui.Text(26, 585, 'Автокоррекция отыгровок /me, /do, /todo', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 580))
+		gui.Text(26, 262, 'Автокоррекция отыгровок /me, /do, /todo', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 257))
 		if gui.Switch(u8'##Автокоррекция отыгровок', setting.auto_edit) then
-			setting.auto_edit = not setting.auto_edit
+		setting.auto_edit = not setting.auto_edit
 			save()
 		end
-		gui.DrawLine({16, 611}, {602, 611}, cl.line)
+		gui.DrawLine({16, 288}, {602, 288}, cl.line)
 
-		gui.Text(26, 621, 'Автоотыгровка при принятии документов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 616))
+		gui.Text(26, 298, 'Автоотыгровка при принятии документов', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 293))
 		if gui.Switch(u8'##Автоотыгровка при принятии документов', setting.auto_cmd_doc) then
 			setting.auto_cmd_doc = not setting.auto_cmd_doc
 			save()
 		end
-		gui.TextInfo({26, 640}, {'При просмотре паспорта, лицензий, медицинской карты или трудовой книжки, будет', 'автоматически воспроизведена отыгровка взятия просматриваемого документа.'})
-		gui.DrawLine({16, 679}, {602, 679}, cl.line)
+		gui.TextInfo({26, 317}, {'При просмотре паспорта, лицензий, медицинской карты или трудовой книжки, будет', 'автоматически воспроизведена отыгровка взятия просматриваемого документа.'})
+		gui.DrawLine({16, 356}, {602, 356}, cl.line)
 
-		gui.Text(26, 689, 'Автоотыгровка при закрытии документов', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 685))
+		gui.Text(26, 366, 'Автоотыгровка при закрытии документов', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(561, 362))
 		if gui.Switch(u8'##Автоотыгровка при закрытии документов', setting.auto_close_doc) then
 			setting.auto_close_doc = not setting.auto_close_doc
 			save()
 		end
-		gui.TextInfo({26, 708}, {'При закрытии окна с документами в чате автоматически будет воспроизведена отыгровка.'})
-		gui.DrawLine({16, 737}, {602, 737}, cl.line)
+		gui.TextInfo({26, 385}, {'При закрытии окна с документами в чате автоматически будет воспроизведена отыгровка.'})
+		gui.DrawLine({16, 414}, {602, 414}, cl.line)
 
-		gui.Text(26, 747, 'Автоотыгровка дубинки', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 743))
-		if gui.Switch(u8'##Автоотыгровка дубинки', setting.auto_cmd_tazer) then
-			setting.auto_cmd_tazer = not setting.auto_cmd_tazer
-			save()
-		end
-		gui.DrawLine({16, 774}, {602, 774}, cl.line)
+        gui.Text(26, 424, 'Автоотыгровка дубинки', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 420))
+        if gui.Switch(u8'##Автоотыгровка дубинки', setting.auto_cmd_tazer) then
+          setting.auto_cmd_tazer = not setting.auto_cmd_tazer
+          save()
+        end
+        gui.DrawLine({16, 451}, {602, 451}, cl.line)
 
-		gui.Text(26, 784, 'Автоотыгровка /time', font[3])
-		local bool_set_time = setting.auto_cmd_time
-		setting.auto_cmd_time = gui.InputText({190, 786}, 391, setting.auto_cmd_time, u8'Автоотыгровка time', 230, u8'Введите текст отыгровки')
-		if setting.auto_cmd_time ~= bool_set_time then
-			save()
-		end
-		gui.TextInfo({26, 815}, {'После ввода команды /time, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
-		gui.DrawLine({16, 851}, {602, 851}, cl.line)
+        gui.Text(26, 461, 'Автоотыгровка /time', font[3])
+        local bool_set_time = setting.auto_cmd_time
+        setting.auto_cmd_time = gui.InputText({190, 463}, 391, setting.auto_cmd_time, u8'Автоотыгровка time', 230, u8'Введите текст отыгровки')
+        if setting.auto_cmd_time ~= bool_set_time then
+          save()
+        end
+        gui.TextInfo({26, 492}, {'После ввода команды /time, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
+        gui.DrawLine({16, 528}, {602, 528}, cl.line)
 
-		gui.Text(26, 861, 'Автоотыгровка /r', font[3])
-		local bool_set_r = setting.auto_cmd_r
-		setting.auto_cmd_r = gui.InputText({190, 863}, 391, setting.auto_cmd_r, u8'Автоотыгровка r', 230, u8'Введите текст отыгровки')
-		if setting.auto_cmd_r ~= bool_set_r then
-			save()
-		end
-		gui.TextInfo({26, 892}, {'После ввода команды /r, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
-		gui.DrawLine({16, 928}, {602, 928}, cl.line)
+        gui.Text(26, 538, 'Автоотыгровка /r', font[3])
+        local bool_set_r = setting.auto_cmd_r
+        setting.auto_cmd_r = gui.InputText({190, 540}, 391, setting.auto_cmd_r, u8'Автоотыгровка r', 230, u8'Введите текст отыгровки')
+        if setting.auto_cmd_r ~= bool_set_r then
+          save()
+        end
+        gui.TextInfo({26, 569}, {'После ввода команды /r, будет автоматически воспроизведена введённая Вами отыгровка.', 'Оставьте поле пустым, если не нужно.'})
+        gui.DrawLine({16, 605}, {602, 605}, cl.line)
 
-		gui.Text(26, 938, 'Тег в рацию /r', font[3])
-		local bool_set_teg = setting.teg_r
-		setting.teg_r = gui.InputText({190, 940}, 391, setting.teg_r, u8'Тег в рацию организации', 250, u8'Введите тег для рации')
-		if setting.teg_r ~= bool_set_teg then
-			save()
-		end
-		gui.TextInfo({26, 969}, {'О необходимости использования тега уточните у лидера Вашей организации.'})
-		gui.DrawLine({16, 1005}, {602, 1005}, cl.line)
+        gui.Text(26, 615, 'Тег в рацию /r', font[3])
+        local bool_set_teg = setting.teg_r
+        setting.teg_r = gui.InputText({190, 617}, 391, setting.teg_r, u8'Тег в рацию организации', 250, u8'Введите тег для рации')
+        if setting.teg_r ~= bool_set_teg then
+          save()
+        end
+        gui.TextInfo({26, 646}, {'О необходимости использования тега уточните у лидера Вашей организации.'})
+        gui.DrawLine({16, 682}, {602, 682}, cl.line)
 
-		gui.Text(26, 1015, 'Использовать автоотыгровки при взаимодействии с оружием', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 1011))
-		if gui.Switch(u8'##Автоотыгровка взаимодействия с оружием', setting.gun_func) then
-			setting.gun_func = not setting.gun_func
-			save()
-		end
-		if setting.gun_func then
-			gui.Text(26, 1041, 'Отыгровки оружия', font[3])
-			if gui.Button(u8'Редактировать...', {460, 1038}, {130, 25}) then
-				imgui.OpenPopup(u8'Редактировать отыгровки оружия')
-				gun_bool = deep_copy(setting.gun)
-			end
-		else
-			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-			gui.Text(26, 1041, 'Отыгровки оружия', font[3])
-			imgui.PopStyleColor(1)
-			gui.Button(u8'Редактировать...', {460, 1038}, {130, 25}, false)
-		end
-		gui.DrawLine({16, 1069}, {602, 1069}, cl.line)
+        gui.Text(26, 692, 'Использовать автоотыгровки при взаимодействии с оружием', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 688))
+        if gui.Switch(u8'##Автоотыгровка взаимодействия с оружием', setting.gun_func) then
+          setting.gun_func = not setting.gun_func
+          save()
+        end
+        if setting.gun_func then
+          gui.Text(26, 718, 'Отыгровки оружия', font[3])
+          if gui.Button(u8'Редактировать...', {460, 715}, {130, 25}) then
+            imgui.OpenPopup(u8'Редактировать отыгровки оружия')
+            gun_bool = deep_copy(setting.gun)
+          end
+        else
+          imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+          gui.Text(26, 718, 'Отыгровки оружия', font[3])
+          imgui.PopStyleColor(1)
+          gui.Button(u8'Редактировать...', {460, 715}, {130, 25}, false)
+        end
+        gui.DrawLine({16, 746}, {602, 746}, cl.line)
 
-		gui.Text(26, 1079, 'Автоматический перенос длинного текста в игровом чате', font[3])
-		imgui.SetCursorPos(imgui.ImVec2(561, 1075))
-		if gui.Switch(u8'##Автоматический перенос длинного текста в игровом чате', setting.wrap_text_chat.func) then
-			setting.wrap_text_chat.func = not setting.wrap_text_chat.func
-			save()
-		end
+        gui.Text(26, 756, 'Автоматический перенос длинного текста в игровом чате', font[3])
+        imgui.SetCursorPos(imgui.ImVec2(561, 752))
+        if gui.Switch(u8'##Автоматический перенос длинного текста в игровом чате', setting.wrap_text_chat.func) then
+          setting.wrap_text_chat.func = not setting.wrap_text_chat.func
+          save()
+        end
+        
+        if setting.wrap_text_chat.func then
+          gui.Text(26, 783, 'Переносить текст после достижения', font[3])
+          local bool_set_wrap = setting.wrap_text_chat.num_char
+          setting.wrap_text_chat.num_char = gui.InputText({274, 783}, 30, setting.wrap_text_chat.num_char, u8'Количество символов переносимого текста', 4, u8'Число', 'num')
+          if setting.wrap_text_chat.num_char ~= bool_set_wrap then
+            if setting.wrap_text_chat.num_char == '' then
+              setting.wrap_text_chat.num_char = '128'
+            end
+            save()
+          end
+          gui.Text(320, 783, 'символов', font[3])
+        else
+          imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+          gui.Text(26, 783, 'Переносить текст после достижения', font[3])
+          gui.Text(320, 783, 'символов', font[3])
+          gui.InputFalse(setting.wrap_text_chat.num_char, 274, 783, 30)
+          imgui.PopStyleColor(1)
+        end
+
+        if imgui.BeginPopupModal(u8'Редактировать отыгровки оружия', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+          imgui.SetCursorPos(imgui.ImVec2(0, 0))
+          imgui.BeginChild(u8'Редактор отыгровок оружия', imgui.ImVec2(730, 370), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse)
+          imgui.Scroller(u8'Редактор отыгровок оружия', img_step[1][0], img_duration[1][0], imgui.HoveredFlags.AllowWhenBlockedByActiveItem)
+          local pos_y = 0
+          for i = 1, #gun_bool do
+            gui.Text(25, 14 + pos_y, gun_bool[i].name_gun, bold_font[1])
+            gui.Draw({16, 39 + pos_y}, {698, 71}, cl.tab, 7, 15)
+            gui.DrawLine({16, 74 + pos_y}, {714, 74 + pos_y}, cl.line)
+            gui.DrawCircleEmp({33.5, 56.5 + pos_y}, 10, cl.bg2, 2)
+            imgui.SetCursorPos(imgui.ImVec2(20, 43 + pos_y))
+            if imgui.InvisibleButton(u8'##Использовать отыгровку взятия оружия' .. i, imgui.ImVec2(27, 27)) then
+              gun_bool[i].take = not gun_bool[i].take
+            end
+            if imgui.IsItemActive() then
+              gui.DrawCircle({33.5, 56.5 + pos_y}, 10, cl.bg2, 2)
+            end
+            if gun_bool[i].take then
+              gui.FaText(28, 50 + pos_y, fa.CHECK, fa_font[2])
+            end
+            gun_bool[i].take_rp = gui.InputText({57, 50 + pos_y}, 637, gun_bool[i].take_rp, u8'Взятие оружия' .. i, 260, u8'Введите текст взятия оружия')
+            
+            gui.DrawCircleEmp({33.5, 92.5 + pos_y}, 10, cl.bg2, 2)
+            imgui.SetCursorPos(imgui.ImVec2(20, 79 + pos_y))
+            if imgui.InvisibleButton(u8'##Использовать отыгровку убирания оружия' .. i, imgui.ImVec2(27, 27)) then
+              gun_bool[i].put = not gun_bool[i].put
+            end
+            if imgui.IsItemActive() then
+              gui.DrawCircle({33.5, 92.5 + pos_y}, 10, cl.bg2, 2)
+            end
+            if gun_bool[i].put then
+              gui.FaText(28, 86 + pos_y, fa.CHECK, fa_font[2])
+            end
+            gun_bool[i].put_rp = gui.InputText({57, 86 + pos_y}, 637, gun_bool[i].put_rp, u8'Убирание оружия' .. i, 260, u8'Введите текст убирания оружия из виду')
+          
+            pos_y = pos_y + 115
+          end
+          
+          imgui.Dummy(imgui.ImVec2(0, 20))
+          imgui.EndChild()
+          
+          gui.DrawLine({10, 370}, {720, 370}, cl.line)
+          if gui.Button(u8'Сохранить и выйти', {10, 381}, {230, 31}) then
+            setting.gun = deep_copy(gun_bool)
+            save()
+            imgui.CloseCurrentPopup()
+          end
+          if gui.Button(u8'Отменить текущие изменения', {250, 381}, {230, 31}) then
+            imgui.CloseCurrentPopup()
+          end
+          if gui.Button(u8'Сбросить отыгровки до дефолта', {490, 381}, {230, 31}) then
+            gun_bool = deep_copy(gun_orig)
+          end
+          if gui.Button(u8'Отключить все', {250, 417}, {230, 31}) then
+            for i = 1, #gun_bool do
+              gun_bool[i].take = false
+              gun_bool[i].put = false
+            end
+          end
+
+          imgui.Dummy(imgui.ImVec2(0, 13))
+          imgui.EndPopup()
+        end
 		
-		if setting.wrap_text_chat.func then
-			gui.Text(26, 1106, 'Переносить текст после достижения', font[3])
-			local bool_set_wrap = setting.wrap_text_chat.num_char
-			setting.wrap_text_chat.num_char = gui.InputText({274, 1106}, 30, setting.wrap_text_chat.num_char, u8'Количество символов переносимого текста', 4, u8'Число', 'num')
-			if setting.wrap_text_chat.num_char ~= bool_set_wrap then
-				if setting.wrap_text_chat.num_char == '' then
-					setting.wrap_text_chat.num_char = '128'
-				end
-				save()
-			end
-			gui.Text(320, 1106, 'символов', font[3])
-		else
-			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
-			gui.Text(26, 1106, 'Переносить текст после достижения', font[3])
-			gui.Text(320, 1106, 'символов', font[3])
-			gui.InputFalse(setting.wrap_text_chat.num_char, 274, 1106, 30)
-			imgui.PopStyleColor(1)
-		end
+		setting.chat_filters = setting.chat_filters or {}
+		if setting.chat_filters.treasure == nil then setting.chat_filters.treasure = false end
+		if setting.chat_filters.hotels == nil then setting.chat_filters.hotels = false end
+		if setting.chat_filters.armor_warehouse == nil then setting.chat_filters.armor_warehouse = false end
+		if setting.chat_filters.arms_race == nil then setting.chat_filters.arms_race = false end
+		if setting.chat_filters.car_quality == nil then setting.chat_filters.car_quality = false end
 
-		if imgui.BeginPopupModal(u8'Редактировать отыгровки оружия', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
-			imgui.SetCursorPos(imgui.ImVec2(0, 0))
-			imgui.BeginChild(u8'Редактор отыгровок оружия', imgui.ImVec2(730, 370), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse)
-			imgui.Scroller(u8'Редактор отыгровок оружия', img_step[1][0], img_duration[1][0], imgui.HoveredFlags.AllowWhenBlockedByActiveItem)
-			local pos_y = 0
-			for i = 1, #gun_bool do
-				gui.Text(25, 14 + pos_y, gun_bool[i].name_gun, bold_font[1])
-				gui.Draw({16, 39 + pos_y}, {698, 71}, cl.tab, 7, 15)
-				gui.DrawLine({16, 74 + pos_y}, {714, 74 + pos_y}, cl.line)
-				gui.DrawCircleEmp({33.5, 56.5 + pos_y}, 10, cl.bg2, 2)
-				imgui.SetCursorPos(imgui.ImVec2(20, 43 + pos_y))
-				if imgui.InvisibleButton(u8'##Использовать отыгровку взятия оружия' .. i, imgui.ImVec2(27, 27)) then
-					gun_bool[i].take = not gun_bool[i].take
-				end
-				if imgui.IsItemActive() then
-					gui.DrawCircle({33.5, 56.5 + pos_y}, 10, cl.bg2, 2)
-				end
-				if gun_bool[i].take then
-					gui.FaText(28, 50 + pos_y, fa.CHECK, fa_font[2])
-				end
-				gun_bool[i].take_rp = gui.InputText({57, 50 + pos_y}, 637, gun_bool[i].take_rp, u8'Взятие оружия' .. i, 260, u8'Введите текст взятия оружия')
-				
-				gui.DrawCircleEmp({33.5, 92.5 + pos_y}, 10, cl.bg2, 2)
-				imgui.SetCursorPos(imgui.ImVec2(20, 79 + pos_y))
-				if imgui.InvisibleButton(u8'##Использовать отыгровку убирания оружия' .. i, imgui.ImVec2(27, 27)) then
-					gun_bool[i].put = not gun_bool[i].put
-				end
-				if imgui.IsItemActive() then
-					gui.DrawCircle({33.5, 92.5 + pos_y}, 10, cl.bg2, 2)
-				end
-				if gun_bool[i].put then
-					gui.FaText(28, 86 + pos_y, fa.CHECK, fa_font[2])
-				end
-				gun_bool[i].put_rp = gui.InputText({57, 86 + pos_y}, 637, gun_bool[i].put_rp, u8'Убирание оружия' .. i, 260, u8'Введите текст убирания оружия из виду')
-			
-				pos_y = pos_y + 115
-			end
-			
-			imgui.Dummy(imgui.ImVec2(0, 20))
-			imgui.EndChild()
-			
-			gui.DrawLine({10, 370}, {720, 370}, cl.line)
-			if gui.Button(u8'Сохранить и выйти', {10, 381}, {230, 31}) then
-				setting.gun = deep_copy(gun_bool)
-				save()
-				imgui.CloseCurrentPopup()
-			end
-			if gui.Button(u8'Отменить текущие изменения', {250, 381}, {230, 31}) then
-				imgui.CloseCurrentPopup()
-			end
-			if gui.Button(u8'Сбросить отыгровки до дефолта', {490, 381}, {230, 31}) then
-				gun_bool = deep_copy(gun_orig)
-			end
-			if gui.Button(u8'Отключить все', {250, 417}, {230, 31}) then
-				for i = 1, #gun_bool do
-					gun_bool[i].take = false
-					gun_bool[i].put = false
-				end
-			end
-
-			imgui.Dummy(imgui.ImVec2(0, 13))
-			imgui.EndPopup()
-		end
-		
 		imgui.Dummy(imgui.ImVec2(0, 24))
 	elseif tab_settings == 3 then
 		if setting.org <= 4 then
@@ -4556,7 +4581,7 @@ function hall.settings()
 			if num_win_fast == 1 then
 				fast_table_func(2)
 			else
-				fast_table_func(3)
+				fast_table_func(3) 
 			end
 		end
 	elseif tab_settings == 5 then
@@ -5223,7 +5248,17 @@ function hall.settings()
 				save()
 			end
 			gui.TextInfo({26, 232 + 28}, {'Заполняет данные в бланке расследования за вас (дата, время, оружие...)'})
-			local pos_wanted = 232 + 53 + 19
+
+			new_draw(16 + 278, 53)
+			gui.Text(26, 26 + 278, 'Сообщать при заезде в опасный район', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, 21 + 278))
+			if gui.Switch(u8'##notify_ghetto', setting.police_settings.ghetto_notify) then
+				setting.police_settings.ghetto_notify = not setting.police_settings.ghetto_notify
+				save()
+			end
+			gui.TextInfo({26, 45 + 278}, {'Уведомления, когда вы заезжаете в зону опасного района.'})
+			
+			local pos_wanted = 285 + 53 + 19
 			new_draw(pos_wanted, 37)
 			gui.Text(26, pos_wanted + 9, 'Список разыскиваемых на Вашем экране', font[3])
 			imgui.SetCursorPos(imgui.ImVec2(561, pos_wanted + 5))
@@ -11113,81 +11148,97 @@ function hall.rp_zona()
 		local bool_scene_y = 0
 		local color_scene = {{1.00, 0.62, 0.04}, {1.00, 0.26, 0.23}, {1.00, 0.82, 0.04}, {0.19, 0.80, 0.35}, {0.00, 0.80, 0.76}, {0.04, 0.49, 1.00}, {0.37, 0.35, 0.93}, {0.75, 0.33, 0.95}, {1.00, 0.20, 0.37}, {1.00, 0.55, 0.55}, {0.67, 0.55, 0.41}}
 		for i = 1, #setting.scene do
-			local x_sp = (204 * bool_scene_x)
-			local y_sp = (108 * bool_scene_y)
-			gui.Draw({16 + x_sp, 16 + y_sp}, {196, 100}, imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2], color_scene[setting.scene[i].color + 1][3], 1.00), 10, 15)
-			imgui.SetCursorPos(imgui.ImVec2(16 + x_sp, 16 + y_sp))
-			if imgui.InvisibleButton(u8'##Открыть сцену' .. i, imgui.ImVec2(156, 100)) then
-				scene = setting.scene[i]
-				scene_active = true
-				scene_edit_pos = false
-				windows.main[0] = false
-				imgui.ShowCursor = false
-				displayRadar(false)
-				displayHud(false)
-				lockPlayerControl(true)
-				posX, posY, posZ = getCharCoordinates(playerPed)
-				setFixedCameraPosition(posX, posY, posZ, 0.0, 0.0, 0.0)
-				angZ = getCharHeading(playerPed)
-				angZ = angZ * -1.0
-				angY = 0.0
-				sampTextdrawDelete(449)
-			end
-			if imgui.IsItemActive() then
-				gui.Draw({16 + x_sp, 16 + y_sp}, {196, 100}, imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2] - 0.10, color_scene[setting.scene[i].color + 1][3], 1.00), 10, 15)
-			end
-			imgui.SetCursorPos(imgui.ImVec2(172 + x_sp, 56 + y_sp))
-			if imgui.InvisibleButton(u8'##Открыть сцену 2' .. i, imgui.ImVec2(40, 60)) then
-				scene = setting.scene[i]
-				scene_active = true
-				scene_edit_pos = false
-				windows.main[0] = false
-				imgui.ShowCursor = false
-				displayRadar(false)
-				displayHud(false)
-				lockPlayerControl(true)
-				posX, posY, posZ = getCharCoordinates(playerPed)
-				setFixedCameraPosition(posX, posY, posZ, 0.0, 0.0, 0.0)
-				angZ = getCharHeading(playerPed)
-				angZ = angZ * -1.0
-				angY = 0.0
-				sampTextdrawDelete(449)
-			end
-			if imgui.IsItemActive() then
-				gui.Draw({16 + x_sp, 16 + y_sp}, {196, 100}, imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2] - 0.10, color_scene[setting.scene[i].color + 1][3], 1.00), 10, 15)
-			end
-			gui.FaText(26 + x_sp, 26 + y_sp, all_icon_shpora[setting.scene[i].icon], fa_font[5], imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
-			imgui.SetCursorPos(imgui.ImVec2(16 + x_sp, 16 + y_sp))
-			
-			imgui.SetCursorPos(imgui.ImVec2(189 + x_sp, 39 + y_sp))
-			local p = imgui.GetCursorScreenPos()
-			imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x, p.y), 15, imgui.GetColorU32Vec4(imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2] + 0.10, color_scene[setting.scene[i].color + 1][3], 1.00)), 60)
-			imgui.SetCursorPos(imgui.ImVec2(174 + x_sp, 24 + y_sp))
-			if imgui.InvisibleButton(u8'##Открыть для редактирования сцены ' .. i, imgui.ImVec2(30, 30)) then
-				new_scene = true
-				scene = setting.scene[i]
-				num_scene = i
-				font_sc = renderCreateFont('Arial', scene.size, scene.flag)
-			end
-			if imgui.IsItemActive() then
-				imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x, p.y), 15, imgui.GetColorU32Vec4(imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2] + 0.20, color_scene[setting.scene[i].color + 1][3], 1.00)), 60)
-			end
-			gui.FaText(180 + x_sp, 28 + y_sp, fa.ELLIPSIS, fa_font[5], imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
-			if setting.scene[i].name ~= '' then
-				local wrapped_text, newline_count = wrapText(u8:decode(setting.scene[i].name), 21, 63)
-				gui.Text(26 + x_sp, 91 + y_sp - (newline_count * 17), wrapped_text, bold_font[1])
-			else
-				gui.Text(26 + x_sp, 91 + y_sp, 'Без названия', bold_font[1])
-			end
-			imgui.Dummy(imgui.ImVec2(0, 19))
-			
-			if i % 4 == 0 then
-				bool_scene_y = bool_scene_y + 1
-				bool_scene_x = 0
-			else
-				bool_scene_x = bool_scene_x + 1
-			end
-		end
+            local x_sp = (204 * bool_scene_x)
+            local y_sp = (108 * bool_scene_y)
+            gui.Draw({16 + x_sp, 16 + y_sp}, {196, 100}, imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2], color_scene[setting.scene[i].color + 1][3], 1.00), 10, 15)
+            
+            imgui.SetCursorPos(imgui.ImVec2(16 + x_sp, 16 + y_sp))
+            if imgui.InvisibleButton(u8'##Открыть сцену' .. i, imgui.ImVec2(156, 100)) then
+                scene = setting.scene[i]
+                
+                font_sc = renderCreateFont('Arial', scene.size, scene.flag)
+                
+                scene_active = true
+                scene_edit_pos = false
+                windows.main[0] = false
+                imgui.ShowCursor = false
+                displayRadar(false)
+                displayHud(false)
+                lockPlayerControl(true)
+                
+                posX, posY, posZ = getCharCoordinates(playerPed)
+                setFixedCameraPosition(posX, posY, posZ, 0.0, 0.0, 0.0)
+                angZ = getCharHeading(playerPed)
+                angZ = angZ * -1.0
+                angY = 0.0
+                sampTextdrawDelete(449)
+            end
+            
+            if imgui.IsItemActive() then
+                gui.Draw({16 + x_sp, 16 + y_sp}, {196, 100}, imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2] - 0.10, color_scene[setting.scene[i].color + 1][3], 1.00), 10, 15)
+            end
+            
+            imgui.SetCursorPos(imgui.ImVec2(172 + x_sp, 56 + y_sp))
+            if imgui.InvisibleButton(u8'##Открыть сцену 2' .. i, imgui.ImVec2(40, 60)) then
+                scene = setting.scene[i]
+                
+                font_sc = renderCreateFont('Arial', scene.size, scene.flag)
+                
+                scene_active = true
+                scene_edit_pos = false
+                windows.main[0] = false
+                imgui.ShowCursor = false
+                displayRadar(false)
+                displayHud(false)
+                lockPlayerControl(true)
+                
+                posX, posY, posZ = getCharCoordinates(playerPed)
+                setFixedCameraPosition(posX, posY, posZ, 0.0, 0.0, 0.0)
+                angZ = getCharHeading(playerPed)
+                angZ = angZ * -1.0
+                angY = 0.0
+                sampTextdrawDelete(449)
+            end
+            
+            if imgui.IsItemActive() then
+                gui.Draw({16 + x_sp, 16 + y_sp}, {196, 100}, imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2] - 0.10, color_scene[setting.scene[i].color + 1][3], 1.00), 10, 15)
+            end
+            
+            gui.FaText(26 + x_sp, 26 + y_sp, all_icon_shpora[setting.scene[i].icon], fa_font[5], imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
+            imgui.SetCursorPos(imgui.ImVec2(16 + x_sp, 16 + y_sp))
+            
+            imgui.SetCursorPos(imgui.ImVec2(189 + x_sp, 39 + y_sp))
+            local p = imgui.GetCursorScreenPos()
+            imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x, p.y), 15, imgui.GetColorU32Vec4(imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2] + 0.10, color_scene[setting.scene[i].color + 1][3], 1.00)), 60)
+            imgui.SetCursorPos(imgui.ImVec2(174 + x_sp, 24 + y_sp))
+            
+            if imgui.InvisibleButton(u8'##Открыть для редактирования сцены ' .. i, imgui.ImVec2(30, 30)) then
+                new_scene = true
+                scene = setting.scene[i]
+                num_scene = i
+                font_sc = renderCreateFont('Arial', scene.size, scene.flag)
+            end
+            
+            if imgui.IsItemActive() then
+                imgui.GetWindowDrawList():AddCircleFilled(imgui.ImVec2(p.x, p.y), 15, imgui.GetColorU32Vec4(imgui.ImVec4(color_scene[setting.scene[i].color + 1][1], color_scene[setting.scene[i].color + 1][2] + 0.20, color_scene[setting.scene[i].color + 1][3], 1.00)), 60)
+            end
+            
+            gui.FaText(180 + x_sp, 28 + y_sp, fa.ELLIPSIS, fa_font[5], imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
+            if setting.scene[i].name ~= '' then
+                local wrapped_text, newline_count = wrapText(u8:decode(setting.scene[i].name), 21, 63)
+                gui.Text(26 + x_sp, 91 + y_sp - (newline_count * 17), wrapped_text, bold_font[1])
+            else
+                gui.Text(26 + x_sp, 91 + y_sp, 'Без названия', bold_font[1])
+            end
+            imgui.Dummy(imgui.ImVec2(0, 19))
+            
+            if i % 4 == 0 then
+                bool_scene_y = bool_scene_y + 1
+                bool_scene_x = 0
+            else
+                bool_scene_x = bool_scene_x + 1
+            end
+        end
 	elseif new_scene then
 		gui.Draw({16, 16}, {808, 37}, cl.tab, 7, 15)
 		gui.Text(26, 26, 'Имя сцены', font[3])
@@ -17175,29 +17226,48 @@ function changePosition()
 end
 
 function update_lists()
-	while true do
-		wait(1000)
-		if not windows.main[0] and sampIsLocalPlayerSpawned() and not sampIsDialogActive() and wait_mb == 0 and not isGamePaused() and not isPauseMenuActive() then
-			local check_started = false
-			if setting.mb.func and not members_wait.members then
-				members_wait.members = true
-				sampSendChat('/members')
-				check_started = true
-			elseif not setting.mb.func and setting.police_settings.wanted_list.func and (setting.org >= 11 and setting.org <= 15) and not wanted_wait.checking then
-				wanted_wait.checking = true
-				wanted_wait.page = 1
-				emp_wanted_players = {}
-				sampSendChat('/wanted 1')
-				wanted_wait.timeout = os.clock() + 5
-				check_started = true
-			end
-			if check_started then
-				wait_mb = 27
-			elseif (members_wait.members or wanted_wait.checking) then
-				wait_mb = 5 
-			end
-		end
-	end
+    local toggle_updater = false
+    while true do
+        wait(1000)
+        if sampIsLocalPlayerSpawned() and not sampIsDialogActive() and not sampIsChatInputActive() and wait_mb == 0 and not isGamePaused() and not isPauseMenuActive() then
+            local check_started = false
+            
+            local need_members = setting.mb.func
+            local need_wanted = setting.police_settings.wanted_list.func and (setting.org >= 11 and setting.org <= 15)
+
+            if need_members and need_wanted then
+                if toggle_updater then
+                    sampSendChat('/members')
+                    members_wait.members = true
+                    check_started = true
+                    toggle_updater = false
+                else
+                    wanted_wait.checking = true
+                    wanted_wait.page = 1
+                    emp_wanted_players = {}
+                    sampSendChat('/wanted 1')
+                    wanted_wait.timeout = os.clock() + 5
+                    check_started = true
+                    toggle_updater = true
+                end
+            elseif need_members then
+                sampSendChat('/members')
+                members_wait.members = true
+                check_started = true
+            elseif need_wanted then
+                wanted_wait.checking = true
+                wanted_wait.page = 1
+                emp_wanted_players = {}
+                sampSendChat('/wanted 1')
+                wanted_wait.timeout = os.clock() + 5
+                check_started = true
+            end
+            
+            if check_started then
+                wait_mb = 15
+            end
+        end
+    end
 end
 
 function check_all_wanted_pages() -- 976 (посл.проверки)
@@ -17226,8 +17296,8 @@ end
 
 function EXPORTS.sendRequest()
 	if not sampIsDialogActive() and found_our then
+        sampSendChat('/members')
 		members_wait.members = true
-		sampSendChat('/members')
 		
 		return true
 	end
@@ -17319,7 +17389,7 @@ end
 function hook.onServerMessage(color_mes, mes)
 	local mes_col = (bit.tohex(bit.rshift(color_mes, 8), 6))
 
-	if mes:find('%[Ошибка%] {FFFFFF}Вы не полицейский!') and wanted_wait.checking then
+	if mes:find('Вы не полицейский!') and wanted_wait.checking and mes_col == 'ff6347' then
 		if not setting.cef_notif then
 			sampAddChatMessage('[SH] {FFFFFF}Вы не полицейский, функция wanted на экране выключена.', 0xFF5345)
 		else
@@ -17330,7 +17400,7 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 
-	if mes:find('%[Ошибка%] {ffffff}Вы не состоите во фракции') and setting.mb.func then
+	if mes:find('Вы не состоите во фракции') and setting.mb.func and mes_col == 'ff6347' then
 		if not setting.cef_notif then
 			sampAddChatMessage('[SH] {FFFFFF}Вы не состоите в организации, мемберс на экране выключен.', 0xFF5345)
 		else
@@ -17340,8 +17410,8 @@ function hook.onServerMessage(color_mes, mes)
 		save()
 		return false
 	end
-	
-	if mes:find('%[Ошибка%] {FFFFFF}Не флуди!') and wanted_wait.checking then --> для вантед
+
+	if mes:find('Не флуди!') and wanted_wait.checking and mes_col == 'ff6347' then --> для вантед
 		lua_thread.create(function()
 			wait(1500)
 			if wanted_wait.checking then
@@ -17352,7 +17422,7 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 
-	if mes:find('%[Ошибка%] {ffffff}Игроков с таким уровнем розыска нету!') and wanted_wait.checking then
+	if mes:find('Игроков с таким уровнем розыска нету!') and wanted_wait.checking and mes_col == 'ff6347' then
 		wanted_wait.timeout = 0
 		wanted_check()
 		return false
@@ -17377,16 +17447,23 @@ function hook.onServerMessage(color_mes, mes)
 		end
 	end
 
-	if setting.put_mes[2] then
-		if mes:find('Объявление:') or mes:find('Отредактировал сотрудник') then
-			return false
-		end
-	end
+	if setting.put_mes[2] and setting.hide_chat and mes_col == '73b461' then
+        local clean_mes = mes:gsub('{%x%x%x%x%x%x}', '')
+        local lower_mes = clean_mes:lower()
+
+        local icon_23b = string.char(0xEF, 0x88, 0xBB)
+        
+        if clean_mes:find(icon_23b, 1, true) == 1 
+        or lower_mes:find(':uf23b:', 1, true) == 1 
+        or clean_mes:find('Отредактировал') then
+            return false
+        end
+    end
 	if mes:find('У игрока уже есть Трудовая книжка!') and run_sob then
 		wait_book = {20, true}
 	end
 	
-	if setting.put_mes[3] then
+	if setting.put_mes[3] and setting.hide_chat then
 		if mes:find('News LS') or mes:find('News SF') or mes:find('News LV') then
 			return false
 		end
@@ -17418,7 +17495,7 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 	
-	if setting.put_mes[1] then
+	if setting.put_mes[1] and setting.hide_chat then
 		if mes:find('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~') or mes:find('- Основные команды сервера: /menu /help /gps /settings') 
 		or mes:find('Пригласи друга и получи бонус в размере') or mes:find('- Донат и получение дополнительных средств arizona-rp.com/donate') 
 		or mes:find('Подробнее об обновлениях сервера') or mes:find('(Личный кабинет/Донат)') or mes:find('С помощью телефона можно заказать') 
@@ -17439,11 +17516,11 @@ function hook.onServerMessage(color_mes, mes)
 		end
 	end
 	
-	if mes:find(' испытал удачу при открытии ') or mes:find('%[Удача%] Игрок') or mes:find('Удача улыбнулась игроку') and setting.put_mes[4] then
+	if mes:find(' испытал удачу при открытии ') or mes:find('%[Удача%] Игрок') or mes:find('Удача улыбнулась игроку') and setting.put_mes[4] and setting.hide_chat then
 		return false
 	end
 
-	if mes:find('[Сбор средств](.+)организац') and setting.put_mes[5] then
+	if mes:find('[Сбор средств](.+)организац') and setting.put_mes[5] and setting.hide_chat then
 		return false
 	end
 	if run_sob then
@@ -17552,26 +17629,29 @@ function hook.onServerMessage(color_mes, mes)
 	end
 	
 	if mes:find('Купите лотерейный билет и получите возможность выиграть') or mes:find('Купить лотерейные билеты можно в уличных киосках')
-	and setting.put_mes[7] then
+	and setting.put_mes[7] and setting.hide_chat then
 		return false
 	end
 
-	if mes:find('Гос%.Новости') and mes_col == '045fb4' and setting.put_mes[8] then
+	if mes:find('Гос%.Новости') and mes_col == '045fb4' and setting.put_mes[8] and setting.hide_chat then
 		return false
 	end
 
-	if setting.put_mes[6] then
-		if mes:find('%[Информация%]{FFFFFF} Игрок (.+) приобрел ') or mes:find('%[VIP ADV%] {FFFFFF}') or mes:find('%[FOREVER%] {FFFFFF}')
-		or mes:find('%[PREMIUM%] {FFFFFF}') or mes:find('%[VIP%] {FFFFFF}') or mes:find('%[ADMIN%] {FFFFFF}') then
-			return false
-		end
-	end
+	if setting.put_mes[6] and setting.hide_chat then
+        if mes:find('%[Информация%] Игрок .+ приобрел ') then
+            return false
+        end
 
-	if mes:find('%[D%] ') and mes_col == '3399ff' and setting.put_mes[9] then
+        if mes:find('^.-%w+_%w+%[%d+%]%s?.-%s?:') and (mes_col == '35a7ff' or mes_col == 'd7a926' or mes_col == 'df8426' or mes_col == 'fa8072' or mes_col == '3d63ff' or mes_col == '8f989c') then
+            return false
+        end
+    end
+
+	if mes:find('%[D%] ') and mes_col == '3399ff' and setting.put_mes[9] and setting.hide_chat then
 		return false
 	end
 
-	if mes:find('%[R%] ') and mes_col == '2db043' and setting.put_mes[10] then
+	if mes:find('%[R%] ') and mes_col == '2db043' and setting.put_mes[10] and setting.hide_chat then
 		return false
 	end
 	
@@ -17675,7 +17755,7 @@ function hook.onServerMessage(color_mes, mes)
 		ret_check = ret_check - 1
 	end
 	
-	if mes:find('%[Ошибка%] {FFFFFF}Не флуди!') and setting.replace_not_flood then
+	if mes:find('Не флуди!') and setting.replace_not_flood and mes_col == 'ff6347' then
 		local pointer = sampGetInputInfoPtr()
 		local pointer = getStructElement(pointer, 0x8, 4)
 		local pos_chat_x = getStructElement(pointer, 0x8, 4)
@@ -17934,13 +18014,13 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 	end
 	]]
 	if id == 235 then
-		local text_org, rank_org = text:match('Должность: {B83434}(.-)%((%d+)%)')
+		local text_org, rank_org = text:match('Должность: {%x+}(.-)%((%d+)%)')
 		if text_org and rank_org then
 			setting.job_title = u8(text_org)
 			setting.rank = tonumber(rank_org)
 			save()
 		else
-			if text:find('Должность: {B83434}Судья') then
+			if text:find('Должность: {%x+}Судья') then
 				setting.job_title = u8('Судья')
 				setting.rank = 10
 				save()
@@ -18004,94 +18084,100 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 			end
 		end
 	end
-	
-	if id == 2015 and members_wait.members and setting.mb.func then
-		local status, err = pcall(function()
-			local ip, port = sampGetCurrentServerAddress()
-			local server = ip..':'..port
-			if server == '80.66.82.147:7777' then return false end
-			local count = 0
-			members_wait.next_page.bool = false
-			if title:find('{FFFFFF}(.+)%(В сети: (%d+)%)') then
-				org.name, org.online = title:match('{FFFFFF}(.+)%(В сети: (%d+)%)')
-			else
-				org.name = 'Больница VC'
-				org.online = title:match('%(В сети: (%d+)%)')
-			end
-			for line in text:gmatch('[^\r\n]+') do
-				count = count + 1
-				if not line:find('Ник') and not line:find('страница') then
-					local color, nick, id, prefix, rank_name, rank_id, color_nil, warns, afk, muted, quests
-					if line:find('%(Вы%)') then
-						color, nick, id, prefix, rank_name, rank_id, color_nil, warns, idk, afk, muted, quests = 
-							string.match(line, '{(%x+)}(.-)%((%d+)%)%{(%x+)}%(Вы%)\t(.-)%((%d+)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
-					elseif line:find('%(%d+ дней%)') then
-						color, nick, id, rank_name, rank_id, color, days, color_nil, warns, idk, afk, muted, quests = 
-						string.match(line, '{(%x+)}(.-)%((%d+)%)\t(.-)%((%d+)%) {(%x+)}%((.-)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
+	 
+    if id == 2015 and members_wait.members and setting.mb.func then
+        local status, err = pcall(function()
+            local ip, port = sampGetCurrentServerAddress()
+            local server = ip..':'..port
+            if server == '80.66.82.147:7777' then return false end
+            local count = 0
+            members_wait.next_page.bool = false
+            if title:find('{FFFFFF}(.+)%(В сети: (%d+)%)') then
+                org.name, org.online = title:match('{FFFFFF}(.+)%(В сети: (%d+)%)')
+            else
+                org.name = 'Больница VC'
+                org.online = title:match('%(В сети: (%d+)%)')
+            end
 
-					else
-						color, nick, id, rank_name, rank_id, color_nil, warns, idk, afk, muted, quests = 
-							string.match(line, '{(%x+)}(.-)%((%d+)%)\t(.-)%((%d+)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
-					end
-					local uniform = (color == '90EE90')
-					if not setting.mb_tags then
-						nick = nick:match('([A-Za-z]+_[A-Za-z]+)$')
-					end
-					if muted and muted ~= "" then
-						muted = muted:match('^/%s*(.*)') or muted
-						nick = nick .. " (" .. muted .. ") "
-					end
-					members[#members + 1] = {
-						nick = tostring(nick),
-						id = id,
-						rank = {
-							count = tonumber(rank_id),
-						},
-						afk = tonumber(afk),
-						warns = tonumber(warns),
-						rank_name = rank_name,
-						uniform = uniform
-					}
-				end
-				if line:match('Следующая страница') then
-					members_wait.next_page.bool = true
-					members_wait.next_page.i = count - 2
-				end
-			end
-			if members_wait.next_page.bool then
-				sampSendDialogResponse(id, 1, members_wait.next_page.i, _)
-				members_wait.next_page.bool = false
-				members_wait.next_page.i = 0
-			else
-				while #members > tonumber(org.online) do
-					table.remove(members, 1)
-				end
-				sampSendDialogResponse(id, 0, _, _)
-				org.afk = getAfkCount()
-				members_wait.members = false
-				if setting.police_settings.wanted_list.func and (setting.org >= 11 and setting.org <= 15) and not wanted_wait.checking then
-					lua_thread.create(function()
-						wait(1100)
-						wanted_wait.checking = true
-						wanted_wait.page = 1
-						emp_wanted_players = {}
-						sampSendChat('/wanted 1')
-						wanted_wait.timeout = os.clock() + 5
-					end)
-				end
-			end
-		end)
-		
-		if not status then
-			if not setting.cef_notif then
-				sampAddChatMessage(string.format('[SH]{FFFFFF} В Мемберс на экране случилась ошибка. Функция отключена.'), 0xFF5345)
-			else
-				cefnotig('{FF5345}[SH]{FFFFFF} В Мемберс на экране случилась ошибка. Функция отключена.', 3000)
-			end
-			setting.mb.func = false
-		end
-		
-		return false
+            for line in text:gmatch('[^\r\n]+') do
+                count = count + 1
+                if not line:find('Ник') and not line:find('страница') then
+                    local color, nick, id, rank_name, rank_id, color_nil, warns, idk, afk, muted, quests
+                    local clean_line = line:gsub('%s*{%x+}%(%d+ дней%)', '')
+
+                    if line:find('%(Вы%)') then
+                        color, nick, id, rank_name, rank_id, color_nil, warns, idk, afk, muted, quests = 
+                            line:match('{(%x+)}(.-)%((%d+)%){%x+}%(Вы%)\t(.-)%((%d+)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
+                    else
+                        color, nick, id, rank_name, rank_id, color_nil, warns, idk, afk, muted, quests = 
+                            clean_line:match('{(%x+)}(.-)%((%d+)%)\t(.-)%((%d+)%)\t{(%x+)}(%d+) %[(%d+)] / (%d+)%s*(.-)\t(%d+)')
+                    end 
+
+                    if nick then
+                        local uniform = (color == '90EE90')
+                        if not setting.mb_tags then
+                            nick = nick:match('([A-Za-z]+_[A-Za-z]+)$') or nick
+                        end
+                        if muted and muted ~= "" then
+                            muted = muted:match('^/%s*(.*)') or muted
+                            nick = nick .. " (" .. muted .. ") "
+                        end
+                        
+                        members[#members + 1] = {
+                            nick = tostring(nick),
+                            id = id,
+                            rank = {
+                                count = tonumber(rank_id),
+                            },
+                            afk = tonumber(afk) or 0,
+                            warns = tonumber(warns) or 0,
+                            rank_name = rank_name,
+                            uniform = uniform
+                        }
+                    end
+                end
+                
+                if line:match('Следующая страница') then
+                    members_wait.next_page.bool = true
+                    members_wait.next_page.i = count - 2
+                end
+            end
+
+            if members_wait.next_page.bool then
+                sampSendDialogResponse(id, 1, members_wait.next_page.i, _)
+                members_wait.next_page.bool = false
+                members_wait.next_page.i = 0
+            else
+                while #members > tonumber(org.online or 0) do
+                    table.remove(members, 1)
+                end
+                sampSendDialogResponse(id, 0, _, _)
+                org.afk = getAfkCount()
+                members_wait.members = false
+                if setting.police_settings.wanted_list.func and (setting.org >= 11 and setting.org <= 15) and not wanted_wait.checking then
+                    lua_thread.create(function()
+                        wait(1100)
+                        wanted_wait.checking = true
+                        wanted_wait.page = 1
+                        emp_wanted_players = {}
+                        sampSendChat('/wanted 1')
+                        wanted_wait.timeout = os.clock() + 5
+                    end)
+                end
+            end
+        end)
+        
+        if not status then
+            local err_msg = string.format('[SH] {FFFFFF}Ошибка в рядке: %s', tostring(err))
+            if not setting.cef_notif then
+                sampAddChatMessage(err_msg, 0xFF5345)
+            else
+                cefnotig(err_msg, 5000)
+            end
+            setting.mb.func = false
+        end
+        
+        return false
 	elseif members_wait.members and id ~= 2015 then
 		dont_show_me_members = true
 		members_wait.members = false
@@ -18947,7 +19033,7 @@ function scene_work()
 		elseif sc.var == 5 then
 			text_end = '{FFFFFF}' .. u8:decode(sc.text1) .. ' - сказал(а) ' .. u8:decode(sc.nick) .. ', {FF99FF}' .. u8:decode(sc.text2)
 		elseif sc.var == 6 then
-			text_end = '{73B461}[Тел]:{FFFFFF} ' .. u8:decode(sc.nick) .. ' - ' .. u8:decode(sc.text1)
+			text_end = '{90EE90}[Тел]:{FFFFFF} ' .. u8:decode(sc.nick) .. ' - ' .. u8:decode(sc.text1)
 		end
 		
 		if scene.invers then
@@ -29464,6 +29550,25 @@ function parsePenaltyRange(rangeStr)
 	return nil
 end
 
+local ghetto_notify_in_zone = false
+
+function ghetto_notify_func()
+	if setting.police_settings and setting.police_settings.ghetto_notify then
+		local zona = isCharInArea2d(PLAYER_PED, 1646.65, -2180.01, 2917.80, -864.09, false)
+		
+		if zona and not ghetto_notify_in_zone then
+			if not setting.cef_notif then
+				sampAddChatMessage("[SH] {FFFFFF}Вы заехали в Гетто!", 0xFF5345)
+			else
+				cefnotig("{FF5345}[SH] {FFFFFF}Вы заехали в Гетто!", 2000)
+			end
+			ghetto_notify_in_zone = true
+		elseif not zona and ghetto_notify_in_zone then
+			ghetto_notify_in_zone = false
+		end
+	end
+end
+
 function smart_su_func(arg)
 	local id = tonumber(arg)
 	if id == nil or not sampIsPlayerConnected(id) then
@@ -29603,4 +29708,4 @@ function changeWantedPosition()
 			ChangePos = false
 		end)
 	end
-end
+end  
