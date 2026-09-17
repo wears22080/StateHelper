@@ -1749,6 +1749,12 @@ function main()
 		setting.police_settings.su_accept = { func = false, tag = true, cmd = 'suacc', key = {'', {}} }
 		settingsUpdated = true
 	end
+	if not setting.price[2].crypto then
+		setting.price[2].crypto = {'30000000', '0', '0'}
+	end
+	if not setting.price[2].stocks then
+		setting.price[2].stocks = {'30000000', '0', '0'}
+	end
 	local existingGunIds = {}
 	for _, weapon in ipairs(setting.gun) do
 		existingGunIds[weapon.i_gun] = true
