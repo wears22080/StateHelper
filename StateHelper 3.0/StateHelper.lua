@@ -13752,7 +13752,7 @@ win.main = imgui.OnFrame(
 							if #cmd[1][type_cmd].key[2] ~= 0 then
 								rkeys.unRegisterHotKey(cmd[1][type_cmd].key[2])
 								for ke = 1, #all_keys do
-									if table.concat(all_keys[ke], ' ') == table.concat(cmd[1][type_cmd].key[2], ' ') then
+									if all_keys[ke] and cmd[1][type_cmd].key[2] and table.concat(all_keys[ke], ' ') == table.concat(cmd[1][type_cmd].key[2], ' ') then
 										table.remove(all_keys, ke)
 									end
 								end
@@ -29488,7 +29488,7 @@ function get_last_lines(log, n)
 			end
 
 			if name_script_error and error_text then
-				local formatted_line = string.format("[%d] [Лог краша] {FFFFFF}Ошибка в скрипте %s[%s], строка %s: %s", num_str, name_script_error, scr.version, error_text)
+				local formatted_line = string.format("[%d] [Лог Краша] {FFFFFF}ОШИБКА В СКРИПТЕ %s[%s], ЛИНИЯ %s: %s", num_str, name_script_error, scr.version, line_error, error_text)
 				local parts = split_text(formatted_line, 120)
 				for j, part in ipairs(parts) do
 					table.insert(last_lines, (j == 1 and "" or "{FFFFFF}") .. part)
