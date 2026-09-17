@@ -1,7 +1,7 @@
 script_name('State Helper')
 script_authors('Kane')
 script_description('Script for employees of state organizations on the Arizona Role Playing Game')
-script_version('3.4')
+script_version('3.5')
 script_properties('work-in-pause')
 
 local ffi = require 'ffi'
@@ -134,6 +134,7 @@ vkeys.key_names[vkeys.VK_DOWN] = 'Ar.Down'
 local dir = getWorkingDirectory()
 local sx, sy = getScreenResolution()
 local scr = thisScript()
+
 font = renderCreateFont('Trebuchet MS', 14, 5)
 fontPD = renderCreateFont('Trebuchet MS', 12, 5)
 font_flood = renderCreateFont('Trebuchet MS', 10, 5)
@@ -294,9 +295,16 @@ local smartTicketState = {
 
 }
 local poltarget = nil
+local auto_z_state = {
+	id = nil,
+	range = false,
+	notify = -9999
+}
+local z_timer = { active = false, until_time = 0 }
+local bodycam_wait = false
+local close_ammo_menu = false
 local afk_start_time = 0
 local is_afk = false
-local doc_numb = false
 local unprison_id = nil
 local BuffSize = 32
 local KeyboardLayoutName = ffi.new('char[?]', BuffSize)
@@ -321,6 +329,7 @@ name_tab = u8'Главное'
 tab_settings = 1
 bool_go_stat_set = false
 track_time = true
+bodycam_spawn = false
 lspawncar = false
 carcers = false
 is_mini_player_pos = false
@@ -384,6 +393,8 @@ table_select_cmd = {}
 cmd_memory = ''
 error_save_cmd = 0
 key_bool_cur = {}
+su_accept = { active = false, case = '', degree = '', reason = '', tag = '' }
+su_accept_is_on = false
 dialog_act = {status = false, info = {}, options = {}, enter = false}
 x_act_dialog = sx + 200
 dep_text = ''
@@ -714,11 +725,12 @@ cmd_del_i = 0
 num_give_gov = -1
 num_give_lic = -1
 num_give_lic_term = 0
+last_dialog_title = ''
+last_dialog_text = ''
 time_save = 1
 timer_send = 0
 wait_mb = 12
 delay_act_def = 2.5
-wait_book = {0, false}
 script_reset = 0
 return_mes_dep = ''
 shp_edit_all = {false, {}}
@@ -805,7 +817,9 @@ setting = {
 			hunt = {'230000', '330000', '390000'},
 			exc = {'230000', '330000', '390000'},
 			taxi = {'500000', '750000', '1000000'},
-			meh = {'500000', '750000', '1000000'}
+			meh = {'500000', '750000', '1000000'},
+			crypto = {'30000000', '0', '0'},
+			stocks = {'30000000', '0', '0'}
 		},
 		{
 			box = '0',
@@ -892,7 +906,9 @@ setting = {
 		close_doc = true,
 		hide_doc = true,
 		use_original_color = true,
+		icons = true,
 		rp_q = {
+			{name = u8'Вы на собеседование?', rp = {u8'Здравствуйте, вы на собеседование?'}},
 			{name = u8'Попросить документы', rp = {u8'Для трудоустройства необходимо предоставить следующий пакет документов:', u8'Паспорт, медицинскую карту и лицензии.', u8'/n Отыгрывая, с использованием команд /me, /do, /todo'}},
 			{name = u8'Рассказать о себе', rp = {u8'Хорошо, расскажите немного о себе.'}},
 			{name = u8'Почему Вы выбрали нас', rp = {u8'Хорошо, скажите, почему Вы выбрали именно нас?'}},
@@ -902,12 +918,12 @@ setting = {
 			{name = u8'Рация дискорд', rp = {u8'Хорошо, скажите, имеется ли у Вас спец. рация Discord?'}}
 		},
 		rp_fit = {
-			{name = u8'Принять игрока', rp = {u8'Отлично, Вы приняты к нам на работу!', u8'/do В кармане находятся ключи от шкафчиков.', u8'/me засунув руку в карман, вытаскивает ключи и передаёт человеку напротив', u8'/givewbook {id_sob} 1000', u8'{waitwbook}', u8'/invite {id_sob}'}},
+			{name = u8'Принять игрока', rp = {u8'Отлично, Вы приняты к нам на работу!', u8'/do В кармане находятся ключи от шкафчиков.', u8'/me засунув руку в карман, вытаскивает ключи и передаёт человеку напротив', u8'/invite {id_sob}'}},
 			{name = u8'НонРП ник', rp = {u8'Извините, но Вы нам не подходите. У Вас опечатка в паспорте.', u8'/n нонРП ник. С таким ником нельзя. Введи /settings --> Сменить NonRP ник.'}},
 			{name = u8'Низкий левел', rp = {u8'Извините, но Вы нам не подходите. Ваш возраст проживания в штате слишком мал.', u8'Минимальный возраст проживания в годах должен быть не менее, чем {min_level_sob}'}},
 			{name = u8'Проблемы с законом', rp = {u8'Извините, но Вы нам не подходите. У Вас проблемы с законом.', u8'/n Требуется минимум {min_law_sob} законопослушности.'}},
 			{name = u8'Уже состоит во фракции', rp = {u8'Извините, но Вы нам не подходите.', u8'На данный момент Вы уже работаете в другой организации.', u8'Если хотите к нам, то для начала Вам необходимо уволиться оттуда.'}},
-			{name = u8'Имеет наркозависимость', rp = {u8'Извините, но Вы нам не подходите. У Вас имеется зависимость от укропа.', u8'Вы можете излечиться, попросив об этом врача любой больницы.'}},
+			{name = u8'Имеет укропозависимость', rp = {u8'Извините, но Вы нам не подходите. У Вас имеется зависимость от укропа.', u8'Вы можете излечиться, попросив об этом врача любой больницы.'}},
 			{name = u8'Проблемы с псих. здоровьем', rp = {u8'Извините, но Вы нам не подходите. У Вас проблемы с псих. здоровьем.', u8'Попробуйте получить новую медицинскую карту в любой больнице.'}},
 			{name = u8'Состоит в чёрном списке', rp = {u8'Извините, но Вы нам не подходите. Вы состоите в чёрном списке организации.'}},
 			{name = u8'Нет паспорта', rp = {u8'Для трудоустройства необходимо предоставить паспорт.', u8'Получить его можно в мерии г. Лос-Сантос.', u8'Без него, к сожалению, продолжить мы не сможем. Приходите после его получения.'}},
@@ -938,7 +954,7 @@ setting = {
 	replace_b = true,
 	chat_corrector = false,
 	auto_edit = false,
-	command_tabs = {'', '', '', '', '', '', '', '', '', '', '', '', '', '', ''},
+	command_tabs = {'', '', '', 'sob', '', '', '', '', '', '', '', '', '', '', ''},
 	key_tabs = {{'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}, {'', {}}},
 	gun_func = false,
 	gun = deep_copy(gun_orig),
@@ -1010,7 +1026,18 @@ setting = {
 		siren_on_rp = u8'/me протянул{sex[][а]} руку к панели и включил{sex[][а]} сирену',
 		siren_off_rp = u8'/me нажал{sex[][а]} кнопку на панели и отключил{sex[][а]} сирену',
 		ten_code = true,
-		auto_z = false,
+		auto_zm = {
+			func = true,
+			ask = true,
+			key = {'Z', {90}}
+		},
+		auto_bodycam = true,
+		su_accept = {
+			func = false,
+			tag = true,
+			cmd = 'suacc',
+			key = {'', {}}
+		},
 		auto_inves = false,
 		ghetto_notify = false,
 		cmd_patrol = 'patrol',
@@ -1026,6 +1053,9 @@ setting = {
 			color = {title = 0xFFFF8585, default = 0xFFFFFFFF, work = 0xFFFF8C00},
 			pos = {x = sx - 30, y = sy / 3}
 		}
+	},
+	prison_settings = {
+		smart_term = false
 	},
 	playlist = {},
 	new_mc = true,
@@ -1069,10 +1099,16 @@ end
 
 function save()
 	if not setting.first_start then
-		local f = io.open(dir .. '/State Helper/Настройки.json', 'w')
-		f:write(encodeJson(setting))
-		f:flush()
-		f:close()
+		local path = dir .. '/State Helper/Настройки.json'
+		local tmp = path .. '.tmp'
+		local f = io.open(tmp, 'w')
+		if f then
+			f:write(encodeJson(setting))
+			f:flush()
+			f:close()
+			os.remove(path)
+			os.rename(tmp, path)
+		end
 	end
 end
 
@@ -1122,11 +1158,14 @@ function save_cmd()
 
 					local file_path = folder_path .. file_name .. '.json'
 					current_files[file_path] = true
-					local f_cmd = io.open(file_path, 'w')
+					local tmp_path = file_path .. '.tmp'
+					local f_cmd = io.open(tmp_path, 'w')
 					if f_cmd then
 						f_cmd:write(encodeJson(command_obj))
 						f_cmd:flush()
 						f_cmd:close()
+						os.remove(file_path)
+						os.rename(tmp_path, file_path)
 					end
 				end
 			end
@@ -1205,27 +1244,22 @@ local fa_font = {}
 imgui.OnInitialize(function()
 	imgui.GetIO().IniFilename = nil
 	local config = imgui.ImFontConfig()
-	local glyph_ranges = imgui.GetIO().Fonts:GetGlyphRangesCyrillic()
-	config.MergeMode = true
 	config.PixelSnapH = true
-	imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF600.ttf', 16.0, nil, glyph_ranges)
-	
-	font[1] = imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF600.ttf', 10.0, _, glyph_ranges)
-	font[2] = imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF600.ttf', 13.0, _, glyph_ranges)
-	font[3] = imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF600.ttf', 15.0, _, glyph_ranges)
-	
-	bold_font[1] = imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF800.ttf', 17.0, _, glyph_ranges)
-	bold_font[2] = imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF800.ttf', 65.0, _, glyph_ranges)
-	bold_font[3] = imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF800.ttf', 35.0, _, glyph_ranges)
+	config.OversampleH = 1
+	config.OversampleV = 1
+	local glyph_ranges = imgui.new.ImWchar[7] { 0x0020, 0x00FF, 0x0400, 0x045F, 0x0401, 0x0401, 0}
+	bold_font[1] = imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF800.ttf', 17.0, config, glyph_ranges)
+	bold_font[2] = imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF800.ttf', 65.0, config, glyph_ranges)
+	bold_font[3] = imgui.GetIO().Fonts:AddFontFromFileTTF(u8(dir) .. u8'/State Helper/Шрифты/SF800.ttf', 35.0, config, glyph_ranges)
 	
 	iconRanges = imgui.new.ImWchar[3](fa.min_range, fa.max_range, 0)
-	fa_font[1] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 8, nil, iconRanges)
-	fa_font[2] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 13, nil, iconRanges)
-	fa_font[3] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 15, nil, iconRanges)
-	fa_font[4] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 17, nil, iconRanges)
-	fa_font[5] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 21, nil, iconRanges)
-	fa_font[6] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 35, nil, iconRanges)
-	
+	fa_font[1] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 8, config, iconRanges)
+	fa_font[2] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 13, config, iconRanges)
+	fa_font[3] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 15, config, iconRanges)
+	fa_font[4] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 17, config, iconRanges)
+	fa_font[5] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 21, config, iconRanges)
+	fa_font[6] = imgui.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(fa.get_font_data_base85('solid'), 35, config, iconRanges)
+	imgui.GetIO().Fonts.TexDesiredWidth = 2048
 	if image_version_init then
 		image_logo_update = imgui.CreateTextureFromFile(getWorkingDirectory() .. '/State Helper/Изображения/logo update.png')
 	end
@@ -1275,6 +1309,11 @@ function CefDialog()
 					local text = (encoded ~= 0) and raknetBitStreamDecodeString(bs, length + encoded) or raknetBitStreamReadString(bs, length)
 					local event, body = text:match("window%.executeEvent%('(.+)',%s*`%[(.+)%]`%);")
 
+					if event == 'event.setActiveView' and body and body:find('InteractiveMenu') and bodycam_wait then
+						bodycam_wait = false
+						sendCef('radialMenu.useAction|280')
+					end
+
 					if run_sob then
 						if setting.sob.hide_doc and setting.sob.close_doc and not isCefScript then
 							sendJav(cef_script)
@@ -1284,7 +1323,7 @@ function CefDialog()
 							local data = json.decode(body)
 							local document_type = data['type']
 
-							if document_type == 1 then 		--> Паспорт
+							if document_type == 1 then --> Паспорт
 								if data['name'] ~= sob_info.nick then
 									if setting.sob.hide_doc and setting.sob.close_doc then
 										if not setting.cef_notif then
@@ -1326,7 +1365,7 @@ function CefDialog()
 								end)
 							end
 							elseif sob_info.valid then
-								if document_type == 2 then 		--> Лицензии
+								if document_type == 2 then --> Лицензии
 									local licenses = data['info']
 
 									sob_info.car = 2
@@ -1352,7 +1391,7 @@ function CefDialog()
 											sendCef('documents.changePage|4')
 										end)
 									end
-								elseif document_type == 4 then 		--> Мед.карта
+								elseif document_type == 4 then --> Мед.карта
 									local zavisimost = tonumber(data['zavisimost']) or 0
 									local state = data['state'] or ""
 									 local sub_text = (data['demorgan'] and data['demorgan']['sub_text']) or ""
@@ -1393,7 +1432,7 @@ function CefDialog()
 											sendCef('documents.changePage|8')
 										end)
 									end
-								elseif document_type == 8 then			--> Военный билет
+								elseif document_type == 8 then --> Военный билет
 									local have_army_ticket = tostring(data['have_army_ticket'] or 1)
 
 									if have_army_ticket:find("Есть", 1, true) then
@@ -1419,7 +1458,7 @@ function CefDialog()
 						if event == 'event.employment.updateData' then --> Трудовая книжка
 							local data = json.decode(body)
 							local member = data['member']
-							if member == 0 then						   --> Проверка на оргу, потом поменяю :)
+							if member == 0 then --> Проверка на оргу, потом поменяю :)
 								sob_info.warn = 1
 							else
 								sob_info.warn = 0
@@ -1445,7 +1484,7 @@ function CefDialog()
 						end
 					end
 
-					if event == 'event.arizonahud.updateGeoPositionVisibility' and body == "false" then --> Отыгровка после закрытия паспорта
+					if event == 'event.documents.close' then --> Отыгровка после закрытия документов
 						if document_opened and setting.auto_close_doc then
 							if run_sob then
 								lua_thread.create(function()
@@ -1465,6 +1504,50 @@ function CefDialog()
 			end
 		end
 	end)
+	
+	addEventHandler('onSendPacket', function(id, bs)
+			if id == 220 then
+				raknetBitStreamResetReadPointer(bs)
+				raknetBitStreamIgnoreBits(bs, 8) 
+				local subId = raknetBitStreamReadInt8(bs)
+
+				if subId == 18 then
+					local length = raknetBitStreamReadInt16(bs)
+					if length > 0 then
+						local text = raknetBitStreamReadString(bs, length)
+
+						if text:find('onActiveViewChanged|null') then
+							if close_ammo_menu then
+								close_ammo_menu = false
+								bodycam_wait = true
+								lua_thread.create(function()
+									wait(200)
+									setVirtualKeyDown(VK_R, true)
+									wait(25)
+									setVirtualKeyDown(VK_R, false)
+								end)
+							end
+							if document_opened and setting.auto_close_doc then
+								if run_sob then
+									lua_thread.create(function()
+										wait(1000)
+										sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
+									end)
+								else
+									lua_thread.create(function()
+										wait(100)
+										sampSendChat('/me осмотрел'.. sex('', 'а') .. ' документ, затем закрыл'.. sex('', 'а') .. ' его и вернул'.. sex('', 'а') .. ' человеку')
+									end)
+								end
+								document_opened = false
+							end
+						end
+					end
+				end
+				raknetBitStreamResetReadPointer(bs)
+			end
+		end)
+	
 
 function sendCef(str)
 	local bs = raknetNewBitStream()
@@ -1505,7 +1588,7 @@ function evalanon(code) sendJav(("(() => {%s})()"):format(code)) end
 
 function injNotif()
 	if cssInjected then return end
-	evalanon("let s=document.createElement('style');s.innerHTML='@keyframes cefNotifySlideIn{from{transform:translate(-50%,150%);opacity:0}to{transform:translate(-50%,0);opacity:1}}@keyframes cefNotifySlideOut{from{transform:translate(-50%,0);opacity:1}to{transform:translate(-50%,150%);opacity:0}}@keyframes cefNotifyFadeOut{from{opacity:1}to{opacity:0}}';document.head.appendChild(s);")
+	evalanon("let s=document.createElement('style');s.innerHTML='@keyframes cefNotifySlideIn{from{transform:translate(-50%,150%);opacity:0}to{transform:translate(-50%,0);opacity:1}}@keyframes cefNotifySlideOut{from{transform:translate(-50%,0);opacity:1}to{transform:translate(-50%,150%);opacity:0}}@keyframes cefNotifyFadeOut{from{opacity:1}to{opacity:0}}@keyframes cefNotifyProgress{from{width:0%}to{width:100%}}';document.head.appendChild(s);")
 	cssInjected = true
 end
 
@@ -1528,18 +1611,28 @@ function cefnotig(samp_text, duration_ms)
 		});
 		let el=document.createElement('div');el.id='%s';
 		el.classList.add('cefNotifyInstance');
-		el.innerHTML=`<div style="font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#f2f2f2;text-align:center;padding-bottom:8px">StateHelper</div><hr style="border:none;height:1px;background-color:#2e2e2e;margin:0 0 8px 0"><div style="font-family:Arial,sans-serif;font-size:20px;color:#f2f2f2">%s</div>`;
-		el.style.cssText=`position:fixed;bottom:10%%;left:50%%;transform:translate(-50%%,0);background:%s;padding:12px 24px;border-radius:7px;border:1px solid #2e2e2e;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:99999;pointer-events:none;animation:cefNotifySlideIn %dms ease-out forwards`;
+		el.innerHTML=`<div style="font-family:Arial,sans-serif;font-size:16px;font-weight:bold;color:#f2f2f2;text-align:center;padding-bottom:8px">StateHelper</div><hr style="border:none;height:1px;background-color:#2e2e2e;margin:0 0 8px 0"><div style="font-family:Arial,sans-serif;font-size:20px;color:#f2f2f2">%s</div><div style="position:absolute;bottom:0;left:0;height:3px;width:0%%;background:#808080;border-radius:0 0 7px 7px;animation:cefNotifyProgress %dms linear forwards"></div>`;
+		el.style.cssText=`position:fixed;bottom:10%%;left:50%%;transform:translate(-50%%,0);background:%s;padding:12px 24px;padding-bottom:14px;border-radius:7px;border:1px solid #2e2e2e;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:99999;pointer-events:none;overflow:hidden;animation:cefNotifySlideIn %dms ease-out forwards`;
 		document.body.appendChild(el);
 		setTimeout(()=>{let c=document.getElementById('%s');if(c)c.style.animation=`cefNotifySlideOut %dms ease-in forwards`},%d);
 		setTimeout(()=>{let c=document.getElementById('%s');if(c)c.remove()},%d);
 	]],
 	300, 300, 
-	elementId, text_html, bgColor, 400, elementId, 400, duration_ms - 400, elementId, duration_ms
+	elementId, text_html, duration_ms - 400, bgColor, 400, elementId, 400, duration_ms - 400, elementId, duration_ms
 	)
 	evalanon(js_code)
 end
- 
+
+function hide_interactive_menu()
+	evalanon([[
+		let s = document.createElement('style');
+		s.id = 'sh_interactive_menu_hider';
+		s.textContent = '.interactive-menu, .interactive-menu__item-title { opacity: 0 !important; pointer-events: none !important; }';
+		document.head.appendChild(s);
+		setTimeout(() => { let el = document.getElementById('sh_interactive_menu_hider'); if (el) el.remove(); }, 1500);
+	]])
+end
+
 cef_script = [[
 	(function() {
 		function addCssRule(selector, property, value) {
@@ -1641,14 +1734,21 @@ function main()
 	local settingsUpdated = false
 	
 	if setting.police_settings == nil or type(setting.police_settings) ~= 'table' then
-		setting.police_settings = { wanted_list = nil }
+		setting.police_settings = { wanted_list = nil }--gui.Text(26, 241, 'Автоматическая /z', font[3])
 		settingsUpdated = true
 	end
 	if setting.police_settings.wanted_list == nil or type(setting.police_settings.wanted_list) ~= 'table' then
 		setting.police_settings.wanted_list = { func = false, dialog = false, invers = false, interior = false, size = 12, flag = 5, dist = 21, vis = 70, color = {title = 0xFFFF8585, default = 0xFFFFFFFF, work = 0xFFFF8C00}, pos = {x = sx - 30, y = sy / 3} }
 		settingsUpdated = true
 	end
-
+	if setting.police_settings.auto_zm == nil or type(setting.police_settings.auto_zm) ~= 'table' then
+		setting.police_settings.auto_zm = { func = true, ask = true, key = {'Z', {90}} }
+		settingsUpdated = true
+	end
+	if setting.police_settings.su_accept == nil or type(setting.police_settings.su_accept) ~= 'table' then
+		setting.police_settings.su_accept = { func = false, tag = true, cmd = 'suacc', key = {'', {}} }
+		settingsUpdated = true
+	end
 	local existingGunIds = {}
 	for _, weapon in ipairs(setting.gun) do
 		existingGunIds[weapon.i_gun] = true
@@ -1740,7 +1840,7 @@ function main()
 	repeat wait(100) until sampIsLocalPlayerSpawned()
 	local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
 	my = {id = myid, nick = sampGetPlayerNickname(myid)}
-	
+
 	lua_thread.create(update_lists)
 	lua_thread.create(time)
 	create_folder('Шрифты', 'шрифтов')
@@ -1838,6 +1938,13 @@ function main()
 		rkeys.registerHotKey(setting.police_settings.siren_key[2], 3, true, function() on_hot_key(setting.police_settings.siren_key[2]) end)
 		table.insert(all_keys, setting.police_settings.siren_key[2])
 	end
+	if setting.police_settings.auto_zm.func and #setting.police_settings.auto_zm.key[2] ~= 0 then
+		rkeys.registerHotKey(setting.police_settings.auto_zm.key[2], 3, true, send_z)
+		table.insert(all_keys, setting.police_settings.auto_zm.key[2])
+	end
+
+	su_accept_reg()
+
 	if setting.police_settings.smart_su and (setting.org >= 11 and setting.org <= 15) then
 		sampRegisterChatCommand('su', smart_su_func)
 		download_wanted_reasons()
@@ -1935,10 +2042,30 @@ function main()
 		an[28] = 806
 	end
 
+	local was_sob_active = false
+	local was_doc_auto_enabled_by_us = false
+
 	while true do wait(0)
 		if not setting.blockl then
+			if run_sob ~= was_sob_active then
+				if run_sob then
+					if not setting.show_dialog_auto then
+						setting.show_dialog_auto = true
+						was_doc_auto_enabled_by_us = true
+					else
+						was_doc_auto_enabled_by_us = false
+					end
+				else
+					if was_doc_auto_enabled_by_us then
+						setting.show_dialog_auto = false
+						was_doc_auto_enabled_by_us = false
+					end
+				end
+				was_sob_active = run_sob
+			end
 
 			ghetto_notify_func()
+			auto_z()
 
 			if wanted_update then
 				local new_wanted_list = {}
@@ -1994,9 +2121,6 @@ function main()
 				if not setting.auto_close_doc then
 					local texts_rp_all = {
 						'/me взял' .. sex('', 'а') .. ' документ с рук человека напротив, внимательно его изучил' .. sex('', 'а') .. ', после чего вернул' .. sex('', 'а') .. ' обратно',
-						'/me внимательно рассмотрел' .. sex('', 'а') .. ' документ, который был передан ' .. sex('ему', 'ей') .. ' с рук человека напротив',
-						'/me взял' .. sex('', 'а') .. ' документ с рук человека и осмотрел' .. sex('', 'а') .. ' его с пристальным вниманием',
-						'/me взял' .. sex('', 'а') .. ' документ с рук собеседника и провел' .. sex('', 'а') .. ' по нему взглядом для ознакомления с его содержимым',
 						'/me взял' .. sex('', 'а') .. ' документ и тщательно изучил' .. sex('', 'а') .. ' его, после чего вернул' .. sex('', 'а') .. ' обратно'
 					}
 					local random_index = math.random(1, #texts_rp_all)
@@ -3269,7 +3393,9 @@ function hall.settings()
 	elseif setting.org == 9 then
 		new_tab_setting(imgui.ImVec4(1.00, 0.18, 0.15, 1.00), fa.FIRE, 'Вызовы', 6, 0 + pos_tab_pl, {1, 0})
 	elseif setting.org >= 11 and setting.org <= 15 then
-		new_tab_setting(imgui.ImVec4(0.50, 0.50, 0.50, 1.00), fa.WRENCH, 'Доп. настройки', 6, 0 + pos_tab_pl, {0, 0})
+		new_tab_setting(imgui.ImVec4(0.50, 0.50, 0.50, 1.00), fa.WRENCH, 'Доп. функции', 6, 0 + pos_tab_pl, {0, 0})
+	elseif setting.org == 10 then
+		new_tab_setting(imgui.ImVec4(0.50, 0.50, 0.50, 1.00), fa.WRENCH, 'Доп. функции', 6, 0 + pos_tab_pl, {0, 0})
 	else
 		pos_tab_pl = pos_tab_pl -1
 	end
@@ -3657,7 +3783,7 @@ function hall.settings()
 			save()
 		end
 		if setting.color_nick then
-			if gui.Button(u8'Настроить', {370, 118}, {130, 20}) then
+			if gui.Button(u8'Настроить##цвет', {370, 118}, {130, 20}) then
 				imgui.OpenPopup(u8'Настроить цвет ника')
 			end
 		else
@@ -3712,7 +3838,7 @@ function hall.settings()
 		end
 
 		gui.Text(25, 164, 'Отыгровки', bold_font[1])
-		new_draw(189, 694)
+		new_draw(189, 630)
 		
 		gui.Text(26, 198, 'Корректор чата', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(561, 193))
@@ -3901,6 +4027,7 @@ function hall.settings()
 		if setting.chat_filters.arms_race == nil then setting.chat_filters.arms_race = false end
 		if setting.chat_filters.car_quality == nil then setting.chat_filters.car_quality = false end
 
+		imgui.SetCursorPos(imgui.ImVec2(0, 819))
 		imgui.Dummy(imgui.ImVec2(0, 24))
 	elseif tab_settings == 3 then
 		if setting.org <= 4 then
@@ -4064,11 +4191,11 @@ function hall.settings()
 			gui.TextInfo({26, 352}, {'Скрипт будет оставлять окно /getjail открытым на экране, для возможности его скриншота.'})
 			]]
 		elseif setting.org == 5 then
-			new_draw(16, 428)
+			new_draw(16, 514)
 			
-			gui.DrawLine({109, 16}, {109, 444}, cl.line)
-			gui.DrawLine({273, 16}, {273, 444}, cl.line)
-			gui.DrawLine({437, 16}, {437, 444}, cl.line)
+			gui.DrawLine({109, 16}, {109, 524}, cl.line)
+			gui.DrawLine({273, 16}, {273, 524}, cl.line)
+			gui.DrawLine({437, 16}, {437, 524}, cl.line)
 			gui.DrawLine({16, 44}, {602, 44}, cl.line)
 			gui.DrawLine({16, 84}, {602, 84}, cl.line)
 			gui.DrawLine({16, 124}, {602, 124}, cl.line)
@@ -4079,6 +4206,8 @@ function hall.settings()
 			gui.DrawLine({16, 324}, {602, 324}, cl.line)
 			gui.DrawLine({16, 364}, {602, 364}, cl.line)
 			gui.DrawLine({16, 404}, {602, 404}, cl.line)
+			gui.DrawLine({16, 444}, {602, 444}, cl.line)
+			gui.DrawLine({16, 484}, {602, 484}, cl.line)
 			
 			gui.Text(166, 21, '1 месяц', font[3])
 			gui.Text(326, 21, '2 месяца', font[3])
@@ -4094,6 +4223,8 @@ function hall.settings()
 			gui.Text(26, 336, 'Раскопки', font[3])
 			gui.Text(26, 376, 'Такси', font[3])
 			gui.Text(26, 416, 'Механик', font[3])
+			gui.Text(26, 456, 'Крипта', font[3])
+			gui.Text(26, 496, 'Акции', font[3])
 			
 			local bool_set_auto1 = setting.price[2].auto[1]
 			setting.price[2].auto[1] = gui.InputText({140, 58}, 99, setting.price[2].auto[1], u8'Цена авто 1', 20, u8'Цена', 'num')
@@ -4190,6 +4321,25 @@ function hall.settings()
 			local bool_set_meh3 = setting.price[2].meh[3]
 			setting.price[2].meh[3] = gui.InputText({468, 418}, 99, setting.price[2].meh[3], u8'Цена механик 3', 20, u8'Цена', 'num')
 			if setting.price[2].meh[3] ~= bool_set_meh3 then save() end
+			
+			local bool_set_crypto1 = setting.price[2].crypto[1]
+			setting.price[2].crypto[1] = gui.InputText({140, 458}, 99, setting.price[2].crypto[1], u8'Цена крипта', 20, u8'Цена', 'num')
+			if setting.price[2].crypto[1] ~= bool_set_crypto1 then save() end
+			gui.Text(316, 456, 'Недоступно', font[3])
+			gui.Text(480, 456, 'Недоступно', font[3])
+			
+			local bool_set_stocks1 = setting.price[2].stocks[1]
+			setting.price[2].stocks[1] = gui.InputText({140, 498}, 99, setting.price[2].stocks[1], u8'Цена акции', 20, u8'Цена', 'num')
+			if setting.price[2].stocks[1] ~= bool_set_stocks1 then save() end
+			gui.Text(316, 496, 'Недоступно', font[3])
+			gui.Text(480, 496, 'Недоступно', font[3])
+			
+			new_draw(549, 53)
+			gui.Text(26, 558, 'Сканировать актуальную ценовую политику', font[3])
+			gui.TextInfo({26, 577}, {'Считывает цены из открытого диалога продажи лицензии и сохраняет их.'})
+			if gui.Button(u8'Сканировать', {491, 554}, {99, 25}) then
+				scan_license_prices()
+			end
 			
 			imgui.Dummy(imgui.ImVec2(0, 24))
 		else
@@ -4768,7 +4918,16 @@ function hall.settings()
 			imgui.Dummy(imgui.ImVec2(0, 21))
 		end
 	elseif tab_settings == 6 then
-		if setting.org <= 4 then
+		if setting.org == 10 then
+			new_draw(16, 53)
+			gui.Text(26, 25, 'Умный тюремный срок', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, 21))
+			if gui.Switch(u8'##smart_term', setting.prison_settings.smart_term) then
+				setting.prison_settings.smart_term = not setting.prison_settings.smart_term
+				save()
+			end
+			gui.TextInfo({26, 44}, {'Позволяет удобно повышать/понижать срок заключённому'})
+		elseif setting.org <= 4 then
 			new_draw(16, 53)
 			
 			gui.Text(26, 26, 'Упростить систему вызовов /godeath', font[3])
@@ -5232,14 +5391,7 @@ function hall.settings()
 				save()
 			end
 			gui.TextInfo({26, 188}, {'Расшифровывает полицейские тен-коды (10-XX) в чате.'})
-			--new_draw(232, 53)
-			--gui.Text(26, 241, 'Автоматическая /z', font[3])
-			--imgui.SetCursorPos(imgui.ImVec2(561, 237))
-			--if gui.Switch(u8'##auto_z_toggle', setting.police_settings.auto_z) then
-			--	setting.police_settings.auto_z = not setting.police_settings.auto_z
-			--	save()
-			--end
-			--gui.TextInfo({26, 260}, {'Накидывает/z на игрока, за которым вы в погоне'})
+
 			new_draw(232, 53)
 			gui.Text(26, 232 + 9, 'Заполнять бланк расследования', font[3])
 			imgui.SetCursorPos(imgui.ImVec2(561, 232 + 5))
@@ -5249,16 +5401,275 @@ function hall.settings()
 			end
 			gui.TextInfo({26, 232 + 28}, {'Заполняет данные в бланке расследования за вас (дата, время, оружие...)'})
 
-			new_draw(16 + 278, 53)
-			gui.Text(26, 26 + 278, 'Сообщать при заезде в опасный район', font[3])
-			imgui.SetCursorPos(imgui.ImVec2(561, 21 + 278))
+			new_draw(16 + 288, 53)
+			gui.Text(26, 26 + 288, 'Сообщать при заезде в опасный район', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, 21 + 288))
 			if gui.Switch(u8'##notify_ghetto', setting.police_settings.ghetto_notify) then
 				setting.police_settings.ghetto_notify = not setting.police_settings.ghetto_notify
 				save()
 			end
-			gui.TextInfo({26, 45 + 278}, {'Уведомления, когда вы заезжаете в зону опасного района.'})
+			gui.TextInfo({26, 45 + 288}, {'Уведомления, когда вы заезжаете в зону опасного района.'})
 			
-			local pos_wanted = 285 + 53 + 19
+			local pos_auto_z = 304 + 53 + 19
+			new_draw(pos_auto_z, 37)
+			gui.Text(26, pos_auto_z + 9, 'Автоматическое помечание /z', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, pos_auto_z + 5))
+			if gui.Switch(u8'##ztoggle', setting.police_settings.auto_zm.func) then
+				setting.police_settings.auto_zm.func = not setting.police_settings.auto_zm.func
+				if setting.police_settings.auto_zm.func then
+					if #setting.police_settings.auto_zm.key[2] ~= 0 then
+						rkeys.registerHotKey(setting.police_settings.auto_zm.key[2], 3, true, send_z)
+						table.insert(all_keys, setting.police_settings.auto_zm.key[2])
+					end
+				else
+					if #setting.police_settings.auto_zm.key[2] ~= 0 then
+						rkeys.unRegisterHotKey(setting.police_settings.auto_zm.key[2])
+						for i, key in ipairs(all_keys) do
+							if compare_array_disable_order(key, setting.police_settings.auto_zm.key[2]) then
+								table.remove(all_keys, i)
+								break
+							end
+						end
+					end
+					auto_z_state.range = false
+				end
+				save()
+			end
+			if setting.police_settings.auto_zm.func then
+				if gui.Button(u8'Настроить##zmark', {370, pos_auto_z + 8}, {130, 20}) then
+					imgui.OpenPopup(u8'Настроить автометку /z')
+				end
+			else
+				imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+				imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+				imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+				gui.Button(u8'Настроить##zmarkdis', {370, pos_auto_z + 8}, {130, 20}, false)
+				imgui.PopStyleColor(3)
+			end
+			if imgui.BeginPopupModal(u8'Настроить автометку /z', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+				imgui.BeginChild(u8'Настройки автометки /z', imgui.ImVec2(730, 176), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoScrollbar)
+				gui.Draw({16, 16}, {698, 146}, cl.tab, 7, 15)
+				gui.Text(240, 22, "Настройки автоматической метки /z", bold_font[1])
+				imgui.SetCursorPos(imgui.ImVec2(710, 0))
+				if imgui.InvisibleButton(u8'##Закрыть окно настроек автометки /z', imgui.ImVec2(20, 20)) then
+					save()
+					imgui.CloseCurrentPopup()
+				end
+				if imgui.IsItemHovered() then
+					gui.DrawCircle({720, 10}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
+				else
+					gui.DrawCircle({720, 10}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00))
+				end
+				gui.DrawLine({16, 50}, {714, 50}, cl.line)
+
+				gui.Text(26, 58, 'Запрашивать подтверждение перед выдачей', font[3])
+				local switch_w_z = imgui.GetTextLineHeightWithSpacing() * 1.35 * 1.20
+				imgui.SetCursorPos(imgui.ImVec2(704 - switch_w_z, 54))
+				if gui.Switch(u8'##zask', setting.police_settings.auto_zm.ask) then
+					setting.police_settings.auto_zm.ask = not setting.police_settings.auto_zm.ask
+					save()
+				end
+				gui.DrawLine({16, 88}, {714, 88}, cl.line)
+
+				local current_key_text = (setting.police_settings.auto_zm.key[1] ~= '' and setting.police_settings.auto_zm.key[1] or 'Не назначена')
+				if setting.police_settings.auto_zm.ask then
+					gui.Text(26, 96, 'Клавиша подтверждения: ' .. current_key_text, font[3])
+					local key_text_edit = (setting.police_settings.auto_zm.key[1] ~= '' and u8'Изменить...' or u8'Назначить...')
+					if gui.Button(key_text_edit .. u8'##клавишу подтверждения авто /z', {594, 93}, {110, 25}) then
+						current_key = {'', {}}
+						imgui.OpenPopup(u8'Изменить клавишу подтверждения авто /z')
+						lockPlayerControl(true)
+						edit_key = true
+						key_bool_cur = setting.police_settings.auto_zm.key[2]
+					end
+				else
+					imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.40, 0.40, 0.40, 0.50))
+					gui.Text(26, 96, 'Клавиша подтверждения: ' .. current_key_text, font[3])
+					imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+					imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+					imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+					gui.Button(u8'Изменить...##/z выкл', {594, 93}, {110, 25}, false)
+					imgui.PopStyleColor(3)
+					imgui.PopStyleColor(1)
+				end
+				gui.DrawLine({16, 126}, {714, 126}, cl.line)
+
+				if gui.Button(u8'Сохранить', {265, 132}, {200, 25}) then
+					save()
+					imgui.CloseCurrentPopup()
+				end
+				local bool_result_z = key_edit(u8'Изменить клавишу подтверждения авто /z', setting.police_settings.auto_zm.key)
+				if bool_result_z[1] then
+					if setting.police_settings.auto_zm.func then
+						local old_key_to_remove = setting.police_settings.auto_zm.key[2]
+						if #old_key_to_remove > 0 then
+							rkeys.unRegisterHotKey(old_key_to_remove)
+							for i, key in ipairs(all_keys) do
+								if compare_array_disable_order(key, old_key_to_remove) then
+									table.remove(all_keys, i)
+									break
+								end
+							end
+						end
+					end
+					setting.police_settings.auto_zm.key = bool_result_z[2]
+					if setting.police_settings.auto_zm.func and #setting.police_settings.auto_zm.key[2] > 0 then
+						rkeys.registerHotKey(setting.police_settings.auto_zm.key[2], 3, true, send_z)
+						table.insert(all_keys, setting.police_settings.auto_zm.key[2])
+					end
+					lua_thread.create(function() wait(0) save() end)
+				end
+				imgui.EndChild()
+				imgui.EndPopup()
+			end
+
+			local pos_auto_bodycam = pos_auto_z + 37 + 19
+			new_draw(pos_auto_bodycam, 53)
+			gui.Text(26, pos_auto_bodycam + 9, 'Автоматически включать боди камеру', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, pos_auto_bodycam + 5))
+			if gui.Switch(u8'##auto_bodycam_toggle', setting.police_settings.auto_bodycam) then
+				setting.police_settings.auto_bodycam = not setting.police_settings.auto_bodycam
+				save()
+			end
+			gui.TextInfo({26, pos_auto_bodycam + 28}, {'Включает боди камеру при заходе на сервер или получении её в раздевалке.'})
+
+			local pos_su_accept = pos_auto_bodycam + 53 + 19
+			new_draw(pos_su_accept, 53)
+			gui.Text(26, pos_su_accept + 9, 'Принимать запрос на выдачу розыска', font[3])
+			imgui.SetCursorPos(imgui.ImVec2(561, pos_su_accept + 5))
+			if gui.Switch(u8'##su_accept_toggle', setting.police_settings.su_accept.func) then
+				setting.police_settings.su_accept.func = not setting.police_settings.su_accept.func
+				if setting.police_settings.su_accept.func then
+					if setting.police_settings.su_accept.cmd ~= '' then
+						sampRegisterChatCommand(setting.police_settings.su_accept.cmd, su_accept_confirm)
+					end
+					if #setting.police_settings.su_accept.key[2] ~= 0 then
+						rkeys.registerHotKey(setting.police_settings.su_accept.key[2], 3, true, su_accept_confirm)
+						table.insert(all_keys, setting.police_settings.su_accept.key[2])
+					end
+				else
+					if setting.police_settings.su_accept.cmd ~= '' then
+						sampUnregisterChatCommand(setting.police_settings.su_accept.cmd)
+					end
+					if #setting.police_settings.su_accept.key[2] ~= 0 then
+						rkeys.unRegisterHotKey(setting.police_settings.su_accept.key[2])
+						for i, key in ipairs(all_keys) do
+							if compare_array_disable_order(key, setting.police_settings.su_accept.key[2]) then
+								table.remove(all_keys, i)
+								break
+							end
+						end
+					end
+					su_accept.active = false
+				end
+				save()
+			end
+			gui.TextInfo({26, pos_su_accept + 28}, {'Позволяет быстро принять запрос на выдачу розыска, поступивший от другого сотрудника.'})
+			if setting.police_settings.su_accept.func then
+				if gui.Button(u8'Настроить##suaccept', {370, pos_su_accept + 8}, {130, 20}) then
+					imgui.OpenPopup(u8'Настроить принятие розыска')
+				end
+			else
+				imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+				imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+				imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.50, 0.50, 0.50, 0.50))
+				gui.Button(u8'Настроить##suacceptdis', {370, pos_su_accept + 8}, {130, 20}, false)
+				imgui.PopStyleColor(3)
+			end
+			if imgui.BeginPopupModal(u8'Настроить принятие розыска', null, imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoTitleBar) then
+				imgui.BeginChild(u8'Настройки принятия розыска', imgui.ImVec2(730, 214), false, imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollWithMouse + imgui.WindowFlags.NoScrollbar)
+				gui.Draw({16, 16}, {698, 184}, cl.tab, 7, 15)
+				gui.Text(205, 22, "Настройки принятия запроса на розыск", bold_font[1])
+				imgui.SetCursorPos(imgui.ImVec2(710, 0))
+				if imgui.InvisibleButton(u8'##Закрыть окно настроек принятия розыска', imgui.ImVec2(20, 20)) then
+					save()
+					imgui.CloseCurrentPopup()
+				end
+				if imgui.IsItemHovered() then
+					gui.DrawCircle({720, 10}, 7, imgui.ImVec4(0.98, 0.30, 0.38, 1.00))
+				else
+					gui.DrawCircle({720, 10}, 7, imgui.ImVec4(0.98, 0.40, 0.38, 1.00))
+				end
+				gui.DrawLine({16, 50}, {714, 50}, cl.line)
+
+				gui.Text(26, 58, 'Указывать тег запросившего розыск в причине', font[3])
+				local switch_w_su = imgui.GetTextLineHeightWithSpacing() * 1.35 * 1.20
+				imgui.SetCursorPos(imgui.ImVec2(704 - switch_w_su, 54))
+				if gui.Switch(u8'##su_accept_tag', setting.police_settings.su_accept.tag) then
+					setting.police_settings.su_accept.tag = not setting.police_settings.su_accept.tag
+					save()
+				end
+				gui.DrawLine({16, 88}, {714, 88}, cl.line)
+
+				local current_cmd_text = (setting.police_settings.su_accept.cmd ~= '' and '/' .. setting.police_settings.su_accept.cmd or u8'Отсутствует')
+				gui.Text(26, 96, 'Команда для принятия: ' .. current_cmd_text, font[3])
+				local cmd_text_edit = (setting.police_settings.su_accept.cmd ~= '' and u8'Изменить...' or u8'Назначить...')
+				if gui.Button(cmd_text_edit .. u8'##команду для принятия розыска', {594, 93}, {110, 25}) then
+					lockPlayerControl(true)
+					edit_cmd = true
+					cur_cmd = setting.police_settings.su_accept.cmd
+					new_cmd = setting.police_settings.su_accept.cmd
+					imgui.OpenPopup(u8'Изменить команду для принятия розыска')
+				end
+				gui.DrawLine({16, 126}, {714, 126}, cl.line)
+
+				local current_key_text_su = (setting.police_settings.su_accept.key[1] ~= '' and setting.police_settings.su_accept.key[1] or 'Не назначена')
+				gui.Text(26, 134, 'Клавиша для принятия: ' .. current_key_text_su, font[3])
+				local key_text_edit_su = (setting.police_settings.su_accept.key[1] ~= '' and u8'Изменить...' or u8'Назначить...')
+				if gui.Button(key_text_edit_su .. u8'##клавишу для принятия розыска', {594, 131}, {110, 25}) then
+					current_key = {'', {}}
+					imgui.OpenPopup(u8'Изменить клавишу принятия розыска')
+					lockPlayerControl(true)
+					edit_key = true
+					key_bool_cur = setting.police_settings.su_accept.key[2]
+				end
+				gui.DrawLine({16, 164}, {714, 164}, cl.line)
+
+				if gui.Button(u8'Сохранить', {265, 170}, {200, 25}) then
+					save()
+					imgui.CloseCurrentPopup()
+				end
+
+				if edit_cmd then
+					local cmd_end_su = cmd_edit(u8'Изменить команду для принятия розыска', cur_cmd)
+					if cmd_end_su ~= nil then
+						if setting.police_settings.su_accept.func and setting.police_settings.su_accept.cmd ~= '' then
+							sampUnregisterChatCommand(setting.police_settings.su_accept.cmd)
+						end
+						setting.police_settings.su_accept.cmd = cmd_end_su
+						if setting.police_settings.su_accept.func and cmd_end_su ~= '' then
+							sampRegisterChatCommand(cmd_end_su, su_accept_confirm)
+						end
+						save()
+					end
+				end
+
+				local bool_result_su = key_edit(u8'Изменить клавишу принятия розыска', setting.police_settings.su_accept.key)
+				if bool_result_su[1] then
+					if setting.police_settings.su_accept.func then
+						local old_key_to_remove = setting.police_settings.su_accept.key[2]
+						if #old_key_to_remove > 0 then
+							rkeys.unRegisterHotKey(old_key_to_remove)
+							for i, key in ipairs(all_keys) do
+								if compare_array_disable_order(key, old_key_to_remove) then
+									table.remove(all_keys, i)
+									break
+								end
+							end
+						end
+					end
+					setting.police_settings.su_accept.key = bool_result_su[2]
+					if setting.police_settings.su_accept.func and #setting.police_settings.su_accept.key[2] > 0 then
+						rkeys.registerHotKey(setting.police_settings.su_accept.key[2], 3, true, su_accept_confirm)
+						table.insert(all_keys, setting.police_settings.su_accept.key[2])
+					end
+					lua_thread.create(function() wait(0) save() end)
+				end
+				imgui.EndChild()
+				imgui.EndPopup()
+			end
+
+			local pos_wanted = pos_su_accept + 53 + 19
 			new_draw(pos_wanted, 37)
 			gui.Text(26, pos_wanted + 9, 'Список разыскиваемых на Вашем экране', font[3])
 			imgui.SetCursorPos(imgui.ImVec2(561, pos_wanted + 5))
@@ -5375,6 +5786,8 @@ function hall.settings()
 					changeWantedPosition()
 				end
 				pos_wanted = pos_wanted + position_box_height
+				imgui.Dummy(imgui.ImVec2(0, 21))
+			else
 				imgui.Dummy(imgui.ImVec2(0, 21))
 			end
 		end
@@ -6411,14 +6824,12 @@ function hall.settings()
 			new_draw(72, 254)
 			imgui.SetCursorPos(imgui.ImVec2(25, 81))
 			imgui.Image(image_logo_update, imgui.ImVec2(47, 47))
-			imgui.SetWindowFontScale(0.7)
 			imgui.PushFont(bold_font[3])
 			local calc_text_logo = imgui.CalcTextSize(update_info.version)
 			imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(1.00, 1.00, 1.00, 1.00))
 			gui.Text(48.5 - (calc_text_logo.x / 2), 92, update_info.version, bold_font[3])
 			imgui.PopStyleColor(1)
 			imgui.PopFont()
-			imgui.SetWindowFontScale(1.0)
 			gui.Text(80, 87, 'State Helper ' .. update_info.version, font[3])
 			gui.Text(80, 105, tostring(update_info.size) .. ' кб.', font[3])
 			
@@ -6430,10 +6841,10 @@ function hall.settings()
 			local pos_y_line = 10
 			--update_info.text = text_update
 			for line, newlines in update_info.text:gmatch('([^\n]*)(\n*)') do
-				if line:find(u8'Нововведения в этой версии') then
+				if line:find(u8'Нововведения в этой версии') or line:sub(1, 3) == '## ' then
+					local header_text = (line:sub(1, 3) == '## ') and line:sub(4) or line
 					imgui.PushFont(font[3])
-					local calc_text_new = imgui.CalcTextSize(line)
-					gui.Text(10, pos_y_line, u8:decode(line), bold_font[1])
+					gui.Text(10, pos_y_line, u8:decode(header_text), bold_font[1])
 					imgui.PopFont()
 					pos_y_line = pos_y_line + 24
 				elseif line ~= '' then
@@ -9184,7 +9595,7 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 		end
 		gui.Text(26, 178, 'Допустимый уровень наркозависимости игрока для вступления в организацию', font[3])
 		local bool_save_input3 = setting.sob.min_narko
-		setting.sob.min_narko = gui.InputText({673, 180}, 70, setting.sob.min_narko, u8'Мин narko игрока', 3, u8'Значение', 'num')
+		setting.sob.min_narko = gui.InputText({673, 180}, 70, setting.sob.min_narko, u8'Мин narko игрока', 4, u8'Значение', 'num')
 		if setting.name_rus ~= bool_save_input3 then save() end
 		imgui.SetCursorPos(imgui.ImVec2(783, 174))
 		if gui.Switch(u8'##narko игрока функция', setting.sob.auto_narko) then
@@ -9245,11 +9656,12 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 		
 		gui.Text(349, 523, 'Другие параметры', bold_font[1])
 
-		gui.DrawBox({16, 548}, {808, 113 + 38}, cl.tab, cl.line, 7, 15)
+		gui.DrawBox({16, 548}, {808, 189}, cl.tab, cl.line, 7, 15)
 
 		gui.DrawLine({16, 585}, {824, 585}, cl.line)
 		gui.DrawLine({16, 623}, {824, 623}, cl.line)
 		gui.DrawLine({16, 661}, {824, 661}, cl.line)
+		gui.DrawLine({16, 699}, {824, 699}, cl.line)
 
 		gui.Text(26, 558, 'Отображать локальный чат', font[3])
 		imgui.SetCursorPos(imgui.ImVec2(783, 554))
@@ -9293,18 +9705,25 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 			save()
 		end
 
-		gui.Text(379, 713, 'Отыгровки', bold_font[1])
-		gui.DrawBox({16, 738}, {808, 75}, cl.tab, cl.line, 7, 15)
-		gui.DrawLine({16, 775}, {824, 775}, cl.line)
+		gui.Text(26, 710, 'Отображать иконки', font[3])
+		imgui.SetCursorPos(imgui.ImVec2(783, 706))
+		if gui.Switch(u8'##sob icons', setting.sob.icons) then
+			setting.sob.icons = not setting.sob.icons
+			save()
+		end
 
-		gui.Text(26, 748, 'Отыгровки вопросов', font[3])
-		if gui.Button(u8'Настроить...##1', {693, 743}, {115, 27}) then
+		gui.Text(379, 751, 'Отыгровки', bold_font[1])
+		gui.DrawBox({16, 776}, {808, 75}, cl.tab, cl.line, 7, 15)
+		gui.DrawLine({16, 813}, {824, 813}, cl.line)
+
+		gui.Text(26, 786, 'Отыгровки вопросов', font[3])
+		if gui.Button(u8'Настроить...##1', {693, 781}, {115, 27}) then
 			edit_rp_q_sob = true
 			an[19] = {0, 0}
 		end
 
-		gui.Text(26, 786, 'Отыгровки при определении годности', font[3])
-		if gui.Button(u8'Настроить...##2', {693, 781}, {115, 27}) then
+		gui.Text(26, 824, 'Отыгровки при определении годности', font[3])
+		if gui.Button(u8'Настроить...##2', {693, 819}, {115, 27}) then
 			edit_rp_fit_sob = true
 			an[19] = {0, 0}
 		end
@@ -9425,7 +9844,8 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 	elseif run_sob then
 		local ps_text = {{26, 56}, {296, 56}, {565, 56}, {26, 84}, {296, 84}, {565, 84}, {26, 112}, {296, 112}, {565, 112}, {26, 140}, {296, 140}, {565, 140}}
 		local all_bool_cdf = {setting.sob.auto_exp, setting.sob.auto_law, setting.sob.auto_narko, setting.sob.auto_org, setting.sob.auto_med, setting.sob.auto_blacklist, setting.sob.auto_car, setting.sob_moto_lic, setting.sob.auto_gun, setting.sob.auto_warn, setting.sob.auto_ticket, setting.sob.auto_ticket}
-		local all_bool_cdk = {'Уровень: ', 'Законопослушность: ', 'Наркозависимость: ', 'Мед карта: ', 'Здоровье: ', 'Чёрный список: ', 'Лиц. на авто: ', 'Лиц. на мото: ', 'Лиц. на оружие: ', 'Организация: ', 'Повестка: ', 'Военный билет: '}
+		local all_bool_cdk = {'Уровень: ', 'Законопослушность: ', 'Укропозависимость: ', 'Мед карта: ', 'Здоровье: ', 'Чёрный список: ', 'Лиц. на авто: ', 'Лиц. на мото: ', 'Лиц. на оружие: ', 'Организация: ', 'Повестка: ', 'Военный билет: '}
+		local all_icon_cdk = {fa.CHART_SIMPLE, fa.SCALE_BALANCED, fa.SYRINGE, fa.NOTES_MEDICAL, fa.HEART_PULSE, fa.BAN, fa.CAR, fa.MOTORCYCLE, fa.GUN, fa.BUILDING, fa.SCROLL, fa.ID_CARD}
 		local all_param = {}
 		local num_all_bool_cdf = 0
 		local y_pos_all_cdf = 0
@@ -9477,7 +9897,15 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 		for i = 1, 10 do
 			if all_bool_cdf[i] then
 				num_all_bool_cdf = num_all_bool_cdf + 1
-				gui.Text(ps_text[num_all_bool_cdf][1], ps_text[num_all_bool_cdf][2], all_bool_cdk[i], font[3])
+				local icon_shift_cdk = 0
+				if setting.sob.icons then
+					imgui.PushFont(fa_font[2])
+					local calc_icon_cdk = imgui.CalcTextSize(all_icon_cdk[i])
+					imgui.PopFont()
+					gui.FaText(ps_text[num_all_bool_cdf][1], ps_text[num_all_bool_cdf][2], all_icon_cdk[i], fa_font[2], cl.def)
+					icon_shift_cdk = calc_icon_cdk.x + 6
+				end
+				gui.Text(ps_text[num_all_bool_cdf][1] + icon_shift_cdk, ps_text[num_all_bool_cdf][2], all_bool_cdk[i], font[3])
 				imgui.PushFont(font[3])
 				local calc_t = imgui.CalcTextSize(u8(all_bool_cdk[i]))
 				local text_end_t = '{FF9500}Неизвестно'
@@ -9505,7 +9933,7 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 							end
 						end
 					end
-				elseif all_bool_cdk[i] == 'Наркозависимость: ' then
+				elseif all_bool_cdk[i] == 'Укропозависимость: ' then
 					if tonumber(sob_info.narko) > -1 then
 						if tonumber(sob_info.narko) >= tonumber(setting.sob.min_narko) then
 							text_end_t = '{CF0000}' .. tostring(sob_info.narko) .. '/' .. setting.sob.min_narko
@@ -9578,12 +10006,12 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 						end
 					end
 				end
-				imgui.SetCursorPos(imgui.ImVec2(ps_text[num_all_bool_cdf][1] + calc_t.x + 2, ps_text[num_all_bool_cdf][2]))
+				imgui.SetCursorPos(imgui.ImVec2(ps_text[num_all_bool_cdf][1] + icon_shift_cdk + calc_t.x + 2, ps_text[num_all_bool_cdf][2]))
 				imgui.TextColoredRGB(text_end_t)
 				if text_end_t:find('Состоит в ЧС') then
 					local calc_bl = imgui.CalcTextSize(u8'Состоит в ЧС')
 					local blacklist_all = table.concat(sob_info.bl_info, '\n')
-					imgui.SetCursorPos(imgui.ImVec2(ps_text[num_all_bool_cdf][1] + calc_t.x + 2 + calc_bl.x + 8, ps_text[num_all_bool_cdf][2]))
+					imgui.SetCursorPos(imgui.ImVec2(ps_text[num_all_bool_cdf][1] + icon_shift_cdk + calc_t.x + 2 + calc_bl.x + 8, ps_text[num_all_bool_cdf][2]))
 					imgui.PushFont(fa_font[2])
 					imgui.PushStyleColor(imgui.Col.Text, cl.def)
 					imgui.Text(fa.CIRCLE_QUESTION)
@@ -9599,7 +10027,15 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 		
 		if all_bool_cdf[11] then
 			num_all_bool_cdf = num_all_bool_cdf + 1
-			gui.Text(ps_text[num_all_bool_cdf][1], ps_text[num_all_bool_cdf][2], all_bool_cdk[11], font[3])
+			local icon_shift_cdk11 = 0
+			if setting.sob.icons then
+				imgui.PushFont(fa_font[2])
+				local calc_icon_cdk11 = imgui.CalcTextSize(all_icon_cdk[11])
+				imgui.PopFont()
+				gui.FaText(ps_text[num_all_bool_cdf][1], ps_text[num_all_bool_cdf][2], all_icon_cdk[11], fa_font[2], cl.def)
+				icon_shift_cdk11 = calc_icon_cdk11.x + 6
+			end
+			gui.Text(ps_text[num_all_bool_cdf][1] + icon_shift_cdk11, ps_text[num_all_bool_cdf][2], all_bool_cdk[11], font[3])
 			imgui.PushFont(font[3])
 			local calc_t = imgui.CalcTextSize(u8(all_bool_cdk[11]))
 			local text_end_t = '{FF9500}Неизвестно'
@@ -9610,11 +10046,19 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 					text_end_t = '{00A115}Отсутствует'
 				end
 			end
-			imgui.SetCursorPos(imgui.ImVec2(ps_text[num_all_bool_cdf][1] + calc_t.x + 2, ps_text[num_all_bool_cdf][2]))
+						imgui.SetCursorPos(imgui.ImVec2(ps_text[num_all_bool_cdf][1] + icon_shift_cdk11 + calc_t.x + 2, ps_text[num_all_bool_cdf][2]))
 			imgui.TextColoredRGB(text_end_t)
 			
 			num_all_bool_cdf = num_all_bool_cdf + 1
-			gui.Text(ps_text[num_all_bool_cdf][1], ps_text[num_all_bool_cdf][2], all_bool_cdk[12], font[3])
+			local icon_shift_cdk12 = 0
+			if setting.sob.icons then
+				imgui.PushFont(fa_font[2])
+				local calc_icon_cdk12 = imgui.CalcTextSize(all_icon_cdk[12])
+				imgui.PopFont()
+				gui.FaText(ps_text[num_all_bool_cdf][1], ps_text[num_all_bool_cdf][2], all_icon_cdk[12], fa_font[2], cl.def)
+				icon_shift_cdk12 = calc_icon_cdk12.x + 6
+			end
+			gui.Text(ps_text[num_all_bool_cdf][1] + icon_shift_cdk12, ps_text[num_all_bool_cdf][2], all_bool_cdk[12], font[3])
 			
 			calc_t = imgui.CalcTextSize(u8(all_bool_cdk[12]))
 			text_end_t = '{FF9500}Неизвестно'
@@ -9625,7 +10069,7 @@ if not edit_rp_q_sob and not edit_rp_fit_sob and not run_sob then
 					text_end_t = '{00A115}Имеется'
 				end
 			end
-			imgui.SetCursorPos(imgui.ImVec2(ps_text[num_all_bool_cdf][1] + calc_t.x + 2, ps_text[num_all_bool_cdf][2]))
+						imgui.SetCursorPos(imgui.ImVec2(ps_text[num_all_bool_cdf][1] + icon_shift_cdk12 + calc_t.x + 2, ps_text[num_all_bool_cdf][2]))
 			imgui.TextColoredRGB(text_end_t)
 			
 			imgui.PopFont()
@@ -11964,50 +12408,52 @@ function tags_in_cmd()
 			{'{week}', 'Выведет текущую неделю'},
 			{'{month}', 'Выведет текущий месяц'},
 			{'{getplnick[id игрока]}', 'Выведет ник игрока по его ID'},
-			{'{med7}', 'Выведет цену на новую мед. карту на 7 дней'},
-			{'{med14}', 'Выведет цену на новую мед. карту на 14 дней'},
-			{'{med30}', 'Выведет цену на новую мед. карту на 30 дней'},
-			{'{med60}', 'Выведет цену на новую мед. карту на 60 дней'},
-			{'{medup7}', 'Выведет цену на обновлённую мед. карту на 7 дней'},
-			{'{medup14}', 'Выведет цену на обновлённую мед. карту на 14 дней'},
-			{'{medup30}', 'Выведет цену на обновлённую мед. карту на 30 дней'},
-			{'{medup60}', 'Выведет цену на обновлённую мед. карту на 60 дней'},
-			{'{pricenarko}', 'Выведет цену на снятие укропозависимости'},
-			{'{pricerecept}', 'Выведет цену на рецепт'},
-			{'{priceant}', 'Выведет цену на антибиотик'},
-			{'{pricelec}', 'Выведет цену на лечение'},
-			{'{priceosm}', 'Выведет цену на мед. осмотр'},
-			{'{priceguard}', 'Выведет цену на лечение охранника'},
-			{'{priceauto1}', 'Выведет цену на авто на 1 месяц'},
-			{'{priceauto2}', 'Выведет цену на авто на 2 месяца'},
-			{'{priceauto3}', 'Выведет цену на авто на 3 месяца'},
-			{'{pricemoto1}', 'Выведет цену на мото на 1 месяц'},
-			{'{pricemoto2}', 'Выведет цену на мото на 2 месяца'},
-			{'{pricemoto3}', 'Выведет цену на мото на 3 месяца'},
-			{'{pricefly}', 'Выведет цену на полёты'},
-			{'{pricefish1}', 'Выведет цену на рыбалку на 1 месяц'},
-			{'{pricefish2}', 'Выведет цену на рыбалку на 2 месяца'},
-			{'{pricefish3}', 'Выведет цену на рыбалку на 3 месяца'},
-			{'{priceswim1}', 'Выведет цену на водный транспорт на 1 месяц'},
-			{'{priceswim2}', 'Выведет цену на водный транспорт на 2 месяца'},
-			{'{priceswim3}', 'Выведет цену на водный транспорт на 3 месяца'},
-			{'{pricegun1}', 'Выведет цену на оружие на 1 месяц'},
-			{'{pricegun2}', 'Выведет цену на оружие на 2 месяца'},
-			{'{pricegun3}', 'Выведет цену на оружие на 3 месяца'},
-			{'{pricehunt1}', 'Выведет цену на охоту на 1 месяц'},
-			{'{pricehunt2}', 'Выведет цену на охоту на 2 месяца'},
-			{'{pricehunt3}', 'Выведет цену на охоту на 3 месяца'},
-			{'{priceexc1}', 'Выведет цену на раскопки на 1 месяц'},
-			{'{priceexc2}', 'Выведет цену на раскопки на 2 месяца'},
-			{'{priceexc3}', 'Выведет цену на раскопки на 3 месяца'},
-			{'{pricetaxi1}', 'Выведет цену на такси на 1 месяц'},
-			{'{pricetaxi2}', 'Выведет цену на такси на 2 месяца'},
-			{'{pricetaxi3}', 'Выведет цену на такси на 3 месяца'},
-			{'{pricemeh1}', 'Выведет цену на механика на 1 месяц'},
-			{'{pricemeh2}', 'Выведет цену на механика на 2 месяца'},
-			{'{pricemeh3}', 'Выведет цену на механика на 3 месяца'},
+			{'{med7}', 'Выведет цену на новую мед. карту на 7 дней',1},
+			{'{med14}', 'Выведет цену на новую мед. карту на 14 дней',1},
+			{'{med30}', 'Выведет цену на новую мед. карту на 30 дней',1},
+			{'{med60}', 'Выведет цену на новую мед. карту на 60 дней',1},
+			{'{medup7}', 'Выведет цену на обновлённую мед. карту на 7 дней',1},
+			{'{medup14}', 'Выведет цену на обновлённую мед. карту на 14 дней',1},
+			{'{medup30}', 'Выведет цену на обновлённую мед. карту на 30 дней',1},
+			{'{medup60}', 'Выведет цену на обновлённую мед. карту на 60 дней',1},
+			{'{pricenarko}', 'Выведет цену на снятие укропозависимости',1},
+			{'{pricerecept}', 'Выведет цену на рецепт',1},
+			{'{priceant}', 'Выведет цену на антибиотик',1},
+			{'{pricelec}', 'Выведет цену на лечение',1},
+			{'{priceosm}', 'Выведет цену на мед. осмотр',1},
+			{'{priceguard}', 'Выведет цену на лечение охранника',1},
+			{'{priceauto1}', 'Выведет цену на авто на 1 месяц',2},
+			{'{priceauto2}', 'Выведет цену на авто на 2 месяца',2},
+			{'{priceauto3}', 'Выведет цену на авто на 3 месяца',2},
+			{'{pricemoto1}', 'Выведет цену на мото на 1 месяц',2},
+			{'{pricemoto2}', 'Выведет цену на мото на 2 месяца',2},
+			{'{pricemoto3}', 'Выведет цену на мото на 3 месяца',2},
+			{'{pricefly}', 'Выведет цену на полёты',2},
+			{'{pricecrypto}', 'Выведет цену на лицензию криптовалюты (на 5 дней)',2},
+			{'{pricestocks}', 'Выведет цену на лицензию торговли акциями (на 5 дней)',2},
+			{'{pricefish1}', 'Выведет цену на рыбалку на 1 месяц',2},
+			{'{pricefish2}', 'Выведет цену на рыбалку на 2 месяца',2},
+			{'{pricefish3}', 'Выведет цену на рыбалку на 3 месяца',2},
+			{'{priceswim1}', 'Выведет цену на водный транспорт на 1 месяц',2},
+			{'{priceswim2}', 'Выведет цену на водный транспорт на 2 месяца',2},
+			{'{priceswim3}', 'Выведет цену на водный транспорт на 3 месяца',2},
+			{'{pricegun1}', 'Выведет цену на оружие на 1 месяц',2},
+			{'{pricegun2}', 'Выведет цену на оружие на 2 месяца',2},
+			{'{pricegun3}', 'Выведет цену на оружие на 3 месяца',2},
+			{'{pricehunt1}', 'Выведет цену на охоту на 1 месяц',2},
+			{'{pricehunt2}', 'Выведет цену на охоту на 2 месяца',2},
+			{'{pricehunt3}', 'Выведет цену на охоту на 3 месяца',2},
+			{'{priceexc1}', 'Выведет цену на раскопки на 1 месяц',2},
+			{'{priceexc2}', 'Выведет цену на раскопки на 2 месяца',2},
+			{'{priceexc3}', 'Выведет цену на раскопки на 3 месяца',2},
+			{'{pricetaxi1}', 'Выведет цену на такси на 1 месяц',2},
+			{'{pricetaxi2}', 'Выведет цену на такси на 2 месяца',2},
+			{'{pricetaxi3}', 'Выведет цену на такси на 3 месяца',2},
+			{'{pricemeh1}', 'Выведет цену на механика на 1 месяц',2},
+			{'{pricemeh2}', 'Выведет цену на механика на 2 месяца',2},
+			{'{pricemeh3}', 'Выведет цену на механика на 3 месяца',2},
 			{'{sex[муж. текст][жен. текст]}', 'Добавит текст в соответствии с выбранным полом'},
-			{'{dialoglic[id лицензии][id срока][id игрока]}', 'Автовыбор диалога с лицензией'},
+			{'{dialoglic[id лицензии][id срока][id игрока]}', 'Автовыбор диалога с лицензией',2},
 			{'{target}', 'Выведет id с последнего прицела на игрока'},
 			{'{prtsc}', 'Сделает скриншот игры F8'},
 			{'{random[мин. число][мах. число]}', 'Выведет рандомное число'},
@@ -12019,10 +12465,18 @@ function tags_in_cmd()
 			{'{veh_model}', 'Получить марку ближайшего транспорта с водителем (до 150м)'},
 			{'{veh_speed}', 'Получить скорость ближайшего транспорта с водителем (до 150м)'},
 			{'{square}', 'Получить текущий квадрат'},
-			{'{pursuit_id}', 'Выдает id человека за которым вы в погоне'}
+			{'{pursuit_id}', 'Выдает id человека за которым вы в погоне',5}
 			--{'{unprison[id игрока]}', 'Автоматически подчищать задания для УДО (ТСР)'},
 		}
 		
+		local vis_tags = {}
+		for i = 1, #all_list_tags do
+			if tag_vis(all_list_tags[i]) then
+				table.insert(vis_tags, all_list_tags[i])
+			end
+		end
+		all_list_tags = vis_tags
+
 		if an[25][1] > 0 then
 			an[25][1] = an[25][1] - (anim * 2)
 		end
@@ -12061,6 +12515,26 @@ function tags_in_cmd()
 		imgui.EndChild()
 		imgui.EndPopup()
 	end
+end
+
+function tag_vis(tag_entry)
+	if #tag_entry < 3 then return true end
+	local groups = {
+		[1] = {1, 2, 3, 4},
+		[2] = {5},
+		[3] = {6},
+		[4] = {7, 8, 10},
+		[5] = {11, 12, 13, 14, 15}
+	}
+	for i = 3, #tag_entry do
+		local group = groups[tag_entry[i]]
+		if group then
+			for _, org_id in ipairs(group) do
+				if setting.org == org_id then return true end
+			end
+		end
+	end
+	return false
 end
 
 function tags_in_call()
@@ -12939,7 +13413,7 @@ win.main = imgui.OnFrame(
 				color_ItemHovered = imgui.ImVec4(0.83, 0.83, 0.83, 1.00)
 			end
 			
-			if tab == 'settings' and setting.org == 9 and tab_settings == 6 then
+			if tab == 'settings' and setting.org == 9 and false then
 				imgui.SetCursorPos(imgui.ImVec2(802, 5))
 				if imgui.InvisibleButton(u8'##Посмотреть теги вызовов', imgui.ImVec2(35, 32)) then
 					popup_open_tags_call = true
@@ -15747,42 +16221,8 @@ function start_sob_cmd(rp_sob_z)
 				if rp_sob[i]:find('%{mynickrus%}') then
 					rp_sob[i] = rp_sob[i]:gsub('%{mynickrus%}', setting.name_rus)
 				end
-				if rp_sob[i]:find('%{waitwbook%}') then
-					if wait_book[2] then
-						local dec_key = {}
-						for s = 1, #setting.enter_key[1] do
-							table.insert(dec_key, dec_to_key(setting.enter_key[1][s]))
-						end
-						wait(400)
-						windows.action[0] = true
-						dialog_act.status = true
-						dialog_act.enter = true
-						if not setting.cef_notif then
-							sampAddChatMessage('[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 0xFF5345)
-						else
-							cefnotig('{FF5345}[SH] {FFFFFF}Нажмите на {23E64A}' .. setting.enter_key[2] .. '{FFFFFF} для продолжения или {FF8FA2}' .. setting.act_key[2] .. '{FFFFFF}, чтобы остановить отыгровку.', 4000)
-						end
-						addOneOffSound(0, 0, 0, 1058)
-						while true do wait(0)
-							if not sampIsChatInputActive() and not sampIsDialogActive() then
-								local bool_return = 0
-								for key = 1, #dec_key do
-									if isKeyDown(dec_key[key]) then
-										bool_return = bool_return + 1
-									end
-								end
-								if bool_return == #dec_key then
-									dialog_act.status = false
-									dialog_act.enter = false
-									break
-								end
-							end
-						end
-					end
-				else
-					sampSendChat(u8:decode(rp_sob[i]))
-					wait(2200)
-				end
+				sampSendChat(u8:decode(rp_sob[i]))
+				wait(2600)
 			end
 		end)
 	end
@@ -16475,6 +16915,10 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 					extracted_str[i][2] = setting.price[2].moto[3]
 				elseif val == '{pricefly}' then
 					extracted_str[i][2] = setting.price[2].fly[1]
+				elseif val == '{pricecrypto}' then
+					extracted_str[i][2] = setting.price[2].crypto[1]
+				elseif val == '{pricestocks}' then
+					extracted_str[i][2] = setting.price[2].stocks[1]
 				elseif val == '{pricefish1}' then
 					extracted_str[i][2] = setting.price[2].fish[1]
 				elseif val == '{pricefish2}' then
@@ -16599,7 +17043,7 @@ function cmd_start(argument, cmd_name) --> Запуск команды
 			if text:find('{dialoglic%[(%d+)%]%[(%d+)%]%[(%d+)%]}') then
 				stop_send_chat = true
 				num_id_dial, num_id_term, num_id_player = string.match(text, '{dialoglic%[(.-)%]%[(.-)%]%[(.-)%]}')
-				if tonumber(num_id_dial) > -1 and tonumber(num_id_dial) < 10 then
+				if tonumber(num_id_dial) > -1 and tonumber(num_id_dial) < 12 then
 					num_give_lic = tonumber(num_id_dial)
 				else
 					sampAddChatMessage('[SH] {FF5345}[КРИТИЧЕСКАЯ ОШИБКА] {FFFFFF}Параметр {dialoglic} имеет неверное значение.', 0xFF5345)
@@ -17270,7 +17714,7 @@ function update_lists()
     end
 end
 
-function check_all_wanted_pages() -- 976 (посл.проверки)
+function check_all_wanted_pages() -- посл.проверки
 	if wanted_wait.checking then return end
 		wanted_wait.checking = true
 		lua_thread.create(function()
@@ -17387,9 +17831,42 @@ end
 
 --> Hook
 function hook.onServerMessage(color_mes, mes)
+	local mescol = mes:gsub('{%x+}', '')
 	local mes_col = (bit.tohex(bit.rshift(color_mes, 8), 6))
 
-	if mes:find('Вы не полицейский!') and wanted_wait.checking and mes_col == 'ff6347' then
+	if mescol:find('Вы успешно пометили игрока') and mes_col == '9acd32' and setting.org >= 11 and setting.org <= 15 then
+		local mark_minutes = mescol:match('в течение (%d+) минут')
+		if mark_minutes then
+			z_timer.active = true
+			z_timer.until_time = os.clock() + tonumber(mark_minutes) * 60
+		end
+	end
+
+	if mescol:find('Вы успешно получили бодикамеру') and setting.police_settings.auto_bodycam and setting.org >= 11 and setting.org <= 15 then
+		close_ammo_menu = true
+	end
+
+		if mescol:find('Запрашиваю розыск на дело:') and mes_col == '2db043' and (setting.police_settings.su_accept.func or setting.rank > 4) and setting.org >= 11 and setting.org <= 15 then
+		local su_nick = mescol:match('(%S+)%[%d+%]:')
+		local su_case = mescol:match('на дело:%D-(%d+)')
+		local su_degree = mescol:match('степень розыска:%D-(%d+)')
+		local su_reason = mescol:match('с причиной:%s*"?(.-)"?%s*$')
+		if su_nick and su_case and su_degree and su_reason then
+			local su_short_tag = su_nick:sub(1, 1) .. '.' .. (su_nick:match('_(.+)$') or su_nick)
+			su_accept = { active = true, case = su_case, degree = su_degree, reason = su_reason, tag = su_short_tag }
+			local su_notify_text = '[SH] {FFFFFF}' .. su_nick .. ' запрашивает выдачу розыска. Для подтверждения введите команду {FF6060}/' .. setting.police_settings.su_accept.cmd
+			if setting.police_settings.su_accept.key[1] ~= '' then
+				su_notify_text = su_notify_text .. '{FFFFFF} или нажмите {FF6060}' .. setting.police_settings.su_accept.key[1]
+			end
+			sampAddChatMessage(su_notify_text, 0xFF5345)
+			lua_thread.create(function()
+				wait(20000)
+				su_accept.active = false
+			end)
+		end
+	end
+
+	if mescol:find('Вы не полицейский!') and wanted_wait.checking and mes_col == 'ff6347' then
 		if not setting.cef_notif then
 			sampAddChatMessage('[SH] {FFFFFF}Вы не полицейский, функция wanted на экране выключена.', 0xFF5345)
 		else
@@ -17400,7 +17877,7 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 
-	if mes:find('Вы не состоите во фракции') and setting.mb.func and mes_col == 'ff6347' then
+	if mescol:find('Вы не состоите во фракции') and setting.mb.func and mes_col == 'ff6347' then
 		if not setting.cef_notif then
 			sampAddChatMessage('[SH] {FFFFFF}Вы не состоите в организации, мемберс на экране выключен.', 0xFF5345)
 		else
@@ -17411,7 +17888,7 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 
-	if mes:find('Не флуди!') and wanted_wait.checking and mes_col == 'ff6347' then --> для вантед
+	if mescol:find('Не флуди!') and wanted_wait.checking and mes_col == 'ff6347' then --> для вантед
 		lua_thread.create(function()
 			wait(1500)
 			if wanted_wait.checking then
@@ -17422,7 +17899,7 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 
-	if mes:find('Игроков с таким уровнем розыска нету!') and wanted_wait.checking and mes_col == 'ff6347' then
+	if mescol:find('Игроков с таким уровнем розыска нету!') and wanted_wait.checking and mes_col == 'ff6347' then
 		wanted_wait.timeout = 0
 		wanted_check()
 		return false
@@ -17430,7 +17907,7 @@ function hook.onServerMessage(color_mes, mes)
 
 	if setting.police_settings.ten_code and (setting.org >= 11 and setting.org <= 15) and next(tenCodes) then
 		for pattern, addon in pairs(tenCodes) do
-			local s, e = mes:find(pattern, 1, true)
+			local s, e = mescol:find(pattern, 1, true)
 			if s then
 				local next_ch = mes:sub(e+1, e+1)
 				if next_ch == "" or next_ch:match("[%s%p]") or next_ch == "{" then
@@ -17447,45 +17924,37 @@ function hook.onServerMessage(color_mes, mes)
 		end
 	end
 
-	if setting.put_mes[2] and setting.hide_chat and mes_col == '73b461' then
-        local clean_mes = mes:gsub('{%x%x%x%x%x%x}', '')
-        local lower_mes = clean_mes:lower()
+	if setting.put_mes[2] and setting.hide_chat and mes_col == '73b461' then -- Сделать через телефон
 
-        local icon_23b = string.char(0xEF, 0x88, 0xBB)
-        
-        if clean_mes:find(icon_23b, 1, true) == 1 
-        or lower_mes:find(':uf23b:', 1, true) == 1 
-        or clean_mes:find('Отредактировал') then
-            return false
-        end
     end
-	if mes:find('У игрока уже есть Трудовая книжка!') and run_sob then
-		wait_book = {20, true}
-	end
 	
 	if setting.put_mes[3] and setting.hide_chat then
-		if mes:find('News LS') or mes:find('News SF') or mes:find('News LV') then
+		if mescol:find('News LS') or mescol:find('News SF') or mescol:find('News LV') then
 			return false
 		end
-		if mes:find('Гость') or mes:find('Репортёр') then
+		if mescol:find('Гость') or mescol:find('Репортёр') then
 			if mes_col == '9acd32' then
 				return false
 			end
 		end
 	end
 
-	if mes:find('Преследование за (.-) было приостановлено, причина:') and setting.org >= 11 and setting.org <= 15 then
+	if mescol:find('Преследование за (.-) было приостановлено, причина:') and setting.org >= 11 and setting.org <= 15 then
 		poltarget = nil
+		auto_z_state.range = false
+		auto_z_state.id = nil
+		z_timer.active = false
 	end
 
-	if mes:find('Вы успешно начали погоню за игроком') and setting.org >= 11 and setting.org <= 15 then
+	if mescol:find('Вы успешно начали погоню за игроком') and setting.org >= 11 and setting.org <= 15 then
 		local id = mes:match("Вы успешно начали погоню за игроком .- %[ID: (%d+)%]")
 		if id then
 			poltarget = tonumber(id)
+			z_timer.active = false
 		end
 	end
 
-	if mes:find('Вы не можете продавать лицензии на такой срок') then
+	if mescol:find('Вы не можете продавать лицензии на такой срок') then
 		num_give_lic = -1
 		if not setting.cef_notif then
 			sampAddChatMessage('[SH] {FFFFFF}Ваш ранг не позволяет выдать эту лицензию!', 0xFF5345)
@@ -17496,37 +17965,59 @@ function hook.onServerMessage(color_mes, mes)
 	end
 	
 	if setting.put_mes[1] and setting.hide_chat then
-		if mes:find('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~') or mes:find('- Основные команды сервера: /menu /help /gps /settings') 
-		or mes:find('Пригласи друга и получи бонус в размере') or mes:find('- Донат и получение дополнительных средств arizona-rp.com/donate') 
-		or mes:find('Подробнее об обновлениях сервера') or mes:find('(Личный кабинет/Донат)') or mes:find('С помощью телефона можно заказать') 
-		or mes:find('В нашем магазине ты можешь') or mes:find('их на желаемый тобой {FFFFFF}бизнес') or mes:find('Игроки со статусом (.+)имеют больше возможностей') 
-		or mes:find('можно приобрести редкие {FFFFFF}автомобили, аксессуары, воздушные') or mes:find('предметы, которые выделят тебя из толпы! Наш сайт:') 
-		or mes:find('Вы можете купить складское помещение') or mes:find('Таким образом вы можете сберечь своё имущество, даже если вас забанят.') 
-		or mes:find('Этот тип недвижимости будет навсегда закреплен за вами и за него не нужно платить.') or mes:find('{ffffff}Уважаемые жители штата, открыта продажа билетов на рейс:') 
-		or mes:find('{ffffff}Подробнее: {FF6666}/help — Перелёты в город Vice City.') or mes:find('{ffffff}Внимание! На сервере Vice City действует акция Х3 PayDay.') 
-		or mes:find('%[Подсказка%] Игроки владеющие (.+) домами могут бесплатно раз в день получать') or mes:find('%[Подсказка%] Игроки владеющие (.+) домами могут получать (.+) Ларца Олигарха')
-		or mes:find('Игроки со статусом (.+)имеют большие возможности') or mes:find('{9ACD32}%[Подсказка%]{FFFFFF} Негде жить?') or mes:find('{9ACD32}%[Подсказка%]{FFFFFF} Проживая в отеле')
-		or mes:find('{9ACD32}%[Подсказка%]{FFFFFF} Подробнее') or mes:find('%[Информация%] Продавай и покупай автомобильные номера') 
-		or mes:find('Администрация сервера в поиске новых спонсоров для проведения') or mes:find('Именно Вы можете стать тем самым спонсором, благодаря которому будет проведено') 
-		or mes:find('Спонсировать серверные мероприятия можно с помощью команды') or mes:find('С уважением, Администрация сервера')
-		or mes:find('На сервере Vice City действует акция') or mes:find('Центр обмена имуществ') or mes:find('Проводи безопасный обмен имуществом с другими игроками')
-		or mes:find('%[Рыбалка%] Игрок (.+) занял(.+)место по количеству выловленной рыбы') or mes:find('Вы можете улучшить свои характеристики на поле битвы')
-		or mes:find('Списанный бронежилет на 4 часа даст вашему персонажу') or mes:find('Найти склад можно(.+)Склад списанных бронежилетов') then 
+		if mescol:find('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~') or mescol:find('- Основные команды сервера: /menu /help /gps /settings') 
+		or mescol:find('Пригласи друга и получи бонус в размере') or mescol:find('- Донат и получение дополнительных средств arizona-rp.com/donate') 
+		or mescol:find('Подробнее об обновлениях сервера') or mescol:find('(Личный кабинет/Донат)') or mescol:find('С помощью телефона можно заказать') 
+		or mescol:find('В нашем магазине ты можешь') or mescol:find('их на желаемый тобой {FFFFFF}бизнес') or mescol:find('Игроки со статусом (.+)имеют больше возможностей') 
+		or mescol:find('можно приобрести редкие {FFFFFF}автомобили, аксессуары, воздушные') or mescol:find('предметы, которые выделят тебя из толпы! Наш сайт:') 
+		or mescol:find('Вы можете купить складское помещение') or mescol:find('Таким образом вы можете сберечь своё имущество, даже если вас забанят.') 
+		or mescol:find('Этот тип недвижимости будет навсегда закреплен за вами и за него не нужно платить.') or mescol:find('{ffffff}Уважаемые жители штата, открыта продажа билетов на рейс:') 
+		or mescol:find('{ffffff}Подробнее: {FF6666}/help — Перелёты в город Vice City.') or mescol:find('{ffffff}Внимание! На сервере Vice City действует акция Х3 PayDay.') 
+		or mescol:find('%[Подсказка%] Игроки владеющие (.+) домами могут бесплатно раз в день получать') or mescol:find('%[Подсказка%] Игроки владеющие (.+) домами могут получать (.+) Ларца Олигарха')
+		or mescol:find('Игроки со статусом (.+)имеют большие возможности') or mescol:find('{9ACD32}%[Подсказка%]{FFFFFF} Негде жить?') or mescol:find('{9ACD32}%[Подсказка%]{FFFFFF} Проживая в отеле')
+		or mescol:find('{9ACD32}%[Подсказка%]{FFFFFF} Подробнее') or mescol:find('%[Информация%] Продавай и покупай автомобильные номера') 
+		or mescol:find('Администрация сервера в поиске новых спонсоров для проведения') or mescol:find('Именно Вы можете стать тем самым спонсором, благодаря которому будет проведено') 
+		or mescol:find('Спонсировать серверные мероприятия можно с помощью команды') or mescol:find('С уважением, Администрация сервера')
+		or mescol:find('На сервере Vice City действует акция') or mescol:find('Центр обмена имуществ') or mescol:find('Проводи безопасный обмен имуществом с другими игроками')
+		or mescol:find('%[Рыбалка%] Игрок (.+) занял(.+)место по количеству выловленной рыбы') or mescol:find('Вы можете улучшить свои характеристики на поле битвы')
+		or mescol:find('Списанный бронежилет на 4 часа даст вашему персонажу') or mescol:find('Найти склад можно(.+)Склад списанных бронежилетов') then 
 			return false
 		end
 	end
 	
-	if mes:find(' испытал удачу при открытии ') or mes:find('%[Удача%] Игрок') or mes:find('Удача улыбнулась игроку') and setting.put_mes[4] and setting.hide_chat then
+	if mescol:find(' испытал удачу при открытии ') or mescol:find('%[Удача%] Игрок') or mescol:find('Удача улыбнулась игроку') and setting.put_mes[4] and setting.hide_chat then
 		return false
 	end
 
-	if mes:find('[Сбор средств](.+)организац') and setting.put_mes[5] and setting.hide_chat then
+	if mescol:find('[Сбор средств](.+)организац') and setting.put_mes[5] and setting.hide_chat then
 		return false
-	end
+		end
 	if run_sob then
-		if mes:find(my.nick .. '%[' .. my.id .. '%]') or mes:find(sob_info.nick .. '%[' .. sob_info.id .. '%]') then
+		if mescol:find(my.nick .. '%[' .. my.id .. '%]') or mescol:find(sob_info.nick .. '%[' .. sob_info.id .. '%]') then
 			local log_message = mes
-			if setting.sob.use_original_color then
+			if setting.color_nick and setting.sob.use_original_color then
+				local pid = mescol:find(my.nick .. '%[' .. my.id .. '%]') and my.id or sob_info.id
+				local playerColor = sampGetPlayerColor(tonumber(pid))
+
+				if mescol:find('говорит:') and mes_col == 'ffffff' then
+					log_message = string.format('{%06X}', bit.band(playerColor, 0xFFFFFF)) .. mes
+				elseif mescol:find('кричит:') and mes_col == 'f0e68c' then
+					log_message = string.format('{%06X}', bit.band(playerColor, 0xFFFFFF)) .. mes:gsub("кричит:", "кричит:{F0E68C}")
+				elseif mescol:find('говорит шепотом:') and mes_col == '94b0c1' then
+					log_message = string.format('{%06X}', bit.band(playerColor, 0xFFFFFF)) .. mes
+				elseif mes:match('%(%(.+%[%d+%]: {B7AFAF}.+%)%)$') and mes_col == 'ffffff' then
+					local nickname, id, text = mes:match('%(%(%s*(.-)%[(%d+)%]: {B7AFAF}(.-)%)%)$')
+					if nickname and id and text then
+						local cleanText = text:gsub("{B7AFAF}", "")
+						log_message = string.format('{%06X}(( %s[%s]: {B7AFAF}%s{%06X}))',
+							bit.band(playerColor, 0xFFFFFF), nickname, id, cleanText, bit.band(playerColor, 0xFFFFFF))
+					else
+						log_message = string.format('{%06X}', bit.band(playerColor, 0xFFFFFF)) .. mes
+					end
+				else
+					log_message = '{' .. mes_col .. '}' .. mes
+				end
+			elseif setting.sob.use_original_color then
 				log_message = '{' .. mes_col .. '}' .. mes
 			else
 				if setting.cl ~= 'Black' then
@@ -17541,7 +18032,7 @@ function hook.onServerMessage(color_mes, mes)
 		end
 	end
 
-	if (mes:find('Robert_Poloskyn(.+) shbl'..my.id) and s_na == 'Winslow') or (mes:find('Alberto_Kane(.+) shbl'..my.id) and s_na == 'Phoenix') or (mes:find('Ilya_Kustov(.+) shbl'..my.id) and s_na == 'Phoenix') then
+	if (mescol:find('Robert_Poloskyn(.+) shbl'..my.id) and s_na == 'Winslow') or (mescol:find('Alberto_Kane(.+) shbl'..my.id) and s_na == 'Phoenix') or (mescol:find('Ilya_Kustov(.+) shbl'..my.id) and s_na == 'Phoenix') then
 		if setting.blockl then
 			setting.blockl = false
 			if not setting.cef_notif then
@@ -17565,12 +18056,12 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 
-	if mes:find('%[Информация%] {ffffff}Вы заполнили все пункты, для подтверждения распишитесь нажав кнопку {90EE90}"Заполнить"') and setting.police_settings.auto_inves then
+	if mescol:find('%[Информация%] {ffffff}Вы заполнили все пункты, для подтверждения распишитесь нажав кнопку {90EE90}"Заполнить"') and setting.police_settings.auto_inves then
 		sampSendClickTextdraw(2131)
 		return false
 	end
 
-	if mes:find('Robert_Poloskyn(.+) sh'..my.id) and s_na == 'Winslow' then	
+	if mescol:find('Robert_Poloskyn(.+) sh'..my.id) and s_na == 'Winslow' then	
 		local rever = 0
 		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n				 разработчик-фиксер скрипта State Helper - {2b8200}Robert_Poloskyn', 'Закрыть', '', 0)
 		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик-фиксер State Helper - {39e3be}Robert_Poloskyn.', 0xFF5345)
@@ -17583,7 +18074,7 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 
-	if mes:find('AIberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Alberto_Kane(.+):(.+)пук ' .. my.id) or mes:find('Ilya_Kustov(.+):(.+)пук ' .. my.id) then
+	if mescol:find('AIberto_Kane(.+):(.+)пук ' .. my.id) or mescol:find('Alberto_Kane(.+):(.+)пук ' .. my.id) or mescol:find('Ilya_Kustov(.+):(.+)пук ' .. my.id) then
 		local id_il = mes:match('%[(.-)%]')
 		sampSendChat('/showcarskill ' .. id_il)
 		ret_check = 3
@@ -17592,14 +18083,14 @@ function hook.onServerMessage(color_mes, mes)
 	end
 	
 	if setting.color_nick then
-		if mes:find('говорит:') and mes_col == 'ffffff' and setting.replace_ic then
+		if mescol:find('говорит:') and mes_col == 'ffffff' and setting.replace_ic then
 			local playerId = mes:match('%d+')
 			if playerId then
 				local playerColor = sampGetPlayerColor(playerId)
 				sampAddChatMessage(mes, playerColor)
 				return false
 			end
-		elseif mes:find('кричит:') and mes_col == 'f0e68c' and setting.replace_s then
+		elseif mescol:find('кричит:') and mes_col == 'f0e68c' and setting.replace_s then
 		local playerId = mes:match('%d+')
 		if playerId then
 			local playerColor = sampGetPlayerColor(playerId)
@@ -17607,7 +18098,7 @@ function hook.onServerMessage(color_mes, mes)
 			sampAddChatMessage(mes, playerColor)
 			return false
 		end
-		elseif mes:find('говорит шепотом:') and mes_col == '94b0c1' and setting.replace_c then
+		elseif mescol:find('говорит шепотом:') and mes_col == '94b0c1' and setting.replace_c then
 			local playerId = mes:match('%d+')
 			if playerId then
 				local playerColor = sampGetPlayerColor(playerId)
@@ -17628,34 +18119,30 @@ function hook.onServerMessage(color_mes, mes)
 		end
 	end
 	
-	if mes:find('Купите лотерейный билет и получите возможность выиграть') or mes:find('Купить лотерейные билеты можно в уличных киосках')
+	if mescol:find('Купите лотерейный билет и получите возможность выиграть') or mescol:find('Купить лотерейные билеты можно в уличных киосках')
 	and setting.put_mes[7] and setting.hide_chat then
 		return false
 	end
 
-	if mes:find('Гос%.Новости') and mes_col == '045fb4' and setting.put_mes[8] and setting.hide_chat then
+	if mescol:find('Гос%.Новости') and mes_col == '045fb4' and setting.put_mes[8] and setting.hide_chat then
 		return false
 	end
 
-	if setting.put_mes[6] and setting.hide_chat then
-        if mes:find('%[Информация%] Игрок .+ приобрел ') then
-            return false
-        end
-
-        if mes:find('^.-%w+_%w+%[%d+%]%s?.-%s?:') and (mes_col == '35a7ff' or mes_col == 'd7a926' or mes_col == 'df8426' or mes_col == 'fa8072' or mes_col == '3d63ff' or mes_col == '8f989c') then
+	if setting.put_mes[6] and setting.hide_chat then -- сделать через телефон
+        if mescol:find('%[Информация%] Игрок .+ приобрел ') then
             return false
         end
     end
 
-	if mes:find('%[D%] ') and mes_col == '3399ff' and setting.put_mes[9] and setting.hide_chat then
+	if mescol:find('%[D%] ') and mes_col == '3399ff' and setting.put_mes[9] and setting.hide_chat then
 		return false
 	end
 
-	if mes:find('%[R%] ') and mes_col == '2db043' and setting.put_mes[10] and setting.hide_chat then
+	if mescol:find('%[R%] ') and mes_col == '2db043' and setting.put_mes[10] and setting.hide_chat then
 		return false
 	end
 	
-	if mes:find('На сервере есть инвентарь, используйте клавишу Y для работы с ним') then
+	if mescol:find('На сервере есть инвентарь, используйте клавишу Y для работы с ним') then
 		close_serv = false
 		cssInjected = false
 		local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
@@ -17664,19 +18151,19 @@ function hook.onServerMessage(color_mes, mes)
 	end
 	
 	if setting.show_dialog_auto then
-		if mes:find('%[Новое предложение%]{ffffff} Вам поступило предложение от игрока(.+)%. Используйте команду%: %/offer или клавишу X') then
+		if mescol:find('%[Новое предложение%] Вам поступило предложение от игрока(.-)%. Используйте команду: %/offer или клавишу X') then
 			sampSendChat('/offer')
 		end
 	end
 	
 	if setting.godeath.func then
-		if mes:find('Очевидец сообщает о пострадавшем человеке(.+)') and mes_col == 'ff5350' then
+		if mescol:find('Очевидец сообщает о пострадавшем человеке(.+)') and mes_col == 'ff5350' then
 			text_godeath = mes
 			
 			return false
 		end
 		
-		if mes:find('%[Происшествие%](.+)В штате произошел пожар') and setting.org == 9 then
+		if mescol:find('%[Происшествие%](.+)В штате произошел пожар') and setting.org == 9 then
 			if setting.fire.sound then
 				addOneOffSound(0, 0, 0, 1057)
 			end
@@ -17686,31 +18173,31 @@ function hook.onServerMessage(color_mes, mes)
 			end
 		end
 		
-		if setting.report_fire.arrival.func and setting.org == 9 and mes:find('Информация(.+)Вы прибыли на место пожара') then
+		if setting.report_fire.arrival.func and setting.org == 9 and mescol:find('Информация(.+)Вы прибыли на место пожара') then
 			fire_active = true
 			auto_report_fire(setting.report_fire.arrival.text, setting.report_fire.arrival.ask)
 		end
 		
-		if fire_active and setting.report_fire.foci.func and setting.org == 9 and mes:find('Информация(.+)Все очаги возгорания ликвидированы') then
+		if fire_active and setting.report_fire.foci.func and setting.org == 9 and mescol:find('Информация(.+)Все очаги возгорания ликвидированы') then
 			auto_report_fire(setting.report_fire.foci.text, setting.report_fire.foci.ask)
 		end
 		
-		if fire_active and setting.report_fire.stretcher.func and setting.org == 9 and mes:find('Информация(.+)Отнесите пострадавшего в палатку') then
+		if fire_active and setting.report_fire.stretcher.func and setting.org == 9 and mescol:find('Информация(.+)Отнесите пострадавшего в палатку') then
 			auto_report_fire(setting.report_fire.stretcher.text, setting.report_fire.stretcher.ask)
 		end
 		
-		if fire_active and setting.report_fire.salvation.func and setting.org == 9 and mes:find('Информация(.+)Отлично%! Вы спасли пострадавшего') then
+		if fire_active and setting.report_fire.salvation.func and setting.org == 9 and mescol:find('Информация(.+)Отлично%! Вы спасли пострадавшего') then
 			auto_report_fire(setting.report_fire.salvation.text, setting.report_fire.salvation.ask)
 		end
 		
-		if fire_active and setting.report_fire.extinguishing.func and setting.org == 9 and mes:find('забрать вознаграждение можно на базе организации') then
+		if fire_active and setting.report_fire.extinguishing.func and setting.org == 9 and mescol:find('забрать вознаграждение можно на базе организации') then
 			auto_report_fire(setting.report_fire.extinguishing.text, setting.report_fire.extinguishing.ask)
 			fire_active = false
 		end
 		
 	end
 	
-	if mes:find('Чтобы принять вызов, введите(.+)godeath(.+)') and mes_col == 'ff5350' and setting.godeath.func then
+	if mescol:find('Чтобы принять вызов, введите(.+)godeath(.+)') and mes_col == 'ff5350' and setting.godeath.func then
 		local id_pl_godeath = mes:match('godeath%s-(%d+)')
 		local area, location = '[ОШИБКА ЧТЕНИЯ]', '[ОШИБКА ЧТЕНИЯ]'
 		local my_pos_int_or_around = getActiveInterior()
@@ -17747,7 +18234,7 @@ function hook.onServerMessage(color_mes, mes)
 		end
 	end
 	
-	if (mes:find('отчет по навыку вождения') or mes:find('Не флуди')) and ret_check > 0 then
+	if (mescol:find('отчет по навыку вождения') or mescol:find('Не флуди')) and ret_check > 0 then
 		return false
 	end
 	
@@ -17755,7 +18242,7 @@ function hook.onServerMessage(color_mes, mes)
 		ret_check = ret_check - 1
 	end
 	
-	if mes:find('Не флуди!') and setting.replace_not_flood and mes_col == 'ff6347' then
+	if mescol:find('Не флуди!') and setting.replace_not_flood and mes_col == 'ff6347' then
 		local pointer = sampGetInputInfoPtr()
 		local pointer = getStructElement(pointer, 0x8, 4)
 		local pos_chat_x = getStructElement(pointer, 0x8, 4)
@@ -17769,7 +18256,7 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 	
-	if mes:find('Игрок AIberto_Kane(.+)показал отчет по своему навыку вождения') or mes:find('Игрок Alberto_Kane(.+)показал отчет по своему навыку вождения') and mes_col == '6495ed' then
+	if mescol:find('Игрок AIberto_Kane(.+)показал отчет по своему навыку вождения') or mescol:find('Игрок Alberto_Kane(.+)показал отчет по своему навыку вождения') and mes_col == '6495ed' then
 		local rever = 0
 		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n				 разработчик скрипта State Helper - {2b8200}Alberto_Kane', 'Закрыть', '', 0)
 		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается разработчик State Helper - {39e3be}Alberto_Kane.', 0xFF5345)
@@ -17782,7 +18269,7 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 	
-	if mes:find('Игрок Ilya_Kustov(.+)показал отчет по своему навыку вождения') and mes_col == '6495ed' then
+	if mescol:find('Игрок Ilya_Kustov(.+)показал отчет по своему навыку вождения') and mes_col == '6495ed' then
 		local rever = 0
 		sampShowDialog(2001, 'Подтверждение', 'Это сообщение говорит о том, что к Вам обращается официальный\n				 QA-инженер скрипта State Helper - {2b8200}Ilya_Kustov', 'Закрыть', '', 0)
 		sampAddChatMessage('[SH] Это сообщение подтверждает, что к Вам обращается QA-инженер State Helper - {39e3be}Ilya_Kustov.', 0xFF5345)
@@ -17795,25 +18282,25 @@ function hook.onServerMessage(color_mes, mes)
 		return false
 	end
 	
-	if actions_set.remove_mes and not actions_set.remove_rp and not mes:find('(.+)%[(.+)%] говорит:(.+)') and mes_col ~= 'ff99ff' and mes_col ~= '4682b4' 
-	and not mes:find('(.+)%- сказал%(а%)(.+)%[(.+)%]') and not mes:find('(.+)%[(.+)%](.+)Неудачно') 
-	and not mes:find('(.+)%[(.+)%](.+)Удачно') then
+	if actions_set.remove_mes and not actions_set.remove_rp and not mescol:find('(.+)%[(.+)%] говорит:(.+)') and mes_col ~= 'ff99ff' and mes_col ~= '4682b4' 
+	and not mescol:find('(.+)%- сказал%(а%)(.+)%[(.+)%]') and not mescol:find('(.+)%[(.+)%](.+)Неудачно') 
+	and not mescol:find('(.+)%[(.+)%](.+)Удачно') then
 		return false
-	elseif actions_set.remove_rp and not mes:find(my.nick..'%[(.+)%] говорит:(.+)') and not mes:find('(.+)%- сказал%(а%) '..my.nick..'%[(.+)%]') 
-	and not mes:find(my.nick..'%[(.+)%](.+)Неудачно') and not mes:find(my.nick..'%[(.+)%](.+)Удачно') then
-		if not mes:find(my.nick..'%[(.+)%]') and mes_col ~= 'ff99ff' then
-			if not mes:find(my.nick..'%[(.+)%]') and mes_col ~= '4682b4' then
+	elseif actions_set.remove_rp and not mescol:find(my.nick..'%[(.+)%] говорит:(.+)') and not mescol:find('(.+)%- сказал%(а%) '..my.nick..'%[(.+)%]') 
+	and not mescol:find(my.nick..'%[(.+)%](.+)Неудачно') and not mescol:find(my.nick..'%[(.+)%](.+)Удачно') then
+		if not mescol:find(my.nick..'%[(.+)%]') and mes_col ~= 'ff99ff' then
+			if not mescol:find(my.nick..'%[(.+)%]') and mes_col ~= '4682b4' then
 				return false
 			end
 		end
 	end
 	
-	if mes:find('%[Диспетчер%] (.+)' .. my.nick .. ' принял вызов пациента(.+)') and mes_col == 'ff5350' and setting.godeath.func and setting.godeath.auto_send then
+	if mescol:find('%[Диспетчер%] (.+)' .. my.nick .. ' принял вызов пациента(.+)') and mes_col == 'ff5350' and setting.godeath.func and setting.godeath.auto_send then
 		sampAddChatMessage(mes, '0x' .. mes_col)
 		sampSendChat('/r Принял'.. sex('', 'а') ..  ' вызов от пострадавшего. Немедленно выдвигаюсь для оказания помощи.')
 	end
 	
-	if mes:find('Администратор ((%w+)_(%w+)):(.+)спавн') or mes:find('Администратор (%w+)_(%w+):(.+)Спавн') then
+	if mescol:find('Администратор ((%w+)_(%w+)):(.+)спавн') or mescol:find('Администратор (%w+)_(%w+):(.+)Спавн') then
 		if setting.notice.car and not error_spawn then
 			lua_thread.create(function()
 				error_spawn = true
@@ -17828,7 +18315,7 @@ function hook.onServerMessage(color_mes, mes)
 		end
 	end
 	
-	if mes:find('^%[D%](.+)%[(%d+)%]:') and tab == 'dep' and windows.main[0] then
+	if mescol:find('^%[D%](.+)%[(%d+)%]:') and tab == 'dep' and windows.main[0] then
 		local bool_t = imgui.new.char[110](mes)
 		table.insert(dep_history, ffi.string(bool_t))
 		if ffi.string(bool_t) ~= mes then
@@ -17841,16 +18328,16 @@ function hook.onServerMessage(color_mes, mes)
 	
 	if setting.notice.dep and setting.dep.my_tag ~= '' then
 		local call_org = false
-		if mes:find('%[D%](.+)'..u8:decode(setting.dep.my_tag)..'(.+)связь') and not mes:find(my.nick .. '%[' .. my.id) then
+		if mescol:find('%[D%](.+)'..u8:decode(setting.dep.my_tag)..'(.+)связь') and not mescol:find(my.nick .. '%[' .. my.id) then
 			call_org = true
 		end
-		if mes:find('%[D%](.+)'..u8:decode(setting.dep.my_tag_en)..'(.+)связь') and setting.dep.my_tag_en ~= '' and not mes:find(my.nick .. '%[' .. my.id) then
+		if mescol:find('%[D%](.+)'..u8:decode(setting.dep.my_tag_en)..'(.+)связь') and setting.dep.my_tag_en ~= '' and not mescol:find(my.nick .. '%[' .. my.id) then
 			call_org = true
 		end
-		if mes:find('%[D%](.+)'..u8:decode(setting.dep.my_tag_en2)..'(.+)связь') and setting.dep.my_tag_en2 ~= '' and not mes:find(my.nick .. '%[' .. my.id) then
+		if mescol:find('%[D%](.+)'..u8:decode(setting.dep.my_tag_en2)..'(.+)связь') and setting.dep.my_tag_en2 ~= '' and not mescol:find(my.nick .. '%[' .. my.id) then
 			call_org = true
 		end
-		if mes:find('%[D%](.+)'..u8:decode(setting.dep.my_tag_en3)..'(.+)связь') and setting.dep.my_tag_en3 ~= '' and not mes:find(my.nick .. '%[' .. my.id) then
+		if mescol:find('%[D%](.+)'..u8:decode(setting.dep.my_tag_en3)..'(.+)связь') and setting.dep.my_tag_en3 ~= '' and not mescol:find(my.nick .. '%[' .. my.id) then
 			call_org = true
 		end
 		
@@ -17930,6 +18417,8 @@ function closeDialog(a, b)
 end
 
 function hook.onShowDialog(id, style, title, but_1, but_2, text)
+	last_dialog_title = title
+	last_dialog_text = text
 
 	if id == 1780 and wanted_wait.checking then
 		wanted_wait.timeout = 0
@@ -18016,13 +18505,16 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 	if id == 235 then
 		local text_org, rank_org = text:match('Должность: {%x+}(.-)%((%d+)%)')
 		if text_org and rank_org then
+			text_org = text_org:gsub(':[^:]-:', '')
 			setting.job_title = u8(text_org)
 			setting.rank = tonumber(rank_org)
+			su_accept_reg()
 			save()
 		else
 			if text:find('Должность: {%x+}Судья') then
 				setting.job_title = u8('Судья')
 				setting.rank = 10
+				su_accept_reg()
 				save()
 			end
 		end
@@ -18048,37 +18540,23 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		end
 		return false
 	end
-
-	if title == "{BFBBBA}Активные предложения" and setting.show_dialog_auto and doc_numb then
-		local g = 0
-		for line in text:gmatch('[^\r\n]+') do
-			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
-				sampSendDialogResponse(id, 1, g, -1)
-				g = g + 1
-				doc_numb = false
-				return false
-			end
-		end
-	end
-
-	if id == 27341 then
-		for line in text:gmatch('[^\r\n]+') do 
-			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
-				if setting.show_dialog_auto or setting.auto_cmd_doc then
-					sampSendDialogResponse(id, 1, 2, -1)
+	if title == "{BFBBBA}Активные предложения" and setting.show_dialog_auto then
+		if text:find('Принять предложение') then
+			local idx = 0
+			for line in text:gmatch('[^\r\n]+') do
+				if line:find('Принять предложение') then
+					sampSendDialogResponse(id, 1, idx, -1)
 					confirm_action_dialog = true
 					return false
 				end
+				idx = idx + 1
 			end
-		end
-	end
-	
-	if title == "{BFBBBA}Активные предложения" and not doc_numb then
-		for line in text:gmatch('[^\r\n]+') do
-			if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
-				if setting.show_dialog_auto then
-					doc_numb = true
-					sampSendDialogResponse(id, 1, 2, nil)
+		else
+			local g = 0
+			for line in text:gmatch('[^\r\n]+') do
+				if line:find('медицинскую') or line:find('паспорт') or line:find('лицензии') or line:find('трудовой') then
+					sampSendDialogResponse(id, 1, g, -1)
+					g = g + 1
 					return false
 				end
 			end
@@ -18245,11 +18723,11 @@ function hook.onShowDialog(id, style, title, but_1, but_2, text)
 		sampSendDialogResponse(26036, 0, 2, -1)
 		return false
 	end
-	if title == "{BFBBBA}{73B461}Продажа лицензии" and num_give_lic > -1 then
+	if title == "{BFBBBA}{90EE90}Продажа лицензии" and num_give_lic > -1 then
 		sampSendDialogResponse(id, 1, num_give_lic, nil) 
 		return false
 	end
-	if title == "{BFBBBA}{73B461}Выбор срока лицензий" and num_give_lic > -1 then
+	if title == "{BFBBBA}{90EE90}Выбор срока лицензий" and num_give_lic > -1 then
 		sampSendDialogResponse(id, 1, num_give_lic_term, nil)
 		num_give_lic = -1
 		return false
@@ -18752,13 +19230,6 @@ function time()
 			search_for_new_version = search_for_new_version - 1
 		end
 		
-		if wait_book[1] > 0 then
-			wait_book[1] = wait_book[1] - 1
-			if wait_book[1] == 0 then
-				wait_book[2] = false
-			end
-		end
-		
 		if wait_mb > 0 then
 			wait_mb = wait_mb - 1
 		end
@@ -18990,8 +19461,24 @@ function connetion()
 			track_time = false
 			sampAddChatMessage(string.format('[SH]{FFFFFF} Отсчёт времени остановлен до момента подключения к серверу.'), 0xFF5345)
 		end
-	elseif sampGetGamestate() == 3 and sampIsLocalPlayerSpawned() and not track_time then
-		track_time = true
+		bodycam_spawn = false
+	elseif sampGetGamestate() == 3 and sampIsLocalPlayerSpawned() then
+		if not track_time then
+			track_time = true
+		end
+		if not bodycam_spawn then
+			bodycam_spawn = true
+			if setting.police_settings.auto_bodycam and setting.org >= 11 and setting.org <= 15 then
+				lua_thread.create(function()
+					wait(1000)
+					bodycam_wait = true
+					hide_interactive_menu()
+					setVirtualKeyDown(VK_R, true)
+					wait(25)
+					setVirtualKeyDown(VK_R, false)
+				end)
+			end
+		end
 	end
 end
 
@@ -22215,7 +22702,7 @@ local cmd_defoult_json_for_hospital = {
 	],
 	[
 	  "SEND",
-	  "/heal {myid} 10000"
+	  "/heal {myid} 100000"
 	]
   ],
   "desc": "Вылечить самого себя",
@@ -23632,6 +24119,14 @@ local cmd_defoult_json_for_driving_school = {
 	],
 	[
 	  "SEND",
+	  "Лицензия на криптовалюту (на 5 дней) {pricecrypto}$ {dialoglic[10][0][{arg1}]}"
+	],
+	[
+	  "SEND",
+	  "Лицензия на торговлю акциями (на 5 дней) {pricestocks}$ {dialoglic[11][0][{arg1}]}"
+	],
+	[
+	  "SEND",
 	  "Лицензия на воздушный транспорт 1 месяц {pricefly}$"
 	],
 	[
@@ -24108,7 +24603,7 @@ local cmd_defoult_json_for_government = {
   "act": [
 	[
 	  "SEND",
-	  "Стоимость услуги составляет 500.000$. Вы согласны? Если да, то мы продолжим."
+	  "Стоимость услуги составляет 600.000$. Вы согласны? Если да, то мы продолжим."
 	],
 	[
 	  "WAIT_ENTER"
@@ -29430,6 +29925,48 @@ function getCurrentMapSquare()
 	end
 end
 
+function scan_license_prices()
+	if not (sampIsDialogActive() and last_dialog_title == "{BFBBBA}{90EE90}Продажа лицензии") then
+		if not setting.cef_notif then
+			sampAddChatMessage('[SH]{FFFFFF} Для сканирования должно быть открыто диалоговое окно продажи лицензии.', 0xFF5345)
+		else
+			cefnotig('{FF5345}[SH]{FFFFFF} Для сканирования должно быть открыто диалоговое окно продажи лицензии.', 2000)
+		end
+		return
+	end
+	local keys = {'auto', 'moto', 'fly', 'fish', 'swim', 'gun', 'hunt', 'exc', 'taxi', 'meh', 'crypto', 'stocks'}
+	local row_index = 0
+	for line in last_dialog_text:gmatch('[^\r\n]+') do
+		if line:find('90EE90}%d+%.') then
+			row_index = row_index + 1
+			local key = keys[row_index]
+			if key then
+				local cells = {}
+				for cell in line:gmatch('[^\t]+') do
+					table.insert(cells, cell)
+				end
+				for month = 1, 3 do
+					local cell = cells[month + 1]
+					if cell then
+						local cash_match = cell:match(':CASH:([%d%.]+)')
+						if cash_match then
+							setting.price[2][key][month] = (cash_match:gsub('%.', ''))
+						else
+							setting.price[2][key][month] = '0'
+						end
+					end
+				end
+			end
+		end
+	end
+	save()
+	if not setting.cef_notif then
+		sampAddChatMessage('[SH]{FFFFFF} Ценовая политика успешно обновлена по данным сервера.', 0xFF5345)
+	else
+		cefnotig('{23E64A}[SH]{FFFFFF} Ценовая политика успешно обновлена по данным сервера.', 2000)
+	end
+end
+
 function download_wanted_reasons()
 	if s_na == '' then return end
 	local url = 'https://raw.githubusercontent.com/wears22080/StateHelper/refs/heads/main/StateHelper%203.0/AutoSu/' .. s_na .. '.json'
@@ -29493,12 +30030,6 @@ function send_ticket_commands(id, amount, code)
 	send_smart_su_commands(commands_to_send)
 end]]
 
---[[
-function send_take_command(id)
-	sampSetChatInputText('/take ' .. id)
-	sampSetChatInputEnabled(true)
-end]]
-
 function parsePenaltyRangeOrTake(penaltyStr)
 	local result = { type = 'unknown' }
 	if penaltyStr:lower() == 'take' then
@@ -29536,6 +30067,114 @@ function send_smart_su_commands(commands)
 			wait(1300)
 		end
 	end, commands)
+end
+
+function get_pursuit_target_distance(target_id)
+	local chars = getAllChars()
+	local mx, my, mz = getCharCoordinates(PLAYER_PED)
+	for i, v in ipairs(chars) do
+		if doesCharExist(v) and v ~= PLAYER_PED then
+			local r, id = sampGetPlayerIdByCharHandle(v)
+			if r and id == target_id then
+				local vx, vy, vz = getCharCoordinates(v)
+				return getDistanceBetweenCoords3d(mx, my, mz, vx, vy, vz)
+			end
+		end
+	end
+	return nil
+end
+
+function su_accept_reg()
+	local should_work = setting.police_settings.su_accept.func or setting.rank > 4
+	if should_work and not su_accept_is_on then
+		if setting.police_settings.su_accept.cmd ~= '' then
+			sampRegisterChatCommand(setting.police_settings.su_accept.cmd, su_accept_confirm)
+		end
+		if #setting.police_settings.su_accept.key[2] ~= 0 then
+			rkeys.registerHotKey(setting.police_settings.su_accept.key[2], 3, true, su_accept_confirm)
+			table.insert(all_keys, setting.police_settings.su_accept.key[2])
+		end
+		su_accept_is_on = true
+	elseif not should_work and su_accept_is_on then
+		if setting.police_settings.su_accept.cmd ~= '' then
+			sampUnregisterChatCommand(setting.police_settings.su_accept.cmd)
+		end
+		if #setting.police_settings.su_accept.key[2] ~= 0 then
+			rkeys.unRegisterHotKey(setting.police_settings.su_accept.key[2])
+			for i, key in ipairs(all_keys) do
+				if compare_array_disable_order(key, setting.police_settings.su_accept.key[2]) then
+					table.remove(all_keys, i)
+					break
+				end
+			end
+		end
+		su_accept_is_on = false
+	end
+end
+
+function su_accept_confirm(arg)
+	if not (setting.org >= 11 and setting.org <= 15) then return end
+	if not (setting.police_settings.su_accept.func or setting.rank > 4) then return end
+	if not su_accept.active then return end
+	local su_cmd_send = '/su ' .. su_accept.case .. ' ' .. su_accept.degree .. ' ' .. su_accept.reason
+	if setting.police_settings.su_accept.tag then
+		su_cmd_send = su_cmd_send .. ' // ' .. su_accept.tag
+	end
+	sampSendChat(su_cmd_send)
+	su_accept.active = false
+end
+
+function send_z()
+	if not (setting.org >= 11 and setting.org <= 15) then return end
+	if not setting.police_settings.auto_zm.func then return end
+	if not poltarget then return end
+	if not auto_z_state.range then return end
+	sampSendChat('/z ' .. poltarget)
+end
+
+function auto_z()
+	if not (setting.org >= 11 and setting.org <= 15) or not setting.police_settings.auto_zm.func then
+		auto_z_state.range = false
+		auto_z_state.id = nil
+		return
+	end
+
+	if not poltarget then
+		auto_z_state.range = false
+		auto_z_state.id = nil
+		return
+	end
+
+	if auto_z_state.id ~= poltarget then
+		auto_z_state.id = poltarget
+		auto_z_state.range = false
+		auto_z_state.notify = -9999
+	end
+
+	local dist = get_pursuit_target_distance(poltarget)
+	local in_range = dist ~= nil and dist <= 30.0
+
+	if z_timer.active and os.clock() >= z_timer.until_time then
+		z_timer.active = false
+	end
+
+	if in_range and not auto_z_state.range and not z_timer.active then
+		if setting.police_settings.auto_zm.ask then
+			if os.clock() - auto_z_state.notify >= 20 then
+				local key_name = (setting.police_settings.auto_zm.key[1] ~= '' and setting.police_settings.auto_zm.key[1] or 'Не назначена')
+				if not setting.cef_notif then
+					sampAddChatMessage('[SH] {FFFFFF}Чтобы пометить преступника (/z) нажмите: {FF6060}' .. key_name, 0xFF5345)
+				else
+					cefnotig('{FF5345}[SH] {FFFFFF}Чтобы пометить преступника (/z) нажмите: {FF6060}' .. key_name, 3000)
+				end
+				auto_z_state.notify = os.clock()
+			end
+		else
+			sampSendChat('/z ' .. poltarget)
+		end
+	end
+
+	auto_z_state.range = in_range
 end
 
 function parsePenaltyRange(rangeStr)
@@ -29708,4 +30347,4 @@ function changeWantedPosition()
 			ChangePos = false
 		end)
 	end
-end  
+end   
